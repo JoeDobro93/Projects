@@ -1,0 +1,32 @@
+Canvas size: 360 x 360
+x/y offset: (200, 70)
+
+---------------------------------
+Shape Name: R
+	Type: Rectangle
+	Time Range: t=1 to t=100
+	Initial parameters:
+		Top left corner: (200.00, 200.00)
+		Size: Width - 50.00, Height - 100.00
+		Color: r=255, g=0, b=0
+
+	Commands:
+		MOVE from (200,200) to (300,300) from t=10 to t=50
+		SCALE from x size 50, y size 100 to x size 25, y size 100 from t=51 to t=70
+		MOVE from (300,300) to (200,200) from t=70 to t=100
+---------------------------------
+Shape Name: C
+	Type: Ellipse
+	Time Range: t=6 to t=100
+	Initial parameters:
+		Center: (440.00, 70.00)
+		Size: Diameter X - 120.00, Diameter Y - 60.00
+		Color: r=0, g=0, b=255
+
+	Commands:
+		MOVE from (440,70) to (440,250) from t=20 to t=50
+		MOVE from (440,250) to (440,370) from t=50 to t=70
+		RECOLOR from (r=0,g=0,b=255) to (r=0,g=170,b=85) from t=50 to t=70
+		RECOLOR from (r=0,g=0,b=255) to (r=0,g=170,b=85) from t=50 to t=70
+		RECOLOR from (r=0,g=170,b=85) to (r=0,g=255,b=0) from t=70 to t=80
+---------------------------------

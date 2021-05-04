@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Joe Dobrowolski"
+            android:textAlignment="center" />
+
+        <Button
+            android:id="@+id/about_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="About" />
+
+        <Button
+            android:id="@+id/error_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Generate Error" />
+
+        <Button
+            android:id="@+id/dictionary_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dictionary" />
+
+        <Button
+            android:id="@+id/tictactoe_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tic Tac Toe" />
+
+        <Button
+            android:id="@+id/alt_assign_1_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Network Assignment" />
+
+        <Button
+            android:id="@+id/map_display_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Map Display" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

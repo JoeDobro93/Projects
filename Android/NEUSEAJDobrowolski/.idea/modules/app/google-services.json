@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "837838893227",
+    "firebase_url": "https://neusea-jdobrowolski.firebaseio.com",
+    "project_id": "neusea-jdobrowolski",
+    "storage_bucket": "neusea-jdobrowolski.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:837838893227:android:7c7a38dee0f082608247ee",
+        "android_client_info": {
+          "package_name": "edu.neu.mad_sea.jdobrowolski"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "837838893227-rs90v3acmhpflsvgsi3010fj24s5navg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "edu.neu.mad_sea.jdobrowolski",
+            "certificate_hash": "399bd29dfefad8069fa033165b0eb9fcd0cc76a7"
+          }
+        },
+        {
+          "client_id": "837838893227-uqo68danra61v5gsr5mh5hnd82ip4hfo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeSXSgukYkuiR8V35XnWBYZBzgu-XvmaE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "837838893227-uqo68danra61v5gsr5mh5hnd82ip4hfo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
