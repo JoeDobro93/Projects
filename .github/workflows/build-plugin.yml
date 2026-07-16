@@ -1,0 +1,67 @@
+name: Build Magic Drum De-Bleed
+
+# Builds downloadable plugin binaries on GitHub's Windows and macOS runners.
+# Runs whenever the plugin sources (or this file) change. Artifacts appear
+# under Actions → (run) → Artifacts.
+
+on:
+  push:
+    paths:
+      - "MagicDrumDeBleed/**"
+      - ".github/workflows/build-plugin.yml"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (VST3 + Standalone)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        working-directory: MagicDrumDeBleed
+        run: cmake -B build
+
+      - name: Build
+        working-directory: MagicDrumDeBleed
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumDeBleed-Windows-VST3
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/VST3/*.vst3
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumDeBleed-Windows-Standalone
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/Standalone/*.exe
+
+  macos:
+    name: macOS (AU + VST3 + Standalone, universal)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal x86_64 + arm64)
+        working-directory: MagicDrumDeBleed
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Build
+        working-directory: MagicDrumDeBleed
+        run: cmake --build build --parallel
+
+      # ditto-zip each bundle so unix permissions survive artifact upload
+      - name: Zip bundles
+        working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
+        run: |
+          ditto -c -k --keepParent "AU/Magic Drum De-Bleed.component" MagicDrumDeBleed-macOS-AU.zip
+          ditto -c -k --keepParent "VST3/Magic Drum De-Bleed.vst3" MagicDrumDeBleed-macOS-VST3.zip
+          ditto -c -k --keepParent "Standalone/Magic Drum De-Bleed.app" MagicDrumDeBleed-macOS-Standalone.zip
+
+      - name: Upload macOS bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumDeBleed-macOS
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/*.zip
