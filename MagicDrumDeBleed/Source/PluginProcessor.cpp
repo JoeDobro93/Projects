@@ -1,0 +1,496 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+namespace
+{
+    juce::NormalisableRange<float> logHzRange (float minHz, float maxHz)
+    {
+        juce::NormalisableRange<float> r (minHz, maxHz, 0.01f);
+        r.setSkewForCentre (std::sqrt (minHz * maxHz));
+        return r;
+    }
+
+    constexpr float kNotchDefaultFreqs[5] = { 100.0f, 200.0f, 400.0f, 800.0f, 1600.0f };
+}
+
+//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcessor::createParameterLayout()
+{
+    using juce::AudioParameterFloat;
+    using juce::AudioParameterInt;
+    using juce::AudioParameterBool;
+    using juce::AudioParameterChoice;
+    using juce::ParameterID;
+
+    const auto dB = juce::AudioParameterFloatAttributes().withLabel ("dB");
+    const auto ms = juce::AudioParameterFloatAttributes().withLabel ("ms");
+    const auto hz = juce::AudioParameterFloatAttributes().withLabel ("Hz");
+
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
+
+    // ---- Compressor ----
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
+                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -20.0f, dB));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::reduction, 1 }, "Reduction Target",
+                    juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -24.0f, dB));
+    p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
+                    1, 20, 5, juce::AudioParameterIntAttributes().withLabel ("ms")));
+    {
+        juce::NormalisableRange<float> r (1.0f, 100.0f, 0.1f);  r.setSkewForCentre (10.0f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::rmsWindow, 1 }, "RMS Window", r, 10.0f, ms));
+    }
+    {
+        juce::NormalisableRange<float> r (0.0f, 500.0f, 1.0f);  r.setSkewForCentre (60.0f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hold, 1 }, "Hold", r, 20.0f, ms));
+    }
+    {
+        juce::NormalisableRange<float> r (5.0f, 1000.0f, 1.0f); r.setSkewForCentre (150.0f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release", r, 100.0f, ms));
+    }
+
+    // ---- Sidechain ----
+    p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::scEnable, 1 }, "SC Filter", true));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scFreq, 1 }, "SC Frequency",
+                    logHzRange (30.0f, 2000.0f), 200.0f, hz));
+    {
+        juce::NormalisableRange<float> r (0.3f, 12.0f, 0.01f);  r.setSkewForCentre (1.9f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scQ, 1 }, "SC Q", r, 1.5f));
+    }
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::learnCeiling, 1 }, "Learn Ceiling",
+                    logHzRange (200.0f, 2000.0f), 1000.0f, hz));
+
+    // ---- EQ: HPF / LPF ----
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::hpfOn, 1 }, "HPF On", true));
+    p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::hpfFreq, 1 }, "HPF Freq",
+                    logHzRange (20.0f, 2000.0f), 800.0f, hz));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::hpfSlope, 1 }, "HPF Slope",
+                    juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::lpfOn, 1 }, "LPF On", false));
+    p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::lpfFreq, 1 }, "LPF Freq",
+                    logHzRange (1000.0f, 20000.0f), 20000.0f, hz));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::lpfSlope, 1 }, "LPF Slope",
+                    juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
+
+    // ---- EQ: notch bands 1..5 ----
+    for (int i = 0; i < 5; ++i)
+    {
+        const juce::String num (i + 1);
+        p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::notchOn (i), 1 },
+                        "Notch " + num + " On", false));
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchFreq (i), 1 },
+                        "Notch " + num + " Freq", logHzRange (20.0f, 20000.0f), kNotchDefaultFreqs[i], hz));
+        {
+            juce::NormalisableRange<float> r (0.5f, 30.0f, 0.01f);  r.setSkewForCentre (4.0f);
+            p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchQ (i), 1 },
+                            "Notch " + num + " Q", r, 4.0f));
+        }
+        p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
+                        "Notch " + num + " Gain", juce::NormalisableRange<float> (-48.0f, 0.0f, 0.1f), -24.0f, dB));
+        p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },
+                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat" }, 0));
+    }
+
+    // ---- Output / monitoring ----
+    p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::intensity, 1 }, "Intensity",
+                    juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
+                    juce::AudioParameterFloatAttributes().withLabel ("%")));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::monitorMode, 1 }, "Monitor",
+                    juce::StringArray { "Normal", "Sidechain", "Processing", "Delta" }, 0));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::compBypass, 1 }, "Comp Bypass", false));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::eqBypass, 1 }, "EQ Bypass", false));
+
+    return { p.begin(), p.end() };
+}
+
+//==============================================================================
+MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
+    : AudioProcessor (BusesProperties()
+                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts (*this, nullptr, "PARAMS", createParameterLayout())
+{
+    auto raw = [this] (const juce::String& id) { return apvts.getRawParameterValue (id); };
+
+    pThreshold    = raw (ParamIDs::threshold);
+    pReduction    = raw (ParamIDs::reduction);
+    pLookahead    = raw (ParamIDs::lookahead);
+    pRmsWindow    = raw (ParamIDs::rmsWindow);
+    pHold         = raw (ParamIDs::hold);
+    pRelease      = raw (ParamIDs::release);
+    pScEnable     = raw (ParamIDs::scEnable);
+    pScFreq       = raw (ParamIDs::scFreq);
+    pScQ          = raw (ParamIDs::scQ);
+    pLearnCeiling = raw (ParamIDs::learnCeiling);
+    pHpfOn        = raw (ParamIDs::hpfOn);
+    pHpfFreq      = raw (ParamIDs::hpfFreq);
+    pHpfSlope     = raw (ParamIDs::hpfSlope);
+    pLpfOn        = raw (ParamIDs::lpfOn);
+    pLpfFreq      = raw (ParamIDs::lpfFreq);
+    pLpfSlope     = raw (ParamIDs::lpfSlope);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        pNotchOn[i]    = raw (ParamIDs::notchOn (i));
+        pNotchFreq[i]  = raw (ParamIDs::notchFreq (i));
+        pNotchQ[i]     = raw (ParamIDs::notchQ (i));
+        pNotchGain[i]  = raw (ParamIDs::notchGain (i));
+        pNotchShape[i] = raw (ParamIDs::notchShape (i));
+    }
+
+    pIntensity   = raw (ParamIDs::intensity);
+    pMonitorMode = raw (ParamIDs::monitorMode);
+    pCompBypass  = raw (ParamIDs::compBypass);
+    pEqBypass    = raw (ParamIDs::eqBypass);
+
+    spectrumFifoBuffer.resize (kSpectrumFifoSize, 0.0f);
+}
+
+bool MagicDrumDeBleedAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    const auto& in  = layouts.getMainInputChannelSet();
+    const auto& out = layouts.getMainOutputChannelSet();
+
+    if (in != out)
+        return false;
+
+    return in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo();
+}
+
+//==============================================================================
+void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    sampleRateCached = sampleRate;
+    maxLookaheadSamples = (int) std::ceil (0.020 * sampleRate) + 1;   // 20 ms cap
+
+    const int numCh = juce::jlimit (1, 2, getTotalNumInputChannels());
+
+    compressor.prepare (sampleRate, numCh, maxLookaheadSamples);
+    eq.prepare (sampleRate, numCh);
+    scFilter.prepare (sampleRate);
+    learnAnalyzer.prepare (sampleRate);
+
+    dryDelays.resize ((size_t) numCh);
+    for (auto& d : dryDelays)
+        d.prepare (maxLookaheadSamples);
+
+    const int block = juce::jmax (16, samplesPerBlock);
+    conversionBuffer.setSize (numCh, block);
+    parallelBuffer.setSize (numCh, block);
+    dryBuffer.setSize (numCh, block);
+    detectorRaw.assign ((size_t) block, 0.0);
+    detectorFiltered.assign ((size_t) block, 0.0);
+
+    intensitySmoothed.reset (sampleRate, 0.05);
+    intensitySmoothed.setCurrentAndTargetValue (pIntensity->load() * 0.01);
+
+    spectrumFifo.reset();
+
+    currentLookaheadSamples = -1;   // force latency + delay refresh
+    updateParametersForBlock();
+}
+
+void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
+{
+    // ---- Lookahead / latency ----
+    const int lookaheadMs = (int) pLookahead->load();
+    const int lookahead = juce::jlimit (0, maxLookaheadSamples,
+                                        (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));
+    if (lookahead != currentLookaheadSamples)
+    {
+        currentLookaheadSamples = lookahead;
+        for (auto& d : dryDelays)
+            d.setDelay (lookahead);
+        setLatencySamples (lookahead);
+    }
+
+    // ---- Compressor / sidechain ----
+    compressor.setParameters (pThreshold->load(), pReduction->load(), lookahead,
+                              pRmsWindow->load(), pHold->load(), pRelease->load());
+    scFilter.setParameters (pScFreq->load(), pScQ->load());
+    scEnabledCached = pScEnable->load() > 0.5f;
+
+    // ---- EQ bands ----
+    mdd::BandParams bp;
+
+    bp.enabled = pHpfOn->load() > 0.5f;
+    bp.freqHz  = pHpfFreq->load();
+    bp.slope   = (int) pHpfSlope->load();
+    bp.q = 0.70710678118654752; bp.gainDb = 0.0; bp.shape = 0;
+    eq.setBandParameters (mdd::EQProcessor::kBandHPF, bp);
+
+    bp.enabled = pLpfOn->load() > 0.5f;
+    bp.freqHz  = pLpfFreq->load();
+    bp.slope   = (int) pLpfSlope->load();
+    eq.setBandParameters (mdd::EQProcessor::kBandLPF, bp);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        mdd::BandParams nb;
+        nb.enabled = pNotchOn[i]->load() > 0.5f;
+        nb.freqHz  = pNotchFreq[i]->load();
+        nb.q       = pNotchQ[i]->load();
+        nb.gainDb  = pNotchGain[i]->load();
+        nb.shape   = (int) pNotchShape[i]->load();
+        nb.slope   = 0;
+        eq.setBandParameters (mdd::EQProcessor::kFirstNotch + i, nb);
+    }
+
+    // ---- Output / monitoring ----
+    intensitySmoothed.setTargetValue (juce::jlimit (0.0, 1.0, (double) pIntensity->load() * 0.01));
+    monitorModeCached = (int) pMonitorMode->load();
+    compBypassCached  = pCompBypass->load() > 0.5f;
+    eqBypassCached    = pEqBypass->load() > 0.5f;
+}
+
+//==============================================================================
+void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    juce::ScopedNoDenormals noDenormals;
+
+    const int n   = buffer.getNumSamples();
+    const int nCh = juce::jmin (buffer.getNumChannels(), conversionBuffer.getNumChannels());
+
+    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+        buffer.clear (ch, 0, n);
+
+    if (n == 0 || nCh == 0)
+        return;
+
+    if (conversionBuffer.getNumSamples() < n)
+        conversionBuffer.setSize (conversionBuffer.getNumChannels(), n, false, false, true);
+
+    for (int ch = 0; ch < nCh; ++ch)
+    {
+        const float* src = buffer.getReadPointer (ch);
+        double* dst = conversionBuffer.getWritePointer (ch);
+        for (int i = 0; i < n; ++i)
+            dst[i] = (double) src[i];
+    }
+
+    juce::AudioBuffer<double> view (conversionBuffer.getArrayOfWritePointers(), nCh, n);
+    processInternal (view);
+
+    for (int ch = 0; ch < nCh; ++ch)
+    {
+        const double* src = conversionBuffer.getReadPointer (ch);
+        float* dst = buffer.getWritePointer (ch);
+        for (int i = 0; i < n; ++i)
+            dst[i] = (float) src[i];
+    }
+}
+
+void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer&)
+{
+    juce::ScopedNoDenormals noDenormals;
+
+    const int n = buffer.getNumSamples();
+    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+        buffer.clear (ch, 0, n);
+
+    if (n == 0)
+        return;
+
+    processInternal (buffer);
+}
+
+void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>& buffer)
+{
+    const int n   = buffer.getNumSamples();
+    const int nCh = juce::jmin (buffer.getNumChannels(),
+                                parallelBuffer.getNumChannels(),
+                                (int) dryDelays.size());
+    if (nCh == 0)
+        return;
+
+    // Defensive: hosts occasionally exceed the prepared block size.
+    if (parallelBuffer.getNumSamples() < n)
+    {
+        parallelBuffer.setSize (parallelBuffer.getNumChannels(), n, false, false, true);
+        dryBuffer.setSize (dryBuffer.getNumChannels(), n, false, false, true);
+        detectorRaw.resize ((size_t) n, 0.0);
+        detectorFiltered.resize ((size_t) n, 0.0);
+    }
+
+    updateParametersForBlock();
+
+    // ---- 1. Detector: mono mix of the un-delayed input ----
+    const double invCh = 1.0 / (double) nCh;
+    for (int i = 0; i < n; ++i)
+    {
+        double sum = 0.0;
+        for (int ch = 0; ch < nCh; ++ch)
+            sum += buffer.getReadPointer (ch)[i];
+        detectorRaw[(size_t) i] = sum * invCh;
+    }
+
+    if (learnAnalyzer.isCapturing())
+        learnAnalyzer.pushSamples (detectorRaw.data(), n);
+
+    for (int i = 0; i < n; ++i)
+        detectorFiltered[(size_t) i] = scEnabledCached ? scFilter.processSample (detectorRaw[(size_t) i])
+                                                       : detectorRaw[(size_t) i];
+
+    // ---- 2. Parallel path: delay (lookahead) ▸ gate ▸ EQ ----
+    for (int ch = 0; ch < nCh; ++ch)
+        parallelBuffer.copyFrom (ch, 0, buffer, ch, 0, n);
+
+    compressor.process (parallelBuffer, detectorFiltered.data(), n, ! compBypassCached);
+    grDb.store (compressor.getCurrentGainReductionDb());
+
+    if (! eqBypassCached)
+        eq.process (parallelBuffer, n);
+
+    // ---- 3. Dry path: exactly the same integer-sample delay ----
+    for (int ch = 0; ch < nCh; ++ch)
+    {
+        const double* src = buffer.getReadPointer (ch);
+        double* dst = dryBuffer.getWritePointer (ch);
+        auto& delay = dryDelays[(size_t) ch];
+        for (int i = 0; i < n; ++i)
+            dst[i] = delay.processSample (src[i]);
+    }
+
+    // ---- 4. Spectrum feed (parallel path, post-EQ) ----
+    pushSpectrumSamples (parallelBuffer, nCh, n);
+
+    // ---- 5. Compose the output ----
+    // The parallel path's polarity flip is linear, so it is applied here as
+    // the subtraction:  normal output = dry − intensity · processed.
+    switch (monitorModeCached)
+    {
+        case monitorSidechain:
+        {
+            intensitySmoothed.skip (n);
+            for (int ch = 0; ch < nCh; ++ch)
+            {
+                double* out = buffer.getWritePointer (ch);
+                for (int i = 0; i < n; ++i)
+                    out[i] = detectorFiltered[(size_t) i];
+            }
+            break;
+        }
+
+        case monitorProcessing:
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                const double iv = intensitySmoothed.getNextValue();
+                for (int ch = 0; ch < nCh; ++ch)
+                    buffer.getWritePointer (ch)[i] = iv * parallelBuffer.getReadPointer (ch)[i];
+            }
+            break;
+        }
+
+        case monitorDelta:
+        {
+            // Literally: (time-aligned) input minus the final Normal output.
+            for (int i = 0; i < n; ++i)
+            {
+                const double iv = intensitySmoothed.getNextValue();
+                for (int ch = 0; ch < nCh; ++ch)
+                {
+                    const double dry    = dryBuffer.getReadPointer (ch)[i];
+                    const double normal = dry - iv * parallelBuffer.getReadPointer (ch)[i];
+                    buffer.getWritePointer (ch)[i] = dry - normal;
+                }
+            }
+            break;
+        }
+
+        case monitorNormal:
+        default:
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                const double iv = intensitySmoothed.getNextValue();
+                for (int ch = 0; ch < nCh; ++ch)
+                    buffer.getWritePointer (ch)[i] = dryBuffer.getReadPointer (ch)[i]
+                                                   - iv * parallelBuffer.getReadPointer (ch)[i];
+            }
+            break;
+        }
+    }
+}
+
+//==============================================================================
+void MagicDrumDeBleedAudioProcessor::pushSpectrumSamples (const juce::AudioBuffer<double>& parallel,
+                                                          int numChannels, int numSamples)
+{
+    int start1, size1, start2, size2;
+    spectrumFifo.prepareToWrite (numSamples, start1, size1, start2, size2);
+
+    const double invCh = 1.0 / (double) numChannels;
+    auto writeRange = [&] (int start, int size, int offset)
+    {
+        for (int i = 0; i < size; ++i)
+        {
+            double sum = 0.0;
+            for (int ch = 0; ch < numChannels; ++ch)
+                sum += parallel.getReadPointer (ch)[offset + i];
+            spectrumFifoBuffer[(size_t) (start + i)] = (float) (sum * invCh);
+        }
+    };
+
+    writeRange (start1, size1, 0);
+    writeRange (start2, size2, size1);
+    spectrumFifo.finishedWrite (size1 + size2);   // whatever didn't fit is dropped
+}
+
+int MagicDrumDeBleedAudioProcessor::readSpectrumSamples (float* dest, int maxSamples)
+{
+    int start1, size1, start2, size2;
+    spectrumFifo.prepareToRead (maxSamples, start1, size1, start2, size2);
+
+    for (int i = 0; i < size1; ++i)
+        dest[i] = spectrumFifoBuffer[(size_t) (start1 + i)];
+    for (int i = 0; i < size2; ++i)
+        dest[size1 + i] = spectrumFifoBuffer[(size_t) (start2 + i)];
+
+    spectrumFifo.finishedRead (size1 + size2);
+    return size1 + size2;
+}
+
+//==============================================================================
+double MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyse()
+{
+    learnAnalyzer.stopCapture();
+    return learnAnalyzer.analyse (pLearnCeiling->load());
+}
+
+//==============================================================================
+juce::Point<int> MagicDrumDeBleedAudioProcessor::getSavedEditorSize() const
+{
+    return { (int) apvts.state.getProperty ("uiWidth", 820),
+             (int) apvts.state.getProperty ("uiHeight", 520) };
+}
+
+void MagicDrumDeBleedAudioProcessor::setSavedEditorSize (int w, int h)
+{
+    apvts.state.setProperty ("uiWidth", w, nullptr);
+    apvts.state.setProperty ("uiHeight", h, nullptr);
+}
+
+void MagicDrumDeBleedAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    if (auto xml = apvts.copyState().createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void MagicDrumDeBleedAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+        if (xml->hasTagName (apvts.state.getType()))
+            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+}
+
+//==============================================================================
+juce::AudioProcessorEditor* MagicDrumDeBleedAudioProcessor::createEditor()
+{
+    return new MagicDrumDeBleedAudioProcessorEditor (*this);
+}
+
+// This creates new instances of the plugin.
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new MagicDrumDeBleedAudioProcessor();
+}
