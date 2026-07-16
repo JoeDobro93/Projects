@@ -85,6 +85,10 @@ public:
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.
     float getCurrentGainReductionDb() const noexcept   { return lastBlockGrDb; }
 
+    // Highest detector RMS (dB) seen during the last process() call — for the
+    // input meter, directly comparable to the threshold.
+    float getCurrentDetectorRmsDb() const noexcept     { return lastBlockRmsDb; }
+
 private:
     void setRmsWindow (double windowMs);
     void rebuildRmsSum();
@@ -109,6 +113,7 @@ private:
     double attackCoeff = 1.0, releaseCoeff = 1.0;
 
     float lastBlockGrDb = 0.0f;
+    float lastBlockRmsDb = -120.0f;
 };
 
 } // namespace mdd

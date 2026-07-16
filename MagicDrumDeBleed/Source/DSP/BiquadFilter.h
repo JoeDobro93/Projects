@@ -14,6 +14,10 @@
 namespace mdd
 {
 
+// Intentional exact comparison, used to detect changes in cached parameter
+// values (both sides always originate from the same parameter read).
+inline bool exactlyEqual (double a, double b) noexcept   { return ! (a < b) && ! (b < a); }
+
 class BiquadFilter
 {
 public:
@@ -43,6 +47,10 @@ public:
     static Coeffs makeHighpass         (double sampleRate, double freq, double q);
     static Coeffs makeFirstOrderLowpass  (double sampleRate, double freq);
     static Coeffs makeFirstOrderHighpass (double sampleRate, double freq);
+
+    // |H(e^jw)| at the given frequency — used by the UI to draw the EQ curve
+    // from the exact same coefficients the audio path runs.
+    static double magnitudeAt (const Coeffs& c, double freq, double sampleRate);
 
 private:
     static double clampFreq (double sampleRate, double freq) noexcept;

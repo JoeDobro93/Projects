@@ -18,7 +18,7 @@ void SidechainFilter::reset()
 
 void SidechainFilter::setParameters (double freqHz, double q)
 {
-    if (freqHz == currentFreq && q == currentQ)
+    if (exactlyEqual (freqHz, currentFreq) && exactlyEqual (q, currentQ))
         return;
 
     currentFreq = freqHz;

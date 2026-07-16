@@ -98,24 +98,35 @@ A `Standalone` build is also produced — useful for quick testing without a DAW
    matching **factory preset** (Kick / Snare / Toms).
 2. Click **Learn**, play or loop a section where the target drum hits, click
    **Stop** — the sidechain bandpass snaps to the drum's dominant frequency
-   (search is capped at the **Ceiling** frequency). Use the **Sidechain**
-   monitor mode to hear exactly what the detector hears.
-3. Lower **Threshold** until the **GR meter** fires on the target drum only.
-   Raise **RMS** to ignore short spikes of bleed; raise **Hold**/**Release**
-   to cover the drum's decay.
-4. Switch to the **Delta** monitor mode (= exactly what's being removed). If
-   you hear drum body or ring in there, enable the **spectrum Accumulate**
-   mode, watch the resonant frequencies build up, and drop **notch bands** on
-   them (drag the coloured handles; mouse-wheel adjusts Q). **Freeze** holds
-   the display while you fine-tune. Notched frequencies are *kept* in the output.
-5. Back to **Normal** mode; use **Intensity** to dial the cancellation from
-   0 % (off) to 100 % (full).
+   (the search is capped by the `learnCeiling` parameter, 1 kHz by default,
+   adjustable from your DAW's parameter list). Use the **Preview** button in
+   the Sidechain section to hear exactly what the detector hears.
+3. Lower **Threshold** until the **GR meter** fires on the target drum only —
+   the **IN meter** beside it shows the detector level the threshold is
+   compared against, with a marker line at the current threshold and a
+   lingering peak line. Raise **RMS** to ignore short spikes of bleed; raise
+   **Hold**/**Release** to cover the drum's decay.
+4. Toggle **Preview Processed Signal** (bottom strip) to hear exactly what is
+   being subtracted from the track. If you hear drum body or ring in there,
+   enable the spectrum **Accumulate** mode, watch the resonant frequencies
+   build up, and drop **notch bands** on them: flip a band's coloured switch
+   under its selector, drag its handle (mouse-wheel adjusts Q), and use its
+   **S** button to solo a bandpass around it while centring it on the
+   resonance (band gain is intentionally not applied while soloing; solo is
+   exclusive — soloing another band moves it). The **Pre/Post EQ** switch
+   selects whether the spectrum is tapped before or after the notches, and
+   the white curve shows the combined response of every enabled band.
+   **Freeze** holds the display while you fine-tune. Notched frequencies are
+   *kept* in the output.
+5. Turn the preview off again; use **Intensity** to dial the cancellation
+   from 0 % (off) to 100 % (full).
 
-**Monitoring modes** — Normal (final output), Sidechain (detector solo),
-Processing (parallel path solo, un-flipped), Delta (input − output = removed
-signal). **Comp Byp / EQ Byp** disable each stage of the parallel path in any
-mode. With both bypassed and Intensity at 100 %, Normal mode nulls to silence —
-a built-in null test.
+**Monitoring** — normal output is the default and needs no button. **Preview**
+(Sidechain section) solos the detector signal; **Preview Processed Signal**
+(bottom strip) solos the parallel path — compressor + EQ, no polarity flip,
+dry muted — i.e. exactly the signal that gets subtracted. Each section has its
+own **Bypass** toggle in its title row. With both stages bypassed and
+Intensity at 100 %, the output nulls to silence — a built-in null test.
 
 **Presets:** the browser saves/loads/deletes user presets (XML files in
 `<user-app-data>/MagicDrumDeBleed/Presets`, e.g. `~/Library/Application Support`

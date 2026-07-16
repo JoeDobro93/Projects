@@ -1,9 +1,10 @@
 #pragma once
 
 /*
-    EQPanel — bottom section of the UI: the parallel-path spectrum display
-    (with Accumulate and Freeze modes), draggable band handles, band
-    selection row and the per-band control strip.
+    EQPanel — bottom section of the UI: the processed-signal spectrum display
+    (with Accumulate / Freeze and a pre/post-EQ tap switch), the combined EQ
+    response curve, draggable band handles, the band row (select + enable +
+    solo per band) and the selected-band control strip.
 
     Band indices everywhere in this file: 0=HPF, 1=LPF, 2..6=Notch 1..5,
     matching mdd::EQProcessor and theme::Palette::bandColours.
@@ -99,6 +100,7 @@ private:
     BandState getBand (int band) const;
     juce::Point<float> handlePosition (int band, const BandState& s, juce::Rectangle<float> area) const;
     int findBandAt (juce::Point<float> pos) const;
+    void drawEqCurve (juce::Graphics& g, juce::Rectangle<float> area) const;
 
     MagicDrumDeBleedAudioProcessor& processor;
     std::function<void (int)> bandSelectedCallback;
@@ -121,6 +123,7 @@ class EQPanel : public juce::Component
 {
 public:
     explicit EQPanel (MagicDrumDeBleedAudioProcessor& proc);
+    ~EQPanel() override;   // clears any active band solo
 
     void setPalette (const theme::Palette& p);
     void paint (juce::Graphics& g) override;
@@ -131,29 +134,36 @@ private:
     void rebuildAttachments();
     void updateBandButtonColours();
     void updateShapeButtonText();
+    void updatePrePostText();
+    void updateSoloButtons();
 
     MagicDrumDeBleedAudioProcessor& processor;
     const theme::Palette* pal = &theme::dark();
 
-    juce::Label titleLabel { {}, "EQ — PARALLEL PATH" };
+    juce::Label titleLabel { {}, "EQ - PROCESSED SIGNAL" };
+    juce::ToggleButton bypassButton { "Bypass" };
 
     SpectrumDisplay spectrum;
     BandOverlay overlay;
+    juce::TextButton prePostButton    { "Post EQ" };
     juce::TextButton accumulateButton { "Accumulate" };
     juce::TextButton freezeButton     { "Freeze" };
 
+    // Per band: selector (click = edit), enable LED, solo
     juce::TextButton bandButtons[7];
+    juce::TextButton enableButtons[7];
+    juce::TextButton soloButtons[7];
     std::unique_ptr<juce::ParameterAttachment> bandOnAttachments[7];
 
-    // Per-band control strip (attachments rebuilt when the selection changes)
-    juce::ToggleButton onButton { "On" };
+    // Selected-band control strip (attachments rebuilt when the selection changes)
     ui::LabelledKnob freqKnob { "Freq" }, gainKnob { "Gain" }, qKnob { "Q" };
     juce::TextButton shapeButton;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    std::unique_ptr<ButtonAttachment> enableAttachments[7];
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
     std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment;
-    std::unique_ptr<ButtonAttachment> onAttachment;
     std::unique_ptr<juce::ParameterAttachment> shapeAttachment;
 
     int selectedBand = 0;

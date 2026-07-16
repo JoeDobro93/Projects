@@ -1,4 +1,5 @@
 #include "CompressorProcessor.h"
+#include "BiquadFilter.h"   // for mdd::exactlyEqual
 
 namespace mdd
 {
@@ -36,7 +37,7 @@ void CompressorProcessor::reset()
 
 void CompressorProcessor::setRmsWindow (double windowMs)
 {
-    if (windowMs == currentRmsWindowMs)
+    if (exactlyEqual (windowMs, currentRmsWindowMs))
         return;
 
     currentRmsWindowMs = windowMs;
@@ -93,6 +94,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 {
     const int numChannels = juce::jmin (audio.getNumChannels(), (int) delays.size());
     float minGainDb = 0.0f;
+    float maxRmsDb = -120.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -110,6 +112,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
         const double meanSquare = juce::jmax (0.0, rmsSum) / (double) rmsLength;
         const double rmsDb = 10.0 * std::log10 (meanSquare + 1.0e-30);
+        maxRmsDb = juce::jmax (maxRmsDb, (float) rmsDb);
 
         // ---- Binary engage/disengage with hold ----
         double targetDb = 0.0;
@@ -147,6 +150,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
     }
 
     lastBlockGrDb = minGainDb;
+    lastBlockRmsDb = maxRmsDb;
 }
 
 } // namespace mdd

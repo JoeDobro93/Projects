@@ -35,8 +35,8 @@ struct BandParams
 
     bool operator== (const BandParams& o) const noexcept
     {
-        return enabled == o.enabled && freqHz == o.freqHz && q == o.q
-            && gainDb == o.gainDb && shape == o.shape && slope == o.slope;
+        return enabled == o.enabled && exactlyEqual (freqHz, o.freqHz) && exactlyEqual (q, o.q)
+            && exactlyEqual (gainDb, o.gainDb) && shape == o.shape && slope == o.slope;
     }
     bool operator!= (const BandParams& o) const noexcept   { return ! (*this == o); }
 };
@@ -57,6 +57,12 @@ public:
     void setBandParameters (int bandIndex, const BandParams& params);
 
     void process (juce::AudioBuffer<double>& audio, int numSamples);
+
+    // Coefficient design shared with the UI (EQ-curve drawing), so the curve
+    // is always computed from the same maths as the audio path.
+    // bandKind: 0 = HPF, 1 = LPF, 2 = notch. Returns the number of stages.
+    static int computeCoefficients (const BandParams& params, int bandKind,
+                                    double sampleRate, BiquadFilter::Coeffs (&out)[2]);
 
 private:
     void updateBandCoefficients (int bandIndex);

@@ -31,7 +31,7 @@ struct LabelledKnob : public juce::Component
         const int textBoxHeight = juce::jlimit (12, 18, bounds.getHeight() / 5);
 
         label.setBounds (bounds.removeFromTop (labelHeight));
-        label.setFont (juce::Font (juce::FontOptions ((float) labelHeight - 2.0f)));
+        label.setFont (juce::Font (juce::FontOptions ((float) labelHeight - 2.0f, juce::Font::bold)));
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false,
                                 juce::jmin (bounds.getWidth(), 72), textBoxHeight);
         slider.setBounds (bounds);

@@ -7,43 +7,37 @@ OutputStrip::OutputStrip (MagicDrumDeBleedAudioProcessor& proc, std::function<vo
     addAndMakeVisible (intensityLabel);
 
     intensitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    intensitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+    intensitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 18);
     addAndMakeVisible (intensitySlider);
     intensityAttachment = std::make_unique<SliderAttachment> (processor.apvts, ParamIDs::intensity,
                                                               intensitySlider);
 
-    static const char* modeNames[4] = { "Normal", "Sidechain", "Processing", "Delta" };
-    for (int i = 0; i < 4; ++i)
+    // Solo the processed parallel path (compressor + EQ, no polarity flip,
+    // dry muted). Off = normal output.
+    processedPreviewButton.setClickingTogglesState (false);
+    processedPreviewButton.onClick = [this]
     {
-        modeButtons[i].setButtonText (modeNames[i]);
-        modeButtons[i].setClickingTogglesState (false);
-        modeButtons[i].onClick = [this, i]
+        if (monitorAttachment != nullptr)
         {
-            if (modeAttachment != nullptr)
-                modeAttachment->setValueAsCompleteGesture ((float) i);
-        };
-        addAndMakeVisible (modeButtons[i]);
-    }
+            const bool active = (int) processor.apvts.getRawParameterValue (ParamIDs::monitorMode)->load()
+                                    == MagicDrumDeBleedAudioProcessor::monitorProcessing;
+            monitorAttachment->setValueAsCompleteGesture (active
+                ? (float) MagicDrumDeBleedAudioProcessor::monitorNormal
+                : (float) MagicDrumDeBleedAudioProcessor::monitorProcessing);
+        }
+    };
+    addAndMakeVisible (processedPreviewButton);
 
     if (auto* modeParam = processor.apvts.getParameter (ParamIDs::monitorMode))
     {
-        modeAttachment = std::make_unique<juce::ParameterAttachment> (*modeParam, [this] (float v)
+        monitorAttachment = std::make_unique<juce::ParameterAttachment> (*modeParam, [this] (float v)
         {
-            const int mode = juce::roundToInt (v);
-            for (int i = 0; i < 4; ++i)
-                modeButtons[i].setToggleState (i == mode, juce::dontSendNotification);
+            processedPreviewButton.setToggleState (juce::roundToInt (v)
+                                                       == MagicDrumDeBleedAudioProcessor::monitorProcessing,
+                                                   juce::dontSendNotification);
         });
-        modeAttachment->sendInitialUpdate();
+        monitorAttachment->sendInitialUpdate();
     }
-
-    compBypassButton.setClickingTogglesState (true);
-    eqBypassButton.setClickingTogglesState (true);
-    addAndMakeVisible (compBypassButton);
-    addAndMakeVisible (eqBypassButton);
-    compBypassAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::compBypass,
-                                                               compBypassButton);
-    eqBypassAttachment   = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqBypass,
-                                                               eqBypassButton);
 
     themeButton.onClick = [this] { if (themeCallback) themeCallback(); };
     addAndMakeVisible (themeButton);
@@ -53,9 +47,7 @@ void OutputStrip::setPalette (const theme::Palette& p)
 {
     pal = &p;
     themeButton.setButtonText (processor.isDarkTheme() ? "Light" : "Dark");
-
-    compBypassButton.setColour (juce::TextButton::buttonOnColourId, pal->meterPeak.withAlpha (0.8f));
-    eqBypassButton.setColour   (juce::TextButton::buttonOnColourId, pal->meterPeak.withAlpha (0.8f));
+    processedPreviewButton.setColour (juce::TextButton::buttonOnColourId, pal->buttonOn);
     repaint();
 }
 
@@ -73,19 +65,13 @@ void OutputStrip::resized()
     auto r = getLocalBounds().reduced (6, 5);
 
     themeButton.setBounds (r.removeFromRight (juce::jlimit (44, 64, getWidth() / 14)).reduced (0, 3));
-    r.removeFromRight (6);
+    r.removeFromRight (8);
 
-    auto intensityArea = r.removeFromLeft (juce::roundToInt ((float) r.getWidth() * 0.34f));
+    auto intensityArea = r.removeFromLeft (juce::roundToInt ((float) r.getWidth() * 0.44f));
     intensityLabel.setBounds (intensityArea.removeFromLeft (juce::jlimit (48, 70, intensityArea.getWidth() / 3)));
     intensitySlider.setBounds (intensityArea);
-    r.removeFromLeft (8);
+    r.removeFromLeft (10);
 
-    auto bypassArea = r.removeFromRight (juce::roundToInt ((float) r.getWidth() * 0.28f));
-    const int halfW = bypassArea.getWidth() / 2;
-    compBypassButton.setBounds (bypassArea.removeFromLeft (halfW).reduced (2, 3));
-    eqBypassButton.setBounds (bypassArea.reduced (2, 3));
-
-    const int modeW = r.getWidth() / 4;
-    for (int i = 0; i < 4; ++i)
-        modeButtons[i].setBounds (r.getX() + i * modeW, r.getY() + 3, modeW - 3, r.getHeight() - 6);
+    processedPreviewButton.setBounds (r.withSizeKeepingCentre (juce::jmin (r.getWidth(), 260),
+                                                               r.getHeight() - 6));
 }

@@ -140,6 +140,15 @@ void SpectrumDisplay::paint (juce::Graphics& g)
                     (int) eqmap::freqToX (f, area) + 3, (int) area.getBottom() - 14, 34, 12,
                     juce::Justification::left, false);
 
+    // Reminder of what cuts in this EQ mean for the final output.
+    if (area.getWidth() > 320.0f)
+    {
+        g.setColour (pal->textDim.withAlpha (0.8f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f)));
+        g.drawText ("cuts here are preserved in the output",
+                    area.reduced (6.0f, 4.0f), juce::Justification::topLeft, false);
+    }
+
     // ---- Spectrum paths ----
     const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
     const float binHz = (float) (sr / (double) kFftSize);
@@ -232,7 +241,7 @@ BandOverlay::BandState BandOverlay::getBand (int band) const
     s.freq    = value (freqParams[band]);
     s.q       = band >= 2 ? value (qParams[band]) : 0.707f;
     s.gainDb  = band >= 2 ? value (gainParams[band]) : 0.0f;
-    s.shape   = (int) value (shapeParams[band]);
+    s.shape   = (int) value (shapeParams[band]);       // slope for HPF/LPF
     return s;
 }
 
@@ -271,10 +280,74 @@ int BandOverlay::findBandAt (juce::Point<float> pos) const
     return best;
 }
 
+void BandOverlay::drawEqCurve (juce::Graphics& g, juce::Rectangle<float> area) const
+{
+    // Combined magnitude response of every enabled band, computed from the
+    // exact same coefficient designs the audio path uses.
+    struct ActiveBand
+    {
+        mdd::BiquadFilter::Coeffs coeffs[2];
+        int numStages;
+    };
+    ActiveBand active[7];
+    int numActive = 0;
+
+    const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
+
+    for (int b = 0; b < 7; ++b)
+    {
+        const auto s = getBand (b);
+        if (! s.enabled)
+            continue;
+
+        mdd::BandParams bp;
+        bp.enabled = true;
+        bp.freqHz  = s.freq;
+        bp.q       = s.q;
+        bp.gainDb  = s.gainDb;
+        bp.shape   = s.shape;
+        bp.slope   = s.shape;   // for HPF/LPF the shape param holds the slope choice
+
+        const int kind = b == 0 ? 0 : (b == 1 ? 1 : 2);
+        active[numActive].numStages = mdd::EQProcessor::computeCoefficients (bp, kind, sr, active[numActive].coeffs);
+        ++numActive;
+    }
+
+    if (numActive == 0)
+        return;
+
+    // Same vertical scale as the notch handles: 0 dB at 12 % height,
+    // -48 dB at 88 % height, so each handle sits on the curve.
+    const float y0      = area.getY() + area.getHeight() * 0.12f;
+    const float pxPerDb = (area.getHeight() * 0.76f) / 48.0f;
+
+    juce::Path path;
+    bool started = false;
+    for (float x = area.getX(); x <= area.getRight(); x += 2.0f)
+    {
+        const double freq = (double) eqmap::xToFreq (x, area);
+        double mag = 1.0;
+        for (int i = 0; i < numActive; ++i)
+            for (int stage = 0; stage < active[i].numStages; ++stage)
+                mag *= mdd::BiquadFilter::magnitudeAt (active[i].coeffs[stage], freq, sr);
+
+        const float db = (float) (20.0 * std::log10 (juce::jmax (1.0e-6, mag)));
+        const float y  = y0 - db * pxPerDb;
+
+        if (! started) { path.startNewSubPath (x, y); started = true; }
+        else             path.lineTo (x, y);
+    }
+
+    g.setColour (pal->eqCurve.withAlpha (0.75f));
+    g.strokePath (path, juce::PathStrokeType (1.8f));
+}
+
 void BandOverlay::paint (juce::Graphics& g)
 {
     const auto area = getLocalBounds().toFloat().reduced (2.0f);
     static const char* labels[7] = { "H", "L", "1", "2", "3", "4", "5" };
+
+    drawEqCurve (g, area);
 
     for (int b = 0; b < 7; ++b)
     {
@@ -399,9 +472,22 @@ EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
 
+    addAndMakeVisible (bypassButton);
+    bypassAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqBypass, bypassButton);
+
     addAndMakeVisible (spectrum);
     addAndMakeVisible (overlay);
     overlay.toFront (false);
+
+    prePostButton.setClickingTogglesState (true);
+    prePostButton.setToggleState (! processor.isSpectrumPostEq(), juce::dontSendNotification);
+    prePostButton.onClick = [this]
+    {
+        processor.setSpectrumPostEq (! prePostButton.getToggleState());
+        updatePrePostText();
+    };
+    addAndMakeVisible (prePostButton);
+    updatePrePostText();
 
     accumulateButton.setClickingTogglesState (true);
     accumulateButton.onClick = [this] { spectrum.setAccumulate (accumulateButton.getToggleState()); };
@@ -419,6 +505,24 @@ EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
         bandButtons[b].onClick = [this, b] { selectBand (b); };
         addAndMakeVisible (bandButtons[b]);
 
+        // Quick per-band enable LED (no text — the colour is the state).
+        enableButtons[b].setClickingTogglesState (true);
+        addAndMakeVisible (enableButtons[b]);
+        enableAttachments[b] = std::make_unique<ButtonAttachment> (processor.apvts, eqids::onId (b),
+                                                                   enableButtons[b]);
+
+        // Exclusive solo: audition just this band (gain not applied).
+        soloButtons[b].setButtonText ("S");
+        soloButtons[b].setClickingTogglesState (false);
+        soloButtons[b].onClick = [this, b]
+        {
+            const int current = processor.getSoloBand();
+            processor.setSoloBand (current == b ? -1 : b);
+            updateSoloButtons();
+            selectBand (b);
+        };
+        addAndMakeVisible (soloButtons[b]);
+
         if (auto* onParam = processor.apvts.getParameter (eqids::onId (b)))
         {
             bandOnAttachments[b] = std::make_unique<juce::ParameterAttachment> (*onParam,
@@ -427,7 +531,6 @@ EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
         }
     }
 
-    addAndMakeVisible (onButton);
     addAndMakeVisible (freqKnob);
     addAndMakeVisible (gainKnob);
     addAndMakeVisible (qKnob);
@@ -443,6 +546,14 @@ EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (shapeButton);
 
     selectBand (0);
+    updateSoloButtons();
+}
+
+EQPanel::~EQPanel()
+{
+    // Solo is a transient audition tool — never leave it engaged when the
+    // editor goes away.
+    processor.setSoloBand (-1);
 }
 
 void EQPanel::selectBand (int band)
@@ -458,13 +569,11 @@ void EQPanel::rebuildAttachments()
     freqAttachment.reset();
     gainAttachment.reset();
     qAttachment.reset();
-    onAttachment.reset();
     shapeAttachment.reset();
 
     auto& apvts = processor.apvts;
     const bool isNotch = selectedBand >= 2;
 
-    onAttachment   = std::make_unique<ButtonAttachment> (apvts, eqids::onId (selectedBand), onButton);
     freqAttachment = std::make_unique<SliderAttachment> (apvts, eqids::freqId (selectedBand), freqKnob.slider);
 
     gainKnob.setVisible (isNotch);
@@ -495,6 +604,18 @@ void EQPanel::updateShapeButtonText()
         shapeButton.setButtonText (v < 0.5f ? "Bell" : "Flat");
 }
 
+void EQPanel::updatePrePostText()
+{
+    prePostButton.setButtonText (processor.isSpectrumPostEq() ? "Post EQ" : "Pre EQ");
+}
+
+void EQPanel::updateSoloButtons()
+{
+    const int solo = processor.getSoloBand();
+    for (int b = 0; b < 7; ++b)
+        soloButtons[b].setToggleState (b == solo, juce::dontSendNotification);
+}
+
 void EQPanel::updateBandButtonColours()
 {
     for (int b = 0; b < 7; ++b)
@@ -505,6 +626,14 @@ void EQPanel::updateBandButtonColours()
         bandButtons[b].setColour (juce::TextButton::textColourOffId,
                                   b == selectedBand ? pal->buttonTextOn : pal->buttonText);
         bandButtons[b].setColour (juce::TextButton::textColourOnId, pal->buttonTextOn);
+
+        enableButtons[b].setColour (juce::TextButton::buttonOnColourId, pal->bandColours[b]);
+        enableButtons[b].setColour (juce::TextButton::buttonColourId, pal->buttonOff);
+
+        soloButtons[b].setColour (juce::TextButton::buttonOnColourId, pal->soloActive);
+        soloButtons[b].setColour (juce::TextButton::buttonColourId, pal->buttonOff);
+        soloButtons[b].setColour (juce::TextButton::textColourOffId, pal->buttonText);
+        soloButtons[b].setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.8f));
     }
     repaint();
 }
@@ -533,33 +662,52 @@ void EQPanel::resized()
 
     const int titleHeight = juce::jlimit (16, 22, getHeight() / 11);
     auto titleRow = r.removeFromTop (titleHeight);
-    freezeButton.setBounds (titleRow.removeFromRight (juce::jlimit (54, 80, getWidth() / 10)).reduced (1));
-    titleRow.removeFromRight (4);
-    accumulateButton.setBounds (titleRow.removeFromRight (juce::jlimit (74, 100, getWidth() / 8)).reduced (1));
-    titleLabel.setFont (juce::Font (juce::FontOptions ((float) titleHeight - 5.0f, juce::Font::bold)));
-    titleLabel.setBounds (titleRow);
 
-    const int controlsHeight = juce::jlimit (56, 96, juce::roundToInt ((float) getHeight() * 0.30f));
+    freezeButton.setBounds (titleRow.removeFromRight (juce::jlimit (52, 76, getWidth() / 11)).reduced (1));
+    titleRow.removeFromRight (3);
+    accumulateButton.setBounds (titleRow.removeFromRight (juce::jlimit (72, 96, getWidth() / 8)).reduced (1));
+    titleRow.removeFromRight (3);
+    prePostButton.setBounds (titleRow.removeFromRight (juce::jlimit (56, 78, getWidth() / 10)).reduced (1));
+
+    titleLabel.setFont (juce::Font (juce::FontOptions ((float) titleHeight - 5.0f, juce::Font::bold)));
+    titleLabel.setBounds (titleRow.removeFromLeft (juce::roundToInt ((float) getWidth() * 0.34f)));
+    bypassButton.setBounds (titleRow.removeFromLeft (juce::jlimit (66, 90, getWidth() / 9)));
+
+    const int controlsHeight = juce::jlimit (60, 100, juce::roundToInt ((float) getHeight() * 0.30f));
     auto controls = r.removeFromBottom (controlsHeight);
     r.removeFromBottom (2);
 
     spectrum.setBounds (r);
     overlay.setBounds (r);
 
-    // ---- Bottom controls: band selector row (left) + selected-band strip (right) ----
-    auto bandArea = controls.removeFromLeft (juce::roundToInt ((float) controls.getWidth() * 0.40f));
-    const int buttonHeight = juce::jlimit (18, 26, bandArea.getHeight() / 3);
-    auto buttonRow = bandArea.withSizeKeepingCentre (bandArea.getWidth(), buttonHeight);
-    const int bw = buttonRow.getWidth() / 7;
+    // ---- Bottom controls: band rows (left) + selected-band strip (right) ----
+    auto bandArea = controls.removeFromLeft (juce::roundToInt ((float) controls.getWidth() * 0.42f));
+
+    const int selectorHeight = juce::jlimit (18, 26, bandArea.getHeight() * 2 / 5);
+    const int toggleHeight   = juce::jlimit (14, 20, bandArea.getHeight() / 4);
+    const int stackHeight    = selectorHeight + 2 + toggleHeight;
+    auto stack = bandArea.withSizeKeepingCentre (bandArea.getWidth(), stackHeight);
+
+    auto selectorRow = stack.removeFromTop (selectorHeight);
+    stack.removeFromTop (2);
+    auto toggleRow = stack.removeFromTop (toggleHeight);
+
+    const int bw = selectorRow.getWidth() / 7;
     for (int b = 0; b < 7; ++b)
-        bandButtons[b].setBounds (buttonRow.getX() + b * bw, buttonRow.getY(), bw - 2, buttonHeight);
+    {
+        bandButtons[b].setBounds (selectorRow.getX() + b * bw, selectorRow.getY(), bw - 2, selectorHeight);
 
-    controls.removeFromLeft (6);
-    auto onArea = controls.removeFromLeft (juce::jlimit (36, 52, controls.getWidth() / 10));
-    onButton.setBounds (onArea.withSizeKeepingCentre (onArea.getWidth(), juce::jmin (24, onArea.getHeight())));
+        // Under each selector: [enable LED][solo]
+        auto cell = juce::Rectangle<int> (toggleRow.getX() + b * bw, toggleRow.getY(), bw - 2, toggleHeight);
+        const int half = cell.getWidth() / 2;
+        enableButtons[b].setBounds (cell.removeFromLeft (half).reduced (1, 0));
+        soloButtons[b].setBounds (cell.reduced (1, 0));
+    }
 
+    controls.removeFromLeft (8);
     auto shapeArea = controls.removeFromRight (juce::jlimit (58, 84, controls.getWidth() / 5));
-    shapeButton.setBounds (shapeArea.withSizeKeepingCentre (shapeArea.getWidth() - 4, juce::jmin (24, shapeArea.getHeight())));
+    shapeButton.setBounds (shapeArea.withSizeKeepingCentre (shapeArea.getWidth() - 4,
+                                                            juce::jmin (24, shapeArea.getHeight())));
 
     const int knobW = controls.getWidth() / 3;
     freqKnob.setBounds (controls.removeFromLeft (knobW));

@@ -22,9 +22,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     using juce::AudioParameterChoice;
     using juce::ParameterID;
 
-    const auto dB = juce::AudioParameterFloatAttributes().withLabel ("dB");
-    const auto ms = juce::AudioParameterFloatAttributes().withLabel ("ms");
-    const auto hz = juce::AudioParameterFloatAttributes().withLabel ("Hz");
+    // Value text includes the unit (e.g. "-24.0 dB", "1.20 kHz") so the knob
+    // read-outs and host parameter displays are self-describing.
+    const auto dB = juce::AudioParameterFloatAttributes()
+        .withLabel ("dB")
+        .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " dB"; });
+
+    const auto ms = juce::AudioParameterFloatAttributes()
+        .withLabel ("ms")
+        .withStringFromValueFunction ([] (float v, int) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; });
+
+    const auto hz = juce::AudioParameterFloatAttributes()
+        .withLabel ("Hz")
+        .withStringFromValueFunction ([] (float v, int)
+        {
+            return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " kHz"
+                                : juce::String (v, 1) + " Hz";
+        })
+        .withValueFromStringFunction ([] (const juce::String& text)
+        {
+            const float f = text.getFloatValue();
+            return text.containsIgnoreCase ("k") ? f * 1000.0f : f;
+        });
+
+    const auto pct = juce::AudioParameterFloatAttributes()
+        .withLabel ("%")
+        .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " %"; });
 
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
@@ -34,7 +57,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::reduction, 1 }, "Reduction Target",
                     juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -24.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
-                    1, 20, 5, juce::AudioParameterIntAttributes().withLabel ("ms")));
+                    1, 20, 5, juce::AudioParameterIntAttributes()
+                                .withLabel ("ms")
+                                .withStringFromValueFunction ([] (int v, int) { return juce::String (v) + " ms"; })));
     {
         juce::NormalisableRange<float> r (1.0f, 100.0f, 0.1f);  r.setSkewForCentre (10.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::rmsWindow, 1 }, "RMS Window", r, 10.0f, ms));
@@ -92,8 +117,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 
     // ---- Output / monitoring ----
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::intensity, 1 }, "Intensity",
-                    juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f,
-                    juce::AudioParameterFloatAttributes().withLabel ("%")));
+                    juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, pct));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::monitorMode, 1 }, "Monitor",
                     juce::StringArray { "Normal", "Sidechain", "Processing", "Delta" }, 0));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::compBypass, 1 }, "Comp Bypass", false));
@@ -185,6 +209,10 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
     spectrumFifo.reset();
 
+    for (auto& f : soloFilters)
+        f.reset();
+    soloCachedBand = -2;
+
     currentLookaheadSamples = -1;   // force latency + delay refresh
     updateParametersForBlock();
 }
@@ -240,6 +268,54 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     monitorModeCached = (int) pMonitorMode->load();
     compBypassCached  = pCompBypass->load() > 0.5f;
     eqBypassCached    = pEqBypass->load() > 0.5f;
+    spectrumPostEqCached = spectrumPostEq.load();
+
+    // ---- Band-solo listen filter ----
+    soloBandCached = soloBand.load();
+    if (soloBandCached >= 0)
+    {
+        double freq = 1000.0, q = 4.0;
+        int slope = 1;
+        if (soloBandCached == 0)      { freq = pHpfFreq->load(); slope = (int) pHpfSlope->load(); }
+        else if (soloBandCached == 1) { freq = pLpfFreq->load(); slope = (int) pLpfSlope->load(); }
+        else
+        {
+            const int n = soloBandCached - 2;
+            freq = pNotchFreq[n]->load();
+            q    = pNotchQ[n]->load();
+        }
+
+        if (soloBandCached != soloCachedBand || ! mdd::exactlyEqual (freq, soloCachedFreq)
+            || ! mdd::exactlyEqual (q, soloCachedQ) || slope != soloCachedSlope)
+        {
+            const bool bandChanged = soloBandCached != soloCachedBand;
+            soloCachedBand  = soloBandCached;
+            soloCachedFreq  = freq;
+            soloCachedQ     = q;
+            soloCachedSlope = slope;
+
+            mdd::BiquadFilter::Coeffs c;
+            if (soloBandCached == 0)
+                c = slope == 0 ? mdd::BiquadFilter::makeFirstOrderHighpass (sampleRateCached, freq)
+                               : mdd::BiquadFilter::makeHighpass (sampleRateCached, freq, 0.70710678118654752);
+            else if (soloBandCached == 1)
+                c = slope == 0 ? mdd::BiquadFilter::makeFirstOrderLowpass (sampleRateCached, freq)
+                               : mdd::BiquadFilter::makeLowpass (sampleRateCached, freq, 0.70710678118654752);
+            else
+                c = mdd::BiquadFilter::makeBandpass (sampleRateCached, freq, q);
+
+            for (auto& f : soloFilters)
+            {
+                f.setCoefficients (c);
+                if (bandChanged)
+                    f.reset();
+            }
+        }
+    }
+    else
+    {
+        soloCachedBand = -2;   // force a refresh next time solo engages
+    }
 }
 
 //==============================================================================
@@ -336,11 +412,9 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
 
     compressor.process (parallelBuffer, detectorFiltered.data(), n, ! compBypassCached);
     grDb.store (compressor.getCurrentGainReductionDb());
+    detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
 
-    if (! eqBypassCached)
-        eq.process (parallelBuffer, n);
-
-    // ---- 3. Dry path: exactly the same integer-sample delay ----
+    // ---- 3. Dry path: exactly the same integer-sample delay (always ticks) ----
     for (int ch = 0; ch < nCh; ++ch)
     {
         const double* src = buffer.getReadPointer (ch);
@@ -350,8 +424,32 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
             dst[i] = delay.processSample (src[i]);
     }
 
-    // ---- 4. Spectrum feed (parallel path, post-EQ) ----
-    pushSpectrumSamples (parallelBuffer, nCh, n);
+    // ---- Band solo audition: bandpass the processed signal, mute the dry ----
+    if (soloBandCached >= 0)
+    {
+        pushSpectrumSamples (parallelBuffer, nCh, n);   // pre-EQ view while soloing
+        intensitySmoothed.skip (n);
+
+        for (int ch = 0; ch < nCh; ++ch)
+        {
+            const double* par = parallelBuffer.getReadPointer (ch);
+            double* out = buffer.getWritePointer (ch);
+            auto& filter = soloFilters[juce::jmin (ch, 1)];
+            for (int i = 0; i < n; ++i)
+                out[i] = filter.processSample (par[i]);
+        }
+        return;
+    }
+
+    // ---- 4. EQ + spectrum feed (tap point selectable pre/post EQ) ----
+    if (! spectrumPostEqCached)
+        pushSpectrumSamples (parallelBuffer, nCh, n);
+
+    if (! eqBypassCached)
+        eq.process (parallelBuffer, n);
+
+    if (spectrumPostEqCached)
+        pushSpectrumSamples (parallelBuffer, nCh, n);
 
     // ---- 5. Compose the output ----
     // The parallel path's polarity flip is linear, so it is applied here as

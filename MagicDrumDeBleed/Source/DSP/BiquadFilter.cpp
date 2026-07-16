@@ -1,5 +1,6 @@
 #include "BiquadFilter.h"
 #include <algorithm>
+#include <complex>
 
 namespace mdd
 {
@@ -106,6 +107,15 @@ BiquadFilter::Coeffs BiquadFilter::makeFirstOrderLowpass (double sampleRate, dou
     c.a1 = (w - 1.0) / a0;
     c.a2 = 0.0;
     return c;
+}
+
+double BiquadFilter::magnitudeAt (const Coeffs& c, double freq, double sampleRate)
+{
+    const std::complex<double> z  = std::polar (1.0, -2.0 * kPi * freq / sampleRate);
+    const std::complex<double> z2 = z * z;
+    const auto num = c.b0 + c.b1 * z + c.b2 * z2;
+    const auto den = 1.0 + c.a1 * z + c.a2 * z2;
+    return std::abs (num / den);
 }
 
 BiquadFilter::Coeffs BiquadFilter::makeFirstOrderHighpass (double sampleRate, double freq)

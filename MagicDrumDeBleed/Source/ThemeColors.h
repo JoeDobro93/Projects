@@ -57,6 +57,10 @@ struct Palette
     juce::Colour spectrumAccum;   // accumulated (peak-hold) layer
     juce::Colour spectrumFrozen;  // tint used while frozen
 
+    // EQ curve overlay + band solo
+    juce::Colour eqCurve;
+    juce::Colour soloActive;
+
     // Combo boxes / popups / text editors
     juce::Colour comboBackground;
     juce::Colour popupBackground;
@@ -104,6 +108,9 @@ inline const Palette& dark()
         d.spectrumFill       = juce::Colour (0x3362d0ff);
         d.spectrumAccum      = juce::Colour (0x66f2a93b);
         d.spectrumFrozen     = juce::Colour (0x22ffffff);
+
+        d.eqCurve            = juce::Colour (0xffe8ecf2);
+        d.soloActive         = juce::Colour (0xffe5c07b);
 
         d.comboBackground    = juce::Colour (0xff262b33);
         d.popupBackground    = juce::Colour (0xff1e2128);
@@ -159,6 +166,9 @@ inline const Palette& light()
         l.spectrumFill       = juce::Colour (0x330f6ea0);
         l.spectrumAccum      = juce::Colour (0x66e08c00);
         l.spectrumFrozen     = juce::Colour (0x22000000);
+
+        l.eqCurve            = juce::Colour (0xff23272e);
+        l.soloActive         = juce::Colour (0xffe08c00);
 
         l.comboBackground    = juce::Colour (0xffe4e6ea);
         l.popupBackground    = juce::Colour (0xfff4f5f7);

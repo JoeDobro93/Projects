@@ -115,7 +115,18 @@ public:
 
     // ---- Metering / analysis feeds for the UI ----
     float getGainReductionDb() const    { return grDb.load(); }
+    float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
     int   readSpectrumSamples (float* dest, int maxSamples);   // mono parallel-path samples
+
+    // Spectrum tap point: true = after the EQ (default), false = before it.
+    void setSpectrumPostEq (bool postEq)   { spectrumPostEq.store (postEq); }
+    bool isSpectrumPostEq() const          { return spectrumPostEq.load(); }
+
+    // Band solo audition (UI-only, not saved): -1 = off, 0..6 = band index.
+    // Solos a bandpass at the band's frequency/Q on the processed signal
+    // (band gain intentionally NOT applied), muting the dry path.
+    void setSoloBand (int band)            { soloBand.store (band); }
+    int  getSoloBand() const               { return soloBand.load(); }
 
     // ---- UI-state persistence (saved inside the plugin state) ----
     bool  isDarkTheme() const           { return (bool) apvts.state.getProperty ("themeDark", true); }
@@ -149,6 +160,15 @@ private:
     std::vector<float> spectrumFifoBuffer;
 
     std::atomic<float> grDb { 0.0f };
+    std::atomic<float> detectorRmsDb { -120.0f };
+    std::atomic<bool>  spectrumPostEq { true };
+
+    // Band-solo audition state + its listen filter (one biquad per channel)
+    std::atomic<int> soloBand { -1 };
+    mdd::BiquadFilter soloFilters[2];
+    int    soloCachedBand = -2;
+    double soloCachedFreq = -1.0, soloCachedQ = -1.0;
+    int    soloCachedSlope = -1;
 
     // Cached raw parameter pointers
     std::atomic<float> *pThreshold, *pReduction, *pLookahead, *pRmsWindow, *pHold, *pRelease;
@@ -162,7 +182,9 @@ private:
     int    maxLookaheadSamples = 0;
     int    currentLookaheadSamples = -1;
     int    monitorModeCached = monitorNormal;
+    int    soloBandCached = -1;
     bool   compBypassCached = false, eqBypassCached = false, scEnabledCached = true;
+    bool   spectrumPostEqCached = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MagicDrumDeBleedAudioProcessor)
 };
