@@ -112,13 +112,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
                         "Notch " + num + " Gain", juce::NormalisableRange<float> (-48.0f, 0.0f, 0.1f), -24.0f, dB));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },
-                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat", "Notch" }, 0));
+                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat", "Band" }, 0));
     }
 
     // ---- EQ gate ----
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::eqGateOn, 1 }, "EQ Gate", true));
     {
-        juce::NormalisableRange<float> r (0.0f, 500.0f, 1.0f);   r.setSkewForCentre (60.0f);
+        juce::NormalisableRange<float> r (0.0f, 2000.0f, 1.0f);  r.setSkewForCentre (150.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateHold, 1 }, "EQ Gate Hold", r, 0.0f, ms));
     }
     {

@@ -157,13 +157,13 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         {
             if (rmsDb > thresholdDb)
             {
-                eqGateEnv += attackCoeff * (1.0 - eqGateEnv);
+                eqGateEnv = 1.0;               // instant, full engagement
                 eqGateHoldCounter = eqGateHoldSamples;
             }
             else if (eqGateHoldCounter > 0)
             {
                 --eqGateHoldCounter;
-                eqGateEnv += attackCoeff * (1.0 - eqGateEnv);
+                eqGateEnv = 1.0;
             }
             else
             {

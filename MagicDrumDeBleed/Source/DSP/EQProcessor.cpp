@@ -71,10 +71,15 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
             out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q * 0.6, p.gainDb);
             break;
 
-        case 2:  // Notch — narrow, deep band-reject
-        default:
-            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q * 1.6, p.gainDb);
-            break;
+        case 2:  // Band — 4th-order contained band-reject: steep walls, and
+        default: // frequencies outside the band are left essentially untouched.
+        {
+            const double bwOct = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
+            const double s = std::pow (2.0, bwOct * 0.10);
+            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz / s, p.q * 0.8, p.gainDb * 0.56);
+            out[1] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz * s, p.q * 0.8, p.gainDb * 0.56);
+            return 2;
+        }
     }
     return 1;
 }

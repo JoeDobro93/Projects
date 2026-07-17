@@ -141,11 +141,15 @@ void SpectrumDisplay::paint (juce::Graphics& g)
 
     g.setColour (pal->textDim);
     g.setFont (juce::Font (juce::FontOptions (10.0f)));
-    for (float f : { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
+    for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f })
     {
         const auto text = f >= 1000.0f ? juce::String (f / 1000.0f, 0) + "k" : juce::String (f, 0);
-        g.drawText (text, (int) eqmap::freqToX (f, area) - 16, (int) area.getBottom() - 14, 32, 12,
-                    juce::Justification::centred, false);
+        if (f >= 20000.0f)   // right edge: keep the label inside the display
+            g.drawText (text, (int) area.getRight() - 26, (int) area.getBottom() - 14, 24, 12,
+                        juce::Justification::centredRight, false);
+        else
+            g.drawText (text, (int) eqmap::freqToX (f, area) - 16, (int) area.getBottom() - 14, 32, 12,
+                        juce::Justification::centred, false);
     }
 
     if (area.getWidth() > 320.0f)
@@ -466,8 +470,20 @@ EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (bypassButton);
     bypassAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqBypass, bypassButton);
 
-    addAndMakeVisible (gateButton);
-    gateAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqGateOn, gateButton);
+    gateLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (gateLabel);
+    addAndMakeVisible (gateBypassButton);
+    if (auto* gateParam = processor.apvts.getParameter (ParamIDs::eqGateOn))
+    {
+        gateBypassAttachment = std::make_unique<juce::ParameterAttachment> (*gateParam,
+            [this] (float v) { gateBypassButton.setToggleState (v < 0.5f, juce::dontSendNotification); });
+        gateBypassAttachment->sendInitialUpdate();
+    }
+    gateBypassButton.onClick = [this]
+    {
+        if (gateBypassAttachment != nullptr)
+            gateBypassAttachment->setValueAsCompleteGesture (gateBypassButton.getToggleState() ? 0.0f : 1.0f);
+    };
     addAndMakeVisible (gateHold);
     gateHoldAttachment = std::make_unique<SliderAttachment> (processor.apvts, ParamIDs::eqGateHold, gateHold.slider);
     addAndMakeVisible (gateRelease);
@@ -666,6 +682,7 @@ void EQPanel::setPalette (const theme::Palette& p)
     overlay.setPalette (pal);
     levelsSwitch.setPalette (pal);
     gateMeter.setPalette (pal);
+    gateLabel.setColour (juce::Label::textColourId, pal->textDim);
     titleLabel.setColour (juce::Label::textColourId, pal->title);
     updateBandButtonColours();
 }
@@ -690,13 +707,11 @@ void EQPanel::resized()
     accumulateButton.setBounds (titleRow.removeFromRight (88).reduced (1));
     titleRow.removeFromRight (8);
     levelsSwitch.setBounds (titleRow.removeFromRight (140));
-    titleRow.removeFromRight (8);
-    gateButton.setBounds (titleRow.removeFromRight (62));
     titleLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
     titleLabel.setBounds (titleRow);
     r.removeFromTop (2);
 
-    auto controls = r.removeFromBottom (108);
+    auto controls = r.removeFromBottom (124);
     r.removeFromBottom (4);
 
     spectrum.setBounds (r);
@@ -718,17 +733,20 @@ void EQPanel::resized()
 
     bypassButton.setBounds (bandArea.getX(), bandArea.getBottom() - 24, 92, 24);
 
-    // ---- Right side: gate meter, gate knobs, then the band strip ----
+    // ---- Right side: Post EQ Gate cluster, then the band strip ----
     // Same knob cell height as the compressor grid, so all knobs match.
     const int cellH = 100;
     const int knobY = controls.getY() + (controls.getHeight() - cellH) / 2;
 
     gateMeter.setBounds (controls.removeFromRight (44).withTrimmedTop (2).withTrimmedBottom (2));
     controls.removeFromRight (6);
-    auto gateRelArea  = controls.removeFromRight (102);
-    auto gateHoldArea = controls.removeFromRight (102);
-    gateHold.setBounds (gateHoldArea.getX(), knobY, 102, cellH);
-    gateRelease.setBounds (gateRelArea.getX(), knobY, 102, cellH);
+    auto gateArea = controls.removeFromRight (204);
+    auto gateHeader = gateArea.removeFromTop (20);
+    gateLabel.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+    gateLabel.setBounds (gateHeader.removeFromLeft (112));
+    gateBypassButton.setBounds (gateHeader);
+    gateHold.setBounds (gateArea.getX(),       gateArea.getY() + 2, 102, cellH);
+    gateRelease.setBounds (gateArea.getX() + 102, gateArea.getY() + 2, 102, cellH);
     controls.removeFromRight (8);
 
     auto selectorArea = controls.removeFromRight (58);

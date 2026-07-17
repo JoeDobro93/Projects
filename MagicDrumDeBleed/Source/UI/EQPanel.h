@@ -27,9 +27,9 @@ namespace eqids
 
 namespace eqmap
 {
-    // Log-frequency mapping shared by the spectrum and the overlay. Range is
-    // 10 Hz .. 20 kHz — a standard full-range EQ axis (decades evenly spaced).
-    inline constexpr float kMinHz = 10.0f, kMaxHz = 20000.0f;
+    // Log-frequency mapping shared by the spectrum and the overlay:
+    // the classic 20 Hz .. 20 kHz EQ axis, 20 kHz at the right edge.
+    inline constexpr float kMinHz = 20.0f, kMaxHz = 20000.0f;
 
     inline float freqToX (float freq, juce::Rectangle<float> area)
     {
@@ -150,10 +150,11 @@ private:
     SpectrumDisplay spectrum;
     BandOverlay overlay;
 
-    // EQ gate: blends the parallel path from EQ'd (drum sounding) to raw
-    // inverted-cancelling (silence) using the shared detector.
-    juce::ToggleButton gateButton { "Gate" };
-    ui::LabelledKnob gateHold { "Gate Hold" }, gateRelease { "Gate Rel" };
+    // Post EQ Gate: blends the parallel path from EQ'd (drum sounding) to
+    // raw inverted-cancelling (silence) using the shared detector.
+    juce::Label gateLabel { {}, "POST EQ GATE" };
+    juce::ToggleButton gateBypassButton { "Bypass" };
+    ui::LabelledKnob gateHold { "Hold" }, gateRelease { "Release" };
     GainReductionMeter gateMeter;
     ui::SlideSwitch levelsSwitch { "Input", "Output", {} };
     juce::TextButton accumulateButton { "Accumulate" };
@@ -173,7 +174,8 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<ButtonAttachment> enableAttachments[7];
-    std::unique_ptr<ButtonAttachment> bypassAttachment, gateAttachment;
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<juce::ParameterAttachment> gateBypassAttachment;   // inverted: checked = gate off
     std::unique_ptr<SliderAttachment> gateHoldAttachment, gateReleaseAttachment;
     std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment;
     std::unique_ptr<juce::ParameterAttachment> shapeAttachment;
