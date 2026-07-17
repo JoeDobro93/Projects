@@ -32,7 +32,18 @@ void CompressorProcessor::reset()
 
     currentGainDb = 0.0;
     holdCounter = 0;
+    eqGateEnv = 0.0;
+    eqGateHoldCounter = 0;
     lastBlockGrDb = 0.0f;
+}
+
+void CompressorProcessor::setEqGateParameters (double holdMs, double releaseMs)
+{
+    eqGateHoldSamples = (int) std::lround (holdMs * 0.001 * sr);
+    // Coefficient chosen so the envelope falls ~60 dB (to 0.001) within the
+    // release time — "fully cancels" on the user's timescale.
+    const double relSamples = juce::jmax (1.0, releaseMs * 0.001 * sr);
+    eqGateReleaseCoeff = 1.0 - std::exp (-6.9078 / relSamples);
 }
 
 void CompressorProcessor::setRmsWindow (double windowMs)
@@ -90,7 +101,7 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 }
 
 void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const double* detector,
-                                   int numSamples, bool applyGain)
+                                   int numSamples, bool applyGain, double* eqGateEnvOut)
 {
     const int numChannels = juce::jmin (audio.getNumChannels(), (int) delays.size());
     float minGainDb = 0.0f;
@@ -140,6 +151,26 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
         const double gain = applyGain ? std::pow (10.0, currentGainDb / 20.0) : 1.0;
         minGainDb = juce::jmin (minGainDb, (float) currentGainDb);
+
+        // ---- EQ-gate envelope: instant engage (within lookahead), hold, release ----
+        if (eqGateEnvOut != nullptr)
+        {
+            if (rmsDb > thresholdDb)
+            {
+                eqGateEnv += attackCoeff * (1.0 - eqGateEnv);
+                eqGateHoldCounter = eqGateHoldSamples;
+            }
+            else if (eqGateHoldCounter > 0)
+            {
+                --eqGateHoldCounter;
+                eqGateEnv += attackCoeff * (1.0 - eqGateEnv);
+            }
+            else
+            {
+                eqGateEnv += eqGateReleaseCoeff * (0.0 - eqGateEnv);
+            }
+            eqGateEnvOut[i] = eqGateEnv;
+        }
 
         // ---- Delay the audio by the lookahead and apply the gain ----
         for (int ch = 0; ch < numChannels; ++ch)

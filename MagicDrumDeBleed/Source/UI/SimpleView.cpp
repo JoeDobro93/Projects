@@ -2,12 +2,14 @@
 
 SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onAdvancedView)
     : processor (proc),
-      inputMeter ([&proc] { return proc.getDetectorRmsDb(); },
+      inputMeter ("IN", [&proc] { return proc.getDetectorRmsDb(); },
                   proc.apvts.getParameter (ParamIDs::threshold)),
-      grMeter ([&proc] { return proc.getGainReductionDb(); })
+      grMeter ("GR", [&proc] { return proc.getGainReductionDb(); }),
+      outputMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); }, nullptr)
 {
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (grMeter);
+    addAndMakeVisible (outputMeter);
 
     intensityLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (intensityLabel);
@@ -26,6 +28,7 @@ void SimpleView::setPalette (const theme::Palette& p)
     pal = &p;
     inputMeter.setPalette (&p);
     grMeter.setPalette (&p);
+    outputMeter.setPalette (&p);
     intensityLabel.setColour (juce::Label::textColourId, p.text);
     repaint();
 }
@@ -56,18 +59,19 @@ void SimpleView::resized()
     advancedButton.setBounds (buttonRow.withSizeKeepingCentre (juce::jmin (buttonRow.getWidth(), 180), buttonHeight - 4));
     r.removeFromBottom (8);
 
-    // Meters (2 columns) on the left, vertical Intensity on the right.
-    auto intensityArea = r.removeFromRight (juce::roundToInt ((float) r.getWidth() * 0.34f));
-    r.removeFromRight (10);
-
+    // Left to right: IN, GR, Intensity (vertical), OUT.
     const int gap = 8;
-    const int meterW = (r.getWidth() - gap) / 2;
+    const int meterW = 56;
     inputMeter.setBounds (r.removeFromLeft (meterW));
     r.removeFromLeft (gap);
     grMeter.setBounds (r.removeFromLeft (meterW));
+    r.removeFromLeft (gap);
 
-    const int labelH = juce::jlimit (14, 20, getHeight() / 18);
-    intensityLabel.setFont (juce::Font (juce::FontOptions ((float) labelH - 3.0f, juce::Font::bold)));
-    intensityLabel.setBounds (intensityArea.removeFromTop (labelH));
-    intensitySlider.setBounds (intensityArea.reduced (2, 4));
+    auto outArea = r.removeFromRight (meterW);
+    outputMeter.setBounds (outArea);
+    r.removeFromRight (gap);
+
+    intensityLabel.setFont (juce::Font (juce::FontOptions (13.0f, juce::Font::bold)));
+    intensityLabel.setBounds (r.removeFromTop (16));
+    intensitySlider.setBounds (r.reduced (2, 2));
 }

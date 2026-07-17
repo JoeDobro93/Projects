@@ -115,6 +115,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                         "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat", "Notch" }, 0));
     }
 
+    // ---- EQ gate ----
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::eqGateOn, 1 }, "EQ Gate", true));
+    {
+        juce::NormalisableRange<float> r (0.0f, 500.0f, 1.0f);   r.setSkewForCentre (60.0f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateHold, 1 }, "EQ Gate Hold", r, 0.0f, ms));
+    }
+    {
+        juce::NormalisableRange<float> r (5.0f, 5000.0f, 1.0f);  r.setSkewForCentre (800.0f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateRelease, 1 }, "EQ Gate Release", r, 1000.0f, ms));
+    }
+
     // ---- Output / monitoring ----
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::intensity, 1 }, "Intensity",
                     juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, pct));
@@ -161,6 +172,10 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
         pNotchShape[i] = raw (ParamIDs::notchShape (i));
     }
 
+    pEqGateOn      = raw (ParamIDs::eqGateOn);
+    pEqGateHold    = raw (ParamIDs::eqGateHold);
+    pEqGateRelease = raw (ParamIDs::eqGateRelease);
+
     pIntensity   = raw (ParamIDs::intensity);
     pMonitorMode = raw (ParamIDs::monitorMode);
     pCompBypass  = raw (ParamIDs::compBypass);
@@ -201,8 +216,10 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
     conversionBuffer.setSize (numCh, block);
     parallelBuffer.setSize (numCh, block);
     dryBuffer.setSize (numCh, block);
+    preEqBuffer.setSize (numCh, block);
     detectorRaw.assign ((size_t) block, 0.0);
     detectorFiltered.assign ((size_t) block, 0.0);
+    eqGateEnvBuffer.assign ((size_t) block, 0.0);
 
     intensitySmoothed.reset (sampleRate, 0.05);
     intensitySmoothed.setCurrentAndTargetValue (pIntensity->load() * 0.01);
@@ -234,6 +251,8 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     // ---- Compressor / sidechain ----
     compressor.setParameters (pThreshold->load(), pReduction->load(), lookahead,
                               pRmsWindow->load(), pHold->load(), pRelease->load());
+    compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
+    eqGateOnCached = pEqGateOn->load() > 0.5f;
     scFilter.setParameters (pScFreq->load(), pScQ->load());
     scEnabledCached = pScEnable->load() > 0.5f;
 
@@ -383,8 +402,10 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     {
         parallelBuffer.setSize (parallelBuffer.getNumChannels(), n, false, false, true);
         dryBuffer.setSize (dryBuffer.getNumChannels(), n, false, false, true);
+        preEqBuffer.setSize (preEqBuffer.getNumChannels(), n, false, false, true);
         detectorRaw.resize ((size_t) n, 0.0);
         detectorFiltered.resize ((size_t) n, 0.0);
+        eqGateEnvBuffer.resize ((size_t) n, 0.0);
     }
 
     updateParametersForBlock();
@@ -410,7 +431,8 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     for (int ch = 0; ch < nCh; ++ch)
         parallelBuffer.copyFrom (ch, 0, buffer, ch, 0, n);
 
-    compressor.process (parallelBuffer, detectorFiltered.data(), n, ! compBypassCached);
+    compressor.process (parallelBuffer, detectorFiltered.data(), n, ! compBypassCached,
+                        eqGateEnvBuffer.data());
     grDb.store (compressor.getCurrentGainReductionDb());
     detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
 
@@ -438,15 +460,47 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
             for (int i = 0; i < n; ++i)
                 out[i] = filter.processSample (par[i]);
         }
+        updateOutputPeak (buffer, nCh, n);
         return;
     }
 
-    // ---- 4. EQ + spectrum feed (tap point selectable pre/post EQ) ----
+    // ---- 4. EQ + gate blend + spectrum feed (tap selectable pre/post) ----
     if (! spectrumPostEqCached)
         pushSpectrumSamples (parallelBuffer, nCh, n);
 
-    if (! eqBypassCached)
+    const bool eqActive   = ! eqBypassCached;
+    const bool gateActive = eqActive && eqGateOnCached;
+
+    if (gateActive)
+        for (int ch = 0; ch < nCh; ++ch)
+            preEqBuffer.copyFrom (ch, 0, parallelBuffer, ch, 0, n);
+
+    if (eqActive)
         eq.process (parallelBuffer, n);
+
+    if (gateActive)
+    {
+        // EQ gate: crossfade the parallel path between the EQ'd signal
+        // (envelope = 1, drum sounding) and the raw inverted-cancelling
+        // signal (envelope = 0, silence between hits).
+        float minEnvDb = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const double env = eqGateEnvBuffer[(size_t) i];
+            for (int ch = 0; ch < nCh; ++ch)
+            {
+                double* par = parallelBuffer.getWritePointer (ch);
+                par[i] = par[i] * env + preEqBuffer.getReadPointer (ch)[i] * (1.0 - env);
+            }
+            minEnvDb = juce::jmin (minEnvDb,
+                                   (float) (20.0 * std::log10 (juce::jmax (1.0e-4, env))));
+        }
+        eqGateDb.store (minEnvDb);
+    }
+    else
+    {
+        eqGateDb.store (0.0f);
+    }
 
     if (spectrumPostEqCached)
         pushSpectrumSamples (parallelBuffer, nCh, n);
@@ -508,6 +562,17 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
             break;
         }
     }
+
+    updateOutputPeak (buffer, nCh, n);
+}
+
+void MagicDrumDeBleedAudioProcessor::updateOutputPeak (const juce::AudioBuffer<double>& buffer,
+                                                       int numChannels, int numSamples)
+{
+    double peak = 0.0;
+    for (int ch = 0; ch < numChannels; ++ch)
+        peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, numSamples));
+    outputPeakDb.store ((float) (20.0 * std::log10 (juce::jmax (1.0e-6, peak))));
 }
 
 //==============================================================================

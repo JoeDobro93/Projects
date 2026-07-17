@@ -16,8 +16,8 @@
 class SimpleView : public juce::Component
 {
 public:
-    static constexpr int kLogicalW = 300;
-    static constexpr int kLogicalH = 380;
+    static constexpr int kLogicalW = 360;
+    static constexpr int kLogicalH = 400;
 
     SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onAdvancedView);
 
@@ -31,6 +31,7 @@ private:
 
     InputLevelMeter    inputMeter;
     GainReductionMeter grMeter;
+    InputLevelMeter    outputMeter;
 
     juce::Label  intensityLabel { {}, "Intensity" };
     juce::Slider intensitySlider;

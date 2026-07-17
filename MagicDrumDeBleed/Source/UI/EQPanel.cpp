@@ -457,13 +457,22 @@ void BandOverlay::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWh
 EQPanel::EQPanel (MagicDrumDeBleedAudioProcessor& proc)
     : processor (proc),
       spectrum (proc),
-      overlay (proc, [this] (int band) { selectBand (band); })
+      overlay (proc, [this] (int band) { selectBand (band); }),
+      gateMeter ("EQG", [&proc] { return proc.getEqGateReductionDb(); })
 {
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
 
     addAndMakeVisible (bypassButton);
     bypassAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqBypass, bypassButton);
+
+    addAndMakeVisible (gateButton);
+    gateAttachment = std::make_unique<ButtonAttachment> (processor.apvts, ParamIDs::eqGateOn, gateButton);
+    addAndMakeVisible (gateHold);
+    gateHoldAttachment = std::make_unique<SliderAttachment> (processor.apvts, ParamIDs::eqGateHold, gateHold.slider);
+    addAndMakeVisible (gateRelease);
+    gateReleaseAttachment = std::make_unique<SliderAttachment> (processor.apvts, ParamIDs::eqGateRelease, gateRelease.slider);
+    addAndMakeVisible (gateMeter);
 
     addAndMakeVisible (spectrum);
     addAndMakeVisible (overlay);
@@ -656,6 +665,7 @@ void EQPanel::setPalette (const theme::Palette& p)
     spectrum.setPalette (pal);
     overlay.setPalette (pal);
     levelsSwitch.setPalette (pal);
+    gateMeter.setPalette (pal);
     titleLabel.setColour (juce::Label::textColourId, pal->title);
     updateBandButtonColours();
 }
@@ -675,23 +685,25 @@ void EQPanel::resized()
     auto r = getLocalBounds().reduced (8, 8);
 
     auto titleRow = r.removeFromTop (20);
-    freezeButton.setBounds (titleRow.removeFromRight (70).reduced (1));
+    freezeButton.setBounds (titleRow.removeFromRight (66).reduced (1));
     titleRow.removeFromRight (3);
-    accumulateButton.setBounds (titleRow.removeFromRight (92).reduced (1));
+    accumulateButton.setBounds (titleRow.removeFromRight (88).reduced (1));
     titleRow.removeFromRight (8);
-    levelsSwitch.setBounds (titleRow.removeFromRight (150));
+    levelsSwitch.setBounds (titleRow.removeFromRight (140));
+    titleRow.removeFromRight (8);
+    gateButton.setBounds (titleRow.removeFromRight (62));
     titleLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
     titleLabel.setBounds (titleRow);
     r.removeFromTop (2);
 
-    auto controls = r.removeFromBottom (90);
+    auto controls = r.removeFromBottom (108);
     r.removeFromBottom (4);
 
     spectrum.setBounds (r);
     overlay.setBounds (r);
 
     // ---- Left: band selector row, enable/solo row, Bypass bottom-left ----
-    auto bandArea = controls.removeFromLeft (420);
+    auto bandArea = controls.removeFromLeft (320);
 
     const int bw = bandArea.getWidth() / 7;
     for (int b = 0; b < 7; ++b)
@@ -706,10 +718,22 @@ void EQPanel::resized()
 
     bypassButton.setBounds (bandArea.getX(), bandArea.getBottom() - 24, 92, 24);
 
-    // ---- Right: knobs in the SAME cell size as the compressor's, plus the
-    //      shape/slope selector column ----
-    controls.removeFromLeft (8);
-    auto selectorArea = controls.removeFromRight (92);
+    // ---- Right side: gate meter, gate knobs, then the band strip ----
+    // Same knob cell height as the compressor grid, so all knobs match.
+    const int cellH = 100;
+    const int knobY = controls.getY() + (controls.getHeight() - cellH) / 2;
+
+    gateMeter.setBounds (controls.removeFromRight (44).withTrimmedTop (2).withTrimmedBottom (2));
+    controls.removeFromRight (6);
+    auto gateRelArea  = controls.removeFromRight (102);
+    auto gateHoldArea = controls.removeFromRight (102);
+    gateHold.setBounds (gateHoldArea.getX(), knobY, 102, cellH);
+    gateRelease.setBounds (gateRelArea.getX(), knobY, 102, cellH);
+    controls.removeFromRight (8);
+
+    auto selectorArea = controls.removeFromRight (58);
+    controls.removeFromRight (4);
+    controls.removeFromLeft (6);
 
     const bool isNotch = selectedBand >= 2;
     if (isNotch)
@@ -726,10 +750,7 @@ void EQPanel::resized()
         slopeButtons[1].setBounds (stack.reduced (1));
     }
 
-    const int cellW = juce::jmin (152, controls.getWidth() / 3);
-    const int cellH = 82;                            // matches the compressor knob cells
-    const int knobY = controls.getY() + (controls.getHeight() - cellH) / 2;
-
+    const int cellW = juce::jmin (102, controls.getWidth() / 3);
     if (isNotch)
     {
         freqKnob.setBounds (controls.getX(),             knobY, cellW, cellH);
@@ -738,7 +759,6 @@ void EQPanel::resized()
     }
     else
     {
-        // Single Freq knob, centred in the strip.
         freqKnob.setBounds (controls.getX() + (controls.getWidth() - cellW) / 2, knobY, cellW, cellH);
     }
 }

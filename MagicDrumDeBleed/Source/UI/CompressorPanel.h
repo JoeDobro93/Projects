@@ -24,7 +24,8 @@ class InputLevelMeter : public juce::Component, private juce::Timer
 public:
     // thresholdParam may be null for a read-only meter; when supplied the
     // threshold line becomes click/drag editable.
-    InputLevelMeter (std::function<float()> levelGetter, juce::RangedAudioParameter* thresholdParam);
+    InputLevelMeter (juce::String captionText, std::function<float()> levelGetter,
+                     juce::RangedAudioParameter* thresholdParam);
 
     void setPalette (const theme::Palette* p)   { pal = p; repaint(); }
     void paint (juce::Graphics& g) override;
@@ -43,6 +44,7 @@ private:
 
     static constexpr float minDb = -60.0f, maxDb = 0.0f;
 
+    juce::String caption;
     std::function<float()> getLevel;
     juce::RangedAudioParameter* threshold = nullptr;
     bool dragging = false;
@@ -59,13 +61,14 @@ private:
 class GainReductionMeter : public juce::Component, private juce::Timer
 {
 public:
-    explicit GainReductionMeter (std::function<float()> valueGetter);
+    GainReductionMeter (juce::String captionText, std::function<float()> valueGetter);
     void setPalette (const theme::Palette* p)   { pal = p; repaint(); }
     void paint (juce::Graphics& g) override;
 
 private:
     void timerCallback() override;
 
+    juce::String caption;
     std::function<float()> getValue;
     float displayedDb = 0.0f;
     const theme::Palette* pal = &theme::dark();

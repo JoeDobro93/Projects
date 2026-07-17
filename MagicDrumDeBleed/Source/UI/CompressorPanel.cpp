@@ -1,8 +1,9 @@
 #include "CompressorPanel.h"
 
 //==============================================================================
-InputLevelMeter::InputLevelMeter (std::function<float()> levelGetter, juce::RangedAudioParameter* thresholdParam)
-    : getLevel (std::move (levelGetter)), threshold (thresholdParam)
+InputLevelMeter::InputLevelMeter (juce::String captionText, std::function<float()> levelGetter,
+                                  juce::RangedAudioParameter* thresholdParam)
+    : caption (std::move (captionText)), getLevel (std::move (levelGetter)), threshold (thresholdParam)
 {
     startTimerHz (30);
 }
@@ -96,7 +97,7 @@ void InputLevelMeter::paint (juce::Graphics& g)
 
     g.setColour (pal->textDim);
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-    g.drawText ("IN", bounds.removeFromTop (12.0f), juce::Justification::centred, false);
+    g.drawText (caption, bounds.removeFromTop (12.0f), juce::Justification::centred, false);
 
     auto bar = barArea();
 
@@ -148,8 +149,8 @@ void InputLevelMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-GainReductionMeter::GainReductionMeter (std::function<float()> valueGetter)
-    : getValue (std::move (valueGetter))
+GainReductionMeter::GainReductionMeter (juce::String captionText, std::function<float()> valueGetter)
+    : caption (std::move (captionText)), getValue (std::move (valueGetter))
 {
     startTimerHz (30);
 }
@@ -175,7 +176,7 @@ void GainReductionMeter::paint (juce::Graphics& g)
 
     g.setColour (pal->textDim);
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-    g.drawText ("GR", bounds.removeFromTop (12.0f), juce::Justification::centred, false);
+    g.drawText (caption, bounds.removeFromTop (12.0f), juce::Justification::centred, false);
 
     g.setFont (juce::Font (juce::FontOptions (juce::jlimit (9.0f, 12.0f, bounds.getWidth() * 0.28f))));
     g.drawText (juce::String (displayedDb, 1), bounds.removeFromBottom (14.0f),
@@ -204,9 +205,9 @@ void GainReductionMeter::paint (juce::Graphics& g)
 //==============================================================================
 CompressorPanel::CompressorPanel (MagicDrumDeBleedAudioProcessor& proc)
     : processor (proc),
-      inputMeter ([&proc] { return proc.getDetectorRmsDb(); },
+      inputMeter ("IN", [&proc] { return proc.getDetectorRmsDb(); },
                   proc.apvts.getParameter (ParamIDs::threshold)),
-      grMeter ([&proc] { return proc.getGainReductionDb(); })
+      grMeter ("GR", [&proc] { return proc.getGainReductionDb(); })
 {
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);

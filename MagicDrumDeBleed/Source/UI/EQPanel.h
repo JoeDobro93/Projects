@@ -14,6 +14,7 @@
 #include "../PluginProcessor.h"
 #include "../ThemeColors.h"
 #include "UIHelpers.h"
+#include "CompressorPanel.h"   // GainReductionMeter (reused for the EQ gate)
 
 namespace eqids
 {
@@ -148,6 +149,12 @@ private:
 
     SpectrumDisplay spectrum;
     BandOverlay overlay;
+
+    // EQ gate: blends the parallel path from EQ'd (drum sounding) to raw
+    // inverted-cancelling (silence) using the shared detector.
+    juce::ToggleButton gateButton { "Gate" };
+    ui::LabelledKnob gateHold { "Gate Hold" }, gateRelease { "Gate Rel" };
+    GainReductionMeter gateMeter;
     ui::SlideSwitch levelsSwitch { "Input", "Output", {} };
     juce::TextButton accumulateButton { "Accumulate" };
     juce::TextButton freezeButton     { "Freeze" };
@@ -166,7 +173,8 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<ButtonAttachment> enableAttachments[7];
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<ButtonAttachment> bypassAttachment, gateAttachment;
+    std::unique_ptr<SliderAttachment> gateHoldAttachment, gateReleaseAttachment;
     std::unique_ptr<SliderAttachment> freqAttachment, gainAttachment, qAttachment;
     std::unique_ptr<juce::ParameterAttachment> shapeAttachment;
 

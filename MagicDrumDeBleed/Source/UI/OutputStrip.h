@@ -29,9 +29,6 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     const theme::Palette* pal = &theme::dark();
 
-    juce::Label  intensityLabel { {}, "Intensity" };
-    juce::Slider intensitySlider;
-
     juce::TextButton processedPreviewButton { "Preview Processed Signal" };
     std::unique_ptr<juce::ParameterAttachment> monitorAttachment;
 
@@ -39,9 +36,6 @@ private:
     juce::TextButton simpleButton { "Simple" };
     std::function<void()> themeCallback;
     std::function<void()> simpleCallback;
-
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-    std::unique_ptr<SliderAttachment> intensityAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OutputStrip)
 };

@@ -5,15 +5,6 @@ OutputStrip::OutputStrip (MagicDrumDeBleedAudioProcessor& proc,
                           std::function<void()> onSimpleView)
     : processor (proc), themeCallback (std::move (onThemeToggle)), simpleCallback (std::move (onSimpleView))
 {
-    intensityLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (intensityLabel);
-
-    intensitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    intensitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 18);
-    addAndMakeVisible (intensitySlider);
-    intensityAttachment = std::make_unique<SliderAttachment> (processor.apvts, ParamIDs::intensity,
-                                                              intensitySlider);
-
     // Solo the processed parallel path (compressor + EQ, no polarity flip,
     // dry muted). Off = normal output.
     processedPreviewButton.setClickingTogglesState (false);
@@ -69,16 +60,11 @@ void OutputStrip::resized()
 {
     auto r = getLocalBounds().reduced (6, 5);
 
-    themeButton.setBounds (r.removeFromRight (juce::jlimit (44, 64, getWidth() / 14)).reduced (0, 3));
+    themeButton.setBounds (r.removeFromRight (64).reduced (0, 3));
     r.removeFromRight (4);
-    simpleButton.setBounds (r.removeFromRight (juce::jlimit (48, 68, getWidth() / 13)).reduced (0, 3));
+    simpleButton.setBounds (r.removeFromRight (68).reduced (0, 3));
     r.removeFromRight (8);
 
-    auto intensityArea = r.removeFromLeft (juce::roundToInt ((float) r.getWidth() * 0.44f));
-    intensityLabel.setBounds (intensityArea.removeFromLeft (juce::jlimit (48, 70, intensityArea.getWidth() / 3)));
-    intensitySlider.setBounds (intensityArea);
-    r.removeFromLeft (10);
-
-    processedPreviewButton.setBounds (r.withSizeKeepingCentre (juce::jmin (r.getWidth(), 260),
+    processedPreviewButton.setBounds (r.withSizeKeepingCentre (juce::jmin (r.getWidth(), 280),
                                                                r.getHeight() - 6));
 }

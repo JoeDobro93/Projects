@@ -18,8 +18,8 @@ class AdvancedView : public juce::Component
 {
 public:
     // Logical design size (scale == 1). Proportions are fixed at this ratio.
-    static constexpr int kLogicalW = 1000;
-    static constexpr int kLogicalH = 680;
+    static constexpr int kLogicalW = 1100;
+    static constexpr int kLogicalH = 760;
 
     AdvancedView (MagicDrumDeBleedAudioProcessor& proc,
                   std::function<void()> onThemeToggle,
@@ -37,6 +37,12 @@ private:
     CompressorPanel compressorPanel;
     EQPanel         eqPanel;
     OutputStrip     outputStrip;
+
+    // Right column: vertical Intensity + full-height output meter.
+    juce::Label  intensityLabel { {}, "Intensity" };
+    juce::Slider intensitySlider;
+    InputLevelMeter outputMeter;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> intensityAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AdvancedView)
 };

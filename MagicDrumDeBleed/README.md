@@ -118,7 +118,11 @@ A `Standalone` build is also produced — useful for quick testing without a DAW
    another band moves it). The **Input/Output** switch selects whether the
    spectrum is tapped before or after the notches, and the white curve shows
    the combined response of every enabled band. **Freeze** holds the display
-   while you fine-tune. Notched frequencies are *kept* in the output.
+   while you fine-tune. Notched frequencies are *kept* in the output. The
+   **EQ Gate** (on by default; Gate toggle + Hold/Release knobs and the EQG
+   meter in the EQ section) blends the EQ out using the same detector: hits
+   engage the EQ fully so the drum decays naturally, and between hits the
+   path returns to full cancellation so the notches cannot rumble.
 5. Turn the preview off again; use **Intensity** to dial the cancellation
    from 0 % (off) to 100 % (full).
 

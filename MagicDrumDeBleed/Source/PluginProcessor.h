@@ -57,6 +57,10 @@ namespace ParamIDs
     inline juce::String notchGain  (int i)   { return "notch" + juce::String (i + 1) + "Gain"; }
     inline juce::String notchShape (int i)   { return "notch" + juce::String (i + 1) + "Shape"; }
 
+    inline constexpr const char* eqGateOn      = "eqGateOn";
+    inline constexpr const char* eqGateHold    = "eqGateHold";
+    inline constexpr const char* eqGateRelease = "eqGateRelease";
+
     inline constexpr const char* intensity    = "intensity";
     inline constexpr const char* monitorMode  = "monitorMode";
     inline constexpr const char* compBypass   = "compBypass";
@@ -116,6 +120,8 @@ public:
     // ---- Metering / analysis feeds for the UI ----
     float getGainReductionDb() const    { return grDb.load(); }
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
+    float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
+    float getOutputPeakDb() const       { return outputPeakDb.load(); }
     int   readSpectrumSamples (float* dest, int maxSamples);   // mono parallel-path samples
 
     // Spectrum tap point: true = after the EQ (default), false = before it.
@@ -144,6 +150,7 @@ public:
 private:
     void updateParametersForBlock();
     void processInternal (juce::AudioBuffer<double>& buffer);
+    void updateOutputPeak (const juce::AudioBuffer<double>& buffer, int numChannels, int numSamples);
     void pushSpectrumSamples (const juce::AudioBuffer<double>& parallel, int numChannels, int numSamples);
 
     // DSP blocks
@@ -157,7 +164,8 @@ private:
     juce::AudioBuffer<double> conversionBuffer;   // float-host staging
     juce::AudioBuffer<double> parallelBuffer;
     juce::AudioBuffer<double> dryBuffer;
-    std::vector<double> detectorRaw, detectorFiltered;
+    juce::AudioBuffer<double> preEqBuffer;        // parallel path before the EQ (gate blend)
+    std::vector<double> detectorRaw, detectorFiltered, eqGateEnvBuffer;
 
     juce::SmoothedValue<double> intensitySmoothed;
 
@@ -168,6 +176,8 @@ private:
 
     std::atomic<float> grDb { 0.0f };
     std::atomic<float> detectorRmsDb { -120.0f };
+    std::atomic<float> eqGateDb { 0.0f };
+    std::atomic<float> outputPeakDb { -120.0f };
     std::atomic<bool>  spectrumPostEq { true };
 
     // Band-solo audition state + its listen filter (one biquad per channel)
@@ -183,6 +193,7 @@ private:
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
+    std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
 
     // Per-block cached control state
     double sampleRateCached = 44100.0;
@@ -191,7 +202,7 @@ private:
     int    monitorModeCached = monitorNormal;
     int    soloBandCached = -1;
     bool   compBypassCached = false, eqBypassCached = false, scEnabledCached = true;
-    bool   spectrumPostEqCached = true;
+    bool   spectrumPostEqCached = true, eqGateOnCached = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MagicDrumDeBleedAudioProcessor)
 };

@@ -71,6 +71,9 @@ public:
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
                         double rmsWindowMs, double holdMs, double releaseMs);
 
+    // EQ-gate envelope timing (shares the detector/threshold/lookahead).
+    void setEqGateParameters (double holdMs, double releaseMs);
+
     /*  Delays `audio` in place by the lookahead amount, computes the gain
         envelope from `detector` (mono, un-delayed, already sidechain-filtered
         by the caller) and applies it to all channels.
@@ -79,8 +82,13 @@ public:
         delay still runs (so path alignment and latency never change) but the
         gain stays at 0 dB and the envelope state is kept released.
     */
+    /*  eqGateEnv (optional): per-sample 0..1 envelope for the EQ gate — 1
+        while the detector is above threshold (fast attack inside the
+        lookahead window), then holds and releases towards 0. Driven by the
+        exact same RMS detector as the main gate.
+    */
     void process (juce::AudioBuffer<double>& audio, const double* detector,
-                  int numSamples, bool applyGain);
+                  int numSamples, bool applyGain, double* eqGateEnv = nullptr);
 
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.
     float getCurrentGainReductionDb() const noexcept   { return lastBlockGrDb; }
@@ -106,6 +114,11 @@ private:
     // Envelope
     double currentGainDb = 0.0;
     int holdCounter = 0;
+
+    // EQ-gate envelope (0..1 linear)
+    double eqGateEnv = 0.0;
+    int eqGateHoldCounter = 0, eqGateHoldSamples = 0;
+    double eqGateReleaseCoeff = 1.0;
 
     // Cached parameters
     double thresholdDb = -20.0, reductionDb = -24.0;
