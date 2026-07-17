@@ -61,6 +61,8 @@ target_sources(MagicDrumDeBleed PRIVATE
     Source/UI/EQPanel.cpp
     Source/UI/OutputStrip.cpp
     Source/UI/PresetBrowser.cpp
+    Source/UI/AdvancedView.cpp
+    Source/UI/SimpleView.cpp
     Source/Licensing/LicenseValidator.cpp
     Source/Licensing/NagDialog.cpp)
 

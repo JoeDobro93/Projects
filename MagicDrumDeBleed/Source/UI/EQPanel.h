@@ -2,9 +2,9 @@
 
 /*
     EQPanel — bottom section of the UI: the processed-signal spectrum display
-    (with Accumulate / Freeze and a pre/post-EQ tap switch), the combined EQ
-    response curve, draggable band handles, the band row (select + enable +
-    solo per band) and the selected-band control strip.
+    (with Accumulate / Freeze and an Input/Output-levels tap switch), the
+    combined EQ response curve, draggable band handles, the band row (select +
+    enable + solo per band) and the selected-band control strip.
 
     Band indices everywhere in this file: 0=HPF, 1=LPF, 2..6=Notch 1..5,
     matching mdd::EQProcessor and theme::Palette::bandColours.
@@ -26,17 +26,20 @@ namespace eqids
 
 namespace eqmap
 {
-    // Log-frequency mapping (20 Hz .. 20 kHz) shared by spectrum and overlay.
+    // Log-frequency mapping shared by the spectrum and the overlay. Range is
+    // 10 Hz .. 20 kHz — a standard full-range EQ axis (decades evenly spaced).
+    inline constexpr float kMinHz = 10.0f, kMaxHz = 20000.0f;
+
     inline float freqToX (float freq, juce::Rectangle<float> area)
     {
-        const float t = std::log (juce::jlimit (20.0f, 20000.0f, freq) / 20.0f) / std::log (1000.0f);
+        const float t = std::log (juce::jlimit (kMinHz, kMaxHz, freq) / kMinHz) / std::log (kMaxHz / kMinHz);
         return area.getX() + t * area.getWidth();
     }
 
     inline float xToFreq (float x, juce::Rectangle<float> area)
     {
         const float t = juce::jlimit (0.0f, 1.0f, (x - area.getX()) / juce::jmax (1.0f, area.getWidth()));
-        return 20.0f * std::pow (1000.0f, t);
+        return kMinHz * std::pow (kMaxHz / kMinHz, t);
     }
 }
 
@@ -65,10 +68,10 @@ private:
     juce::dsp::WindowingFunction<float> window { (size_t) kFftSize,
                                                  juce::dsp::WindowingFunction<float>::hann };
 
-    std::vector<float> sampleFifo;   // gathers samples until a full FFT frame
+    std::vector<float> sampleFifo;
     std::vector<float> fftData;
-    std::vector<float> smoothedDb;   // live display
-    std::vector<float> accumDb;      // peak-hold layer
+    std::vector<float> smoothedDb;
+    std::vector<float> accumDb;
     float pullBuffer[512];
     int fifoIndex = 0;
 
@@ -107,8 +110,8 @@ private:
 
     juce::RangedAudioParameter* onParams[7]    {};
     juce::RangedAudioParameter* freqParams[7]  {};
-    juce::RangedAudioParameter* qParams[7]     {};   // null for HPF/LPF
-    juce::RangedAudioParameter* gainParams[7]  {};   // null for HPF/LPF
+    juce::RangedAudioParameter* qParams[7]     {};
+    juce::RangedAudioParameter* gainParams[7]  {};
     juce::RangedAudioParameter* shapeParams[7] {};
 
     int selectedBand = 0;
@@ -133,31 +136,32 @@ private:
     void selectBand (int band);
     void rebuildAttachments();
     void updateBandButtonColours();
-    void updateShapeButtonText();
-    void updatePrePostText();
+    void updateShapeSlopeControls();
+    void setShape (int shapeIndex);
     void updateSoloButtons();
 
     MagicDrumDeBleedAudioProcessor& processor;
     const theme::Palette* pal = &theme::dark();
 
     juce::Label titleLabel { {}, "EQ - PROCESSED SIGNAL" };
-    juce::ToggleButton bypassButton { "Bypass" };
+    juce::ToggleButton bypassButton { "Bypass" };   // anchored bottom-left
 
     SpectrumDisplay spectrum;
     BandOverlay overlay;
-    juce::TextButton prePostButton    { "Post EQ" };
+    ui::SlideSwitch levelsSwitch { "Input", "Output", {} };
     juce::TextButton accumulateButton { "Accumulate" };
     juce::TextButton freezeButton     { "Freeze" };
 
-    // Per band: selector (click = edit), enable LED, solo
     juce::TextButton bandButtons[7];
     juce::TextButton enableButtons[7];
     juce::TextButton soloButtons[7];
     std::unique_ptr<juce::ParameterAttachment> bandOnAttachments[7];
 
-    // Selected-band control strip (attachments rebuilt when the selection changes)
     ui::LabelledKnob freqKnob { "Freq" }, gainKnob { "Gain" }, qKnob { "Q" };
-    juce::TextButton shapeButton;
+
+    // Notch shape: three curve-icon buttons. HPF/LPF: two stacked slope buttons.
+    ui::CurveIconButton shapeButtons[3];
+    juce::TextButton slopeButtons[2];   // "6 dB/oct", "12 dB/oct"
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

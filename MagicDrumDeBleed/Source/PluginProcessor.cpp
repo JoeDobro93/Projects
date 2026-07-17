@@ -55,7 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
                     juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -20.0f, dB));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::reduction, 1 }, "Reduction Target",
-                    juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -24.0f, dB));
+                    juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -96.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
                     1, 20, 5, juce::AudioParameterIntAttributes()
                                 .withLabel ("ms")
@@ -87,12 +87,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     // ---- EQ: HPF / LPF ----
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::hpfOn, 1 }, "HPF On", true));
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::hpfFreq, 1 }, "HPF Freq",
-                    logHzRange (20.0f, 2000.0f), 800.0f, hz));
+                    logHzRange (20.0f, 15000.0f), 800.0f, hz));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::hpfSlope, 1 }, "HPF Slope",
                     juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::lpfOn, 1 }, "LPF On", false));
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::lpfFreq, 1 }, "LPF Freq",
-                    logHzRange (1000.0f, 20000.0f), 20000.0f, hz));
+                    logHzRange (50.0f, 20000.0f), 20000.0f, hz));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::lpfSlope, 1 }, "LPF Slope",
                     juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
 
@@ -112,7 +112,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
                         "Notch " + num + " Gain", juce::NormalisableRange<float> (-48.0f, 0.0f, 0.1f), -24.0f, dB));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },
-                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat" }, 0));
+                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat", "Notch" }, 0));
     }
 
     // ---- Output / monitoring ----
@@ -556,16 +556,28 @@ double MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyse()
 }
 
 //==============================================================================
-juce::Point<int> MagicDrumDeBleedAudioProcessor::getSavedEditorSize() const
+juce::Point<int> MagicDrumDeBleedAudioProcessor::getAdvancedSize() const
 {
-    return { (int) apvts.state.getProperty ("uiWidth", 820),
-             (int) apvts.state.getProperty ("uiHeight", 520) };
+    return { (int) apvts.state.getProperty ("advWidth", 0),
+             (int) apvts.state.getProperty ("advHeight", 0) };
 }
 
-void MagicDrumDeBleedAudioProcessor::setSavedEditorSize (int w, int h)
+void MagicDrumDeBleedAudioProcessor::setAdvancedSize (int w, int h)
 {
-    apvts.state.setProperty ("uiWidth", w, nullptr);
-    apvts.state.setProperty ("uiHeight", h, nullptr);
+    apvts.state.setProperty ("advWidth", w, nullptr);
+    apvts.state.setProperty ("advHeight", h, nullptr);
+}
+
+juce::Point<int> MagicDrumDeBleedAudioProcessor::getSimpleSize() const
+{
+    return { (int) apvts.state.getProperty ("simpleWidth", 0),
+             (int) apvts.state.getProperty ("simpleHeight", 0) };
+}
+
+void MagicDrumDeBleedAudioProcessor::setSimpleSize (int w, int h)
+{
+    apvts.state.setProperty ("simpleWidth", w, nullptr);
+    apvts.state.setProperty ("simpleHeight", h, nullptr);
 }
 
 void MagicDrumDeBleedAudioProcessor::getStateInformation (juce::MemoryBlock& destData)

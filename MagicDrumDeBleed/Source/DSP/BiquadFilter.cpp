@@ -109,6 +109,37 @@ BiquadFilter::Coeffs BiquadFilter::makeFirstOrderLowpass (double sampleRate, dou
     return c;
 }
 
+BiquadFilter::Coeffs BiquadFilter::makeBlendedNotch (double sampleRate, double freq, double q, double gainDb)
+{
+    freq = clampFreq (sampleRate, freq);
+    q    = std::clamp (q, 0.05, 100.0);
+
+    const double w0    = 2.0 * kPi * freq / sampleRate;
+    const double cosw  = std::cos (w0);
+    const double sinw  = std::sin (w0);
+    const double alpha = sinw / (2.0 * q);
+    const double a0    = 1.0 + alpha;
+
+    // RBJ notch, normalised
+    const double nb0 = 1.0 / a0;
+    const double nb1 = (-2.0 * cosw) / a0;
+    const double nb2 = 1.0 / a0;
+    const double a1  = (-2.0 * cosw) / a0;
+    const double a2  = (1.0 - alpha) / a0;
+
+    // H = (1-w)·1 + w·N  over the shared denominator. The identity's
+    // numerator equals the denominator polynomial, so the sum stays a biquad.
+    const double w = 1.0 - std::pow (10.0, gainDb / 20.0);
+
+    Coeffs c;
+    c.a1 = a1;
+    c.a2 = a2;
+    c.b0 = (1.0 - w)       + w * nb0;
+    c.b1 = (1.0 - w) * a1  + w * nb1;
+    c.b2 = (1.0 - w) * a2  + w * nb2;
+    return c;
+}
+
 double BiquadFilter::magnitudeAt (const Coeffs& c, double freq, double sampleRate)
 {
     const std::complex<double> z  = std::polar (1.0, -2.0 * kPi * freq / sampleRate);

@@ -1,10 +1,67 @@
 #include "CompressorPanel.h"
 
 //==============================================================================
-InputLevelMeter::InputLevelMeter (std::function<float()> levelGetter, std::function<float()> thresholdGetter)
-    : getLevel (std::move (levelGetter)), getThreshold (std::move (thresholdGetter))
+InputLevelMeter::InputLevelMeter (std::function<float()> levelGetter, juce::RangedAudioParameter* thresholdParam)
+    : getLevel (std::move (levelGetter)), threshold (thresholdParam)
 {
     startTimerHz (30);
+}
+
+juce::Rectangle<float> InputLevelMeter::barArea() const
+{
+    auto bounds = getLocalBounds().toFloat().reduced (1.0f);
+    bounds.removeFromTop (12.0f);   // "IN" caption
+    return bounds.reduced (juce::jmax (2.0f, bounds.getWidth() * 0.16f), 4.0f);
+}
+
+float InputLevelMeter::dbToY (float db) const
+{
+    auto bar = barArea();
+    return juce::jmap (juce::jlimit (minDb, maxDb, db), minDb, maxDb, bar.getBottom(), bar.getY());
+}
+
+float InputLevelMeter::yToDb (float y) const
+{
+    auto bar = barArea();
+    return juce::jmap (juce::jlimit (bar.getY(), bar.getBottom(), y), bar.getBottom(), bar.getY(), minDb, maxDb);
+}
+
+void InputLevelMeter::setThresholdFromMouse (float y)
+{
+    if (threshold == nullptr)
+        return;
+
+    const float db = yToDb (y);
+    threshold->setValueNotifyingHost (threshold->convertTo0to1 (db));
+}
+
+juce::MouseCursor InputLevelMeter::getMouseCursor()
+{
+    return threshold != nullptr ? juce::MouseCursor::UpDownResizeCursor : juce::MouseCursor::NormalCursor;
+}
+
+void InputLevelMeter::mouseDown (const juce::MouseEvent& e)
+{
+    if (threshold == nullptr)
+        return;
+    dragging = true;
+    threshold->beginChangeGesture();
+    setThresholdFromMouse (e.position.y);
+}
+
+void InputLevelMeter::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging)
+        setThresholdFromMouse (e.position.y);
+}
+
+void InputLevelMeter::mouseUp (const juce::MouseEvent&)
+{
+    if (dragging)
+    {
+        threshold->endChangeGesture();
+        dragging = false;
+    }
 }
 
 void InputLevelMeter::timerCallback()
@@ -16,20 +73,15 @@ void InputLevelMeter::timerCallback()
     else
         displayedDb += 0.12f * (v - displayedDb);        // smooth fall
 
-    // Lingering peak line: hold ~1.2 s, then drift down.
     if (v >= peakDb)
     {
         peakDb = v;
-        peakHoldFrames = 36;
+        peakHoldFrames = 36;                             // ~1.2 s linger
     }
     else if (peakHoldFrames > 0)
-    {
         --peakHoldFrames;
-    }
     else
-    {
         peakDb = juce::jmax (peakDb - 0.8f, -90.0f);
-    }
 
     repaint();
 }
@@ -46,21 +98,13 @@ void InputLevelMeter::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("IN", bounds.removeFromTop (12.0f), juce::Justification::centred, false);
 
-    auto bar = bounds.reduced (juce::jmax (2.0f, bounds.getWidth() * 0.16f), 4.0f);
+    auto bar = barArea();
 
-    // Scale: -60 .. 0 dB, matching the Threshold range.
-    constexpr float minDb = -60.0f, maxDb = 0.0f;
-    auto yForDb = [&] (float db)
-    {
-        return juce::jmap (juce::jlimit (minDb, maxDb, db), minDb, maxDb, bar.getBottom(), bar.getY());
-    };
-
-    // Tick marks every 12 dB (with numbers when there's room)
     const bool drawNumbers = getWidth() >= 40;
     g.setFont (juce::Font (juce::FontOptions (8.0f)));
     for (int db = 0; db >= (int) minDb; db -= 12)
     {
-        const float y = yForDb ((float) db);
+        const float y = dbToY ((float) db);
         g.setColour (pal->meterTicks);
         g.drawHorizontalLine ((int) y, bar.getX(), bar.getRight());
         if (drawNumbers && db < 0 && db > (int) minDb)
@@ -74,7 +118,7 @@ void InputLevelMeter::paint (juce::Graphics& g)
     // Level bar (bottom-up)
     if (displayedDb > minDb)
     {
-        const float top = yForDb (displayedDb);
+        const float top = dbToY (displayedDb);
         g.setColour (pal->meterFill.withAlpha (0.85f));
         g.fillRect (juce::Rectangle<float> (bar.getX(), top, bar.getWidth(), bar.getBottom() - top));
     }
@@ -83,14 +127,24 @@ void InputLevelMeter::paint (juce::Graphics& g)
     if (peakDb > minDb + 0.5f)
     {
         g.setColour (pal->meterPeak);
-        const float y = yForDb (peakDb);
+        const float y = dbToY (peakDb);
         g.fillRect (juce::Rectangle<float> (bar.getX(), y - 1.0f, bar.getWidth(), 2.0f));
     }
 
-    // Threshold marker: where the gate engages relative to this meter.
-    g.setColour (pal->highlight.brighter (0.4f));
-    const float ty = yForDb (getThreshold());
-    g.fillRect (juce::Rectangle<float> (bounds.getX() + 1.0f, ty - 1.0f, bounds.getWidth() - 2.0f, 2.0f));
+    // Threshold marker: draggable line + grab tab on the left edge.
+    if (threshold != nullptr)
+    {
+        const float td = threshold->convertFrom0to1 (threshold->getValue());
+        const float ty = dbToY (td);
+        g.setColour (pal->highlight.brighter (0.4f));
+        g.fillRect (juce::Rectangle<float> (bounds.getX() + 1.0f, ty - 1.0f, bounds.getWidth() - 2.0f, 2.0f));
+
+        juce::Path tab;
+        tab.addTriangle (bounds.getX() + 1.0f, ty - 4.0f,
+                         bounds.getX() + 1.0f, ty + 4.0f,
+                         bounds.getX() + 6.0f, ty);
+        g.fillPath (tab);
+    }
 }
 
 //==============================================================================
@@ -123,7 +177,6 @@ void GainReductionMeter::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("GR", bounds.removeFromTop (12.0f), juce::Justification::centred, false);
 
-    // Numeric readout at the bottom
     g.setFont (juce::Font (juce::FontOptions (juce::jlimit (9.0f, 12.0f, bounds.getWidth() * 0.28f))));
     g.drawText (juce::String (displayedDb, 1), bounds.removeFromBottom (14.0f),
                 juce::Justification::centred, false);
@@ -152,7 +205,7 @@ void GainReductionMeter::paint (juce::Graphics& g)
 CompressorPanel::CompressorPanel (MagicDrumDeBleedAudioProcessor& proc)
     : processor (proc),
       inputMeter ([&proc] { return proc.getDetectorRmsDb(); },
-                  [&proc] { return proc.apvts.getRawParameterValue (ParamIDs::threshold)->load(); }),
+                  proc.apvts.getParameter (ParamIDs::threshold)),
       grMeter ([&proc] { return proc.getGainReductionDb(); })
 {
     titleLabel.setJustificationType (juce::Justification::centredLeft);
@@ -185,7 +238,6 @@ CompressorPanel::CompressorPanel (MagicDrumDeBleedAudioProcessor& proc)
     learnButton.onClick = [this] { learnClicked(); };
     addAndMakeVisible (learnButton);
 
-    // Preview = solo the detector signal (monitor mode "Sidechain").
     scPreviewButton.setClickingTogglesState (false);
     scPreviewButton.onClick = [this]
     {
@@ -240,7 +292,6 @@ void CompressorPanel::learnClicked()
     }
     else
     {
-        // Restore the label after a moment.
         juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<CompressorPanel> (this)]
         {
             if (safe != nullptr)
@@ -270,12 +321,11 @@ void CompressorPanel::paint (juce::Graphics& g)
     g.setColour (pal->panelOutline);
     g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
 
-    // Divider before the sidechain section
-    if (! scTitleLabel.getBounds().isEmpty())
+    if (sidechainDividerX > 0)
     {
         g.setColour (pal->panelOutline);
-        const float x = (float) scTitleLabel.getX() - 6.0f;
-        g.drawLine (x, bounds.getY() + 8.0f, x, bounds.getBottom() - 8.0f);
+        g.drawLine ((float) sidechainDividerX, bounds.getY() + 8.0f,
+                    (float) sidechainDividerX, bounds.getBottom() - 8.0f);
     }
 }
 
@@ -286,11 +336,16 @@ void CompressorPanel::resized()
     const int titleHeight = juce::jlimit (14, 20, getHeight() / 10);
     auto titleRow = r.removeFromTop (titleHeight);
     titleLabel.setFont (juce::Font (juce::FontOptions ((float) titleHeight - 3.0f, juce::Font::bold)));
-    titleLabel.setBounds (titleRow.removeFromLeft (juce::roundToInt ((float) getWidth() * 0.32f)));
-    bypassButton.setBounds (titleRow.removeFromLeft (juce::jlimit (66, 90, getWidth() / 9)));
+    titleLabel.setBounds (titleRow);
     r.removeFromTop (2);
 
-    // ---- Meters on the left: input level, then gain reduction ----
+    // Bottom strip holds the anchored toggles (Bypass under the knobs,
+    // Filter On + Learn/Preview under the sidechain).
+    const int bottomH = juce::jlimit (20, 28, getHeight() / 8);
+    auto bottom = r.removeFromBottom (bottomH);
+    r.removeFromBottom (3);
+
+    // ---- Meters on the left ----
     const int meterW = juce::jlimit (34, 56, getWidth() / 16);
     inputMeter.setBounds (r.removeFromLeft (meterW));
     r.removeFromLeft (3);
@@ -299,8 +354,9 @@ void CompressorPanel::resized()
 
     auto scArea = r.removeFromRight (juce::roundToInt ((float) r.getWidth() * 0.36f));
     r.removeFromRight (10);
+    sidechainDividerX = scArea.getX() - 5;
 
-    // ---- Main knob grid (3 × 2) with breathing room between the rows ----
+    // ---- Main knob grid (3 × 2) with room between rows ----
     const int rowGap = juce::jlimit (4, 14, getHeight() / 22);
     const int cellW = r.getWidth() / 3;
     const int cellH = (r.getHeight() - rowGap) / 2;
@@ -312,22 +368,26 @@ void CompressorPanel::resized()
                                        r.getY() + row * (cellH + rowGap),
                                        cellW, cellH);
 
-    // ---- Sidechain section ----
+    // ---- Sidechain header + knobs ----
     auto scHeader = scArea.removeFromTop (juce::jlimit (14, 18, getHeight() / 12));
     scTitleLabel.setFont (juce::Font (juce::FontOptions ((float) scHeader.getHeight() - 4.0f, juce::Font::bold)));
-    scTitleLabel.setBounds (scHeader.removeFromLeft (scHeader.getWidth() / 2));
-    scEnableButton.setBounds (scHeader);
+    scTitleLabel.setBounds (scHeader);
 
     const int scCellW = scArea.getWidth() / 2;
-    const int scRowGap = juce::jlimit (2, 10, getHeight() / 30);
-    const int scCellH = (scArea.getHeight() - scRowGap) / 2;
-    scFreq.setBounds (scArea.getX(),           scArea.getY(), scCellW, scCellH);
-    scQ.setBounds    (scArea.getX() + scCellW, scArea.getY(), scCellW, scCellH);
+    scFreq.setBounds (scArea.getX(),           scArea.getY(), scCellW, scArea.getHeight());
+    scQ.setBounds    (scArea.getX() + scCellW, scArea.getY(), scCellW, scArea.getHeight());
 
-    auto scBottom = juce::Rectangle<int> (scArea.getX(), scArea.getY() + scCellH + scRowGap,
-                                          scArea.getWidth(), scCellH);
-    const int buttonH = juce::jlimit (20, 28, scCellH / 2);
-    auto learnCell = scBottom.removeFromLeft (scCellW);
-    learnButton.setBounds (learnCell.withSizeKeepingCentre (juce::jmax (52, scCellW - 16), buttonH));
-    scPreviewButton.setBounds (scBottom.withSizeKeepingCentre (juce::jmax (52, scBottom.getWidth() - 16), buttonH));
+    // ---- Bottom strip layout ----
+    // Compressor bypass: bottom-left of the main (knob) segment.
+    auto knobBottom = bottom.withRight (sidechainDividerX);
+    bypassButton.setBounds (knobBottom.removeFromLeft (juce::jlimit (66, 96, getWidth() / 9))
+                                .withSizeKeepingCentre (juce::jlimit (66, 96, getWidth() / 9), bottomH - 2));
+
+    // Sidechain bottom row: [Filter On]  [Learn][Preview]
+    auto scBottom = bottom.withLeft (scArea.getX());
+    const int btnW = juce::jlimit (46, 72, scBottom.getWidth() / 3);
+    scEnableButton.setBounds (scBottom.removeFromLeft (juce::jlimit (60, 84, scBottom.getWidth() / 2))
+                                  .withSizeKeepingCentre (juce::jlimit (60, 84, scBottom.getWidth()), bottomH - 2));
+    scPreviewButton.setBounds (scBottom.removeFromRight (btnW).reduced (1, 1));
+    learnButton.setBounds (scBottom.removeFromRight (btnW + 2).reduced (1, 1));
 }

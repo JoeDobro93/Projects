@@ -48,6 +48,10 @@ public:
     static Coeffs makeFirstOrderLowpass  (double sampleRate, double freq);
     static Coeffs makeFirstOrderHighpass (double sampleRate, double freq);
 
+    // Finite-depth flat-bottom band-reject: a dry/notch crossfade folded into
+    // one biquad. Floor sits exactly at gainDb, walls are steeper than a bell.
+    static Coeffs makeBlendedNotch (double sampleRate, double freq, double q, double gainDb);
+
     // |H(e^jw)| at the given frequency — used by the UI to draw the EQ curve
     // from the exact same coefficients the audio path runs.
     static double magnitudeAt (const Coeffs& c, double freq, double sampleRate);

@@ -131,8 +131,15 @@ public:
     // ---- UI-state persistence (saved inside the plugin state) ----
     bool  isDarkTheme() const           { return (bool) apvts.state.getProperty ("themeDark", true); }
     void  setDarkTheme (bool dark)      { apvts.state.setProperty ("themeDark", dark, nullptr); }
-    juce::Point<int> getSavedEditorSize() const;
-    void  setSavedEditorSize (int w, int h);
+
+    bool  isSimpleView() const          { return (bool) apvts.state.getProperty ("simpleView", false); }
+    void  setSimpleView (bool simple)   { apvts.state.setProperty ("simpleView", simple, nullptr); }
+
+    // Each view remembers its own last window size.
+    juce::Point<int> getAdvancedSize() const;
+    void  setAdvancedSize (int w, int h);
+    juce::Point<int> getSimpleSize() const;
+    void  setSimpleSize (int w, int h);
 
 private:
     void updateParametersForBlock();

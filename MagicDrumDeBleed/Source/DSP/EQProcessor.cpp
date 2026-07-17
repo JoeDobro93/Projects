@@ -60,25 +60,23 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
         return 1;
     }
 
-    // ---- Notch bands ----
-    if (p.shape == 0)
+    // ---- Notch bands: three selectable shapes, all single-biquad ----
+    switch (p.shape)
     {
-        // Bell: single peaking filter with negative gain.
-        out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q, p.gainDb);
-        return 1;
+        case 0:  // Bell — rounded peaking dip, Q as set
+            out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q, p.gainDb);
+            break;
+
+        case 1:  // Flat — wide, flat-bottomed band-reject (steeper walls than a bell)
+            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q * 0.6, p.gainDb);
+            break;
+
+        case 2:  // Notch — narrow, deep band-reject
+        default:
+            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q * 1.6, p.gainDb);
+            break;
     }
-
-    // Flat-bottom: two peaking filters straddling the centre. The offset
-    // scales with the band's bandwidth so the composite keeps roughly the
-    // requested depth with steeper walls and a flatter floor.
-    const double bwOctaves = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
-    const double spread    = std::pow (2.0, bwOctaves * 0.20);
-    const double stageQ    = p.q * 1.6;
-    const double stageGain = p.gainDb * 0.62;
-
-    out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz / spread, stageQ, stageGain);
-    out[1] = BiquadFilter::makePeaking (sampleRate, p.freqHz * spread, stageQ, stageGain);
-    return 2;
+    return 1;
 }
 
 void EQProcessor::updateBandCoefficients (int bandIndex)

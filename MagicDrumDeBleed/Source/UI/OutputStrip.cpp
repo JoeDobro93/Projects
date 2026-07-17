@@ -1,7 +1,9 @@
 #include "OutputStrip.h"
 
-OutputStrip::OutputStrip (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onThemeToggle)
-    : processor (proc), themeCallback (std::move (onThemeToggle))
+OutputStrip::OutputStrip (MagicDrumDeBleedAudioProcessor& proc,
+                          std::function<void()> onThemeToggle,
+                          std::function<void()> onSimpleView)
+    : processor (proc), themeCallback (std::move (onThemeToggle)), simpleCallback (std::move (onSimpleView))
 {
     intensityLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (intensityLabel);
@@ -41,6 +43,9 @@ OutputStrip::OutputStrip (MagicDrumDeBleedAudioProcessor& proc, std::function<vo
 
     themeButton.onClick = [this] { if (themeCallback) themeCallback(); };
     addAndMakeVisible (themeButton);
+
+    simpleButton.onClick = [this] { if (simpleCallback) simpleCallback(); };
+    addAndMakeVisible (simpleButton);
 }
 
 void OutputStrip::setPalette (const theme::Palette& p)
@@ -65,6 +70,8 @@ void OutputStrip::resized()
     auto r = getLocalBounds().reduced (6, 5);
 
     themeButton.setBounds (r.removeFromRight (juce::jlimit (44, 64, getWidth() / 14)).reduced (0, 3));
+    r.removeFromRight (4);
+    simpleButton.setBounds (r.removeFromRight (juce::jlimit (48, 68, getWidth() / 13)).reduced (0, 3));
     r.removeFromRight (8);
 
     auto intensityArea = r.removeFromLeft (juce::roundToInt ((float) r.getWidth() * 0.44f));

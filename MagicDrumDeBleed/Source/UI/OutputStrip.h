@@ -17,7 +17,9 @@
 class OutputStrip : public juce::Component
 {
 public:
-    OutputStrip (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onThemeToggle);
+    OutputStrip (MagicDrumDeBleedAudioProcessor& proc,
+                 std::function<void()> onThemeToggle,
+                 std::function<void()> onSimpleView);
 
     void setPalette (const theme::Palette& p);
     void paint (juce::Graphics& g) override;
@@ -34,7 +36,9 @@ private:
     std::unique_ptr<juce::ParameterAttachment> monitorAttachment;
 
     juce::TextButton themeButton { "Theme" };
+    juce::TextButton simpleButton { "Simple" };
     std::function<void()> themeCallback;
+    std::function<void()> simpleCallback;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<SliderAttachment> intensityAttachment;

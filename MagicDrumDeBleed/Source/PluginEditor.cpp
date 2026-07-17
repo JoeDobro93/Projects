@@ -27,7 +27,7 @@ void StyledLookAndFeel::setPalette (const theme::Palette& p)
     setColour (juce::TextButton::buttonOnColourId, p.buttonOn);
     setColour (juce::TextButton::textColourOffId,  p.buttonText);
     setColour (juce::TextButton::textColourOnId,   p.buttonTextOn);
-    setColour (juce::ComboBox::outlineColourId,    p.buttonOutline);   // also TextButton outline
+    setColour (juce::ComboBox::outlineColourId,    p.buttonOutline);
 
     setColour (juce::ToggleButton::textColourId,         p.text);
     setColour (juce::ToggleButton::tickColourId,         p.highlight);
@@ -88,31 +88,45 @@ void StyledLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre.x, centre.y));
 }
 
+juce::Label* StyledLookAndFeel::createSliderTextBox (juce::Slider& slider)
+{
+    auto* label = LookAndFeel_V4::createSliderTextBox (slider);
+    // A comfortable fixed logical font that never clips inside the value box,
+    // and shrinks-to-fit horizontally instead of cropping while typing.
+    label->setFont (juce::Font (juce::FontOptions (13.0f)));
+    label->setJustificationType (juce::Justification::centred);
+    label->setMinimumHorizontalScale (0.8f);
+    label->setBorderSize (juce::BorderSize<int> (1));
+    return label;
+}
+
 //==============================================================================
 MagicDrumDeBleedAudioProcessorEditor::MagicDrumDeBleedAudioProcessorEditor (MagicDrumDeBleedAudioProcessor& proc)
     : AudioProcessorEditor (&proc),
       processor (proc),
-      presetBrowser (proc),
-      compressorPanel (proc),
-      eqPanel (proc),
-      outputStrip (proc, [this] { toggleTheme(); })
+      advancedView (proc, [this] { toggleTheme(); }, [this] { setView (true); }),
+      simpleView (proc, [this] { setView (false); })
 {
     setLookAndFeel (&lookAndFeel);
 
-    titleLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (titleLabel);
-    addAndMakeVisible (presetBrowser);
-    addAndMakeVisible (compressorPanel);
-    addAndMakeVisible (eqPanel);
-    addAndMakeVisible (outputStrip);
+    addChildComponent (advancedView);
+    addChildComponent (simpleView);
 
+    setConstrainer (&constrainer);
     setResizable (true, true);
-    setResizeLimits (650, 400, 4000, 2600);
-
-    const auto saved = processor.getSavedEditorSize();
-    setSize (juce::jlimit (650, 4000, saved.x), juce::jlimit (400, 2600, saved.y));
 
     applyTheme();
+
+    const bool simple = processor.isSimpleView();
+    advancedView.setVisible (! simple);
+    simpleView.setVisible (simple);
+    configureConstrainerForView (simple);
+
+    const auto saved = simple ? processor.getSimpleSize() : processor.getAdvancedSize();
+    const int logicalW = simple ? SimpleView::kLogicalW : AdvancedView::kLogicalW;
+    const int logicalH = simple ? SimpleView::kLogicalH : AdvancedView::kLogicalH;
+    setSize (saved.x > 0 ? saved.x : logicalW,
+             saved.y > 0 ? saved.y : logicalH);
 
    #if ENABLE_DONATION_NAG
     juce::MessageManager::callAsync ([] { license::NagDialog::launchIfNeeded(); });
@@ -133,49 +147,69 @@ void MagicDrumDeBleedAudioProcessorEditor::toggleTheme()
 void MagicDrumDeBleedAudioProcessorEditor::applyTheme()
 {
     pal = &theme::get (processor.isDarkTheme());
-
     lookAndFeel.setPalette (*pal);
-    titleLabel.setColour (juce::Label::textColourId, pal->title);
-    compressorPanel.setPalette (*pal);
-    eqPanel.setPalette (*pal);
-    outputStrip.setPalette (*pal);
-    presetBrowser.setPalette (*pal);
-
+    advancedView.setPalette (*pal);
+    simpleView.setPalette (*pal);
     sendLookAndFeelChange();
     repaint();
 }
 
+void MagicDrumDeBleedAudioProcessorEditor::configureConstrainerForView (bool simple)
+{
+    const int logicalW = simple ? SimpleView::kLogicalW : AdvancedView::kLogicalW;
+    const int logicalH = simple ? SimpleView::kLogicalH : AdvancedView::kLogicalH;
+
+    constrainer.setFixedAspectRatio ((double) logicalW / (double) logicalH);
+    constrainer.setSizeLimits (juce::roundToInt (logicalW * kMinScale),
+                               juce::roundToInt (logicalH * kMinScale),
+                               juce::roundToInt (logicalW * kMaxScale),
+                               juce::roundToInt (logicalH * kMaxScale));
+}
+
+void MagicDrumDeBleedAudioProcessorEditor::setView (bool simple)
+{
+    processor.setSimpleView (simple);
+    advancedView.setVisible (! simple);
+    simpleView.setVisible (simple);
+
+    configureConstrainerForView (simple);
+
+    const auto saved = simple ? processor.getSimpleSize() : processor.getAdvancedSize();
+    const int logicalW = simple ? SimpleView::kLogicalW : AdvancedView::kLogicalW;
+    const int logicalH = simple ? SimpleView::kLogicalH : AdvancedView::kLogicalH;
+    setSize (saved.x > 0 ? saved.x : logicalW,
+             saved.y > 0 ? saved.y : logicalH);
+}
+
 void MagicDrumDeBleedAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (pal->windowBackground);
-
-    const int headerHeight = juce::jlimit (28, 40, getHeight() / 14);
-    g.setColour (pal->headerBackground);
-    g.fillRect (0, 0, getWidth(), headerHeight);
-    g.setColour (pal->panelOutline);
-    g.drawHorizontalLine (headerHeight, 0.0f, (float) getWidth());
+    g.fillAll (pal->windowBackground);   // covers any sub-pixel edge from scaling
 }
 
 void MagicDrumDeBleedAudioProcessorEditor::resized()
 {
-    processor.setSavedEditorSize (getWidth(), getHeight());
+    const bool simple = processor.isSimpleView();
+    const int logicalW = simple ? SimpleView::kLogicalW : AdvancedView::kLogicalW;
+    const int logicalH = simple ? SimpleView::kLogicalH : AdvancedView::kLogicalH;
 
-    auto r = getLocalBounds();
+    const float scale = juce::jmin ((float) getWidth() / (float) logicalW,
+                                    (float) getHeight() / (float) logicalH);
 
-    // ---- Header: title + presets ----
-    const int headerHeight = juce::jlimit (28, 40, getHeight() / 14);
-    auto header = r.removeFromTop (headerHeight).reduced (8, 3);
-    titleLabel.setFont (juce::Font (juce::FontOptions ((float) headerHeight * 0.52f, juce::Font::bold)));
-    auto presetArea = header.removeFromRight (juce::jlimit (240, 380, getWidth() / 2));
-    presetBrowser.setBounds (presetArea);
-    titleLabel.setBounds (header);
+    auto layoutView = [&] (juce::Component& view)
+    {
+        view.setTransform ({});
+        view.setBounds (0, 0, logicalW, logicalH);
+        view.setTransform (juce::AffineTransform::scale (scale));
+    };
 
-    // ---- Bottom strip ----
-    const int stripHeight = juce::jlimit (40, 60, getHeight() / 10);
-    outputStrip.setBounds (r.removeFromBottom (stripHeight).reduced (4, 2));
+    if (simple)
+        layoutView (simpleView);
+    else
+        layoutView (advancedView);
 
-    // ---- Compressor (top ~42%) / EQ (rest) ----
-    r.reduce (4, 2);
-    compressorPanel.setBounds (r.removeFromTop (juce::roundToInt ((float) r.getHeight() * 0.42f)));
-    eqPanel.setBounds (r);
+    // Remember this view's size for next time.
+    if (simple)
+        processor.setSimpleSize (getWidth(), getHeight());
+    else
+        processor.setAdvancedSize (getWidth(), getHeight());
 }

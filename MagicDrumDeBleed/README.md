@@ -103,23 +103,31 @@ A `Standalone` build is also produced — useful for quick testing without a DAW
    the Sidechain section to hear exactly what the detector hears.
 3. Lower **Threshold** until the **GR meter** fires on the target drum only —
    the **IN meter** beside it shows the detector level the threshold is
-   compared against, with a marker line at the current threshold and a
-   lingering peak line. Raise **RMS** to ignore short spikes of bleed; raise
-   **Hold**/**Release** to cover the drum's decay.
+   compared against. **Drag the threshold line right on that meter** to set
+   Threshold by ear; a lingering peak line marks recent peaks. Raise **RMS**
+   to ignore short spikes of bleed; raise **Hold**/**Release** to cover the
+   drum's decay.
 4. Toggle **Preview Processed Signal** (bottom strip) to hear exactly what is
    being subtracted from the track. If you hear drum body or ring in there,
    enable the spectrum **Accumulate** mode, watch the resonant frequencies
    build up, and drop **notch bands** on them: flip a band's coloured switch
-   under its selector, drag its handle (mouse-wheel adjusts Q), and use its
-   **S** button to solo a bandpass around it while centring it on the
-   resonance (band gain is intentionally not applied while soloing; solo is
-   exclusive — soloing another band moves it). The **Pre/Post EQ** switch
-   selects whether the spectrum is tapped before or after the notches, and
-   the white curve shows the combined response of every enabled band.
-   **Freeze** holds the display while you fine-tune. Notched frequencies are
-   *kept* in the output.
+   under its selector, drag its handle (mouse-wheel adjusts Q), pick a curve
+   shape (**Bell / Flat / Notch** icons), and use its **S** button to solo a
+   bandpass around it while centring it on the resonance (band gain is
+   intentionally not applied while soloing; solo is exclusive — soloing
+   another band moves it). The **Input/Output** switch selects whether the
+   spectrum is tapped before or after the notches, and the white curve shows
+   the combined response of every enabled band. **Freeze** holds the display
+   while you fine-tune. Notched frequencies are *kept* in the output.
 5. Turn the preview off again; use **Intensity** to dial the cancellation
    from 0 % (off) to 100 % (full).
+
+**Views:** the **Simple** button (bottom strip) collapses the UI to just the
+two meters — with the draggable threshold line — and a vertical Intensity
+slider, for quick level setting; **Advanced View** returns to the full editor.
+Each view remembers its own size. The window keeps a fixed aspect ratio and
+scales as one piece, so it looks identical at any size — drag a corner to
+resize.
 
 **Monitoring** — normal output is the default and needs no button. **Preview**
 (Sidechain section) solos the detector signal; **Preview Processed Signal**
