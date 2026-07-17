@@ -331,63 +331,61 @@ void CompressorPanel::paint (juce::Graphics& g)
 
 void CompressorPanel::resized()
 {
-    auto r = getLocalBounds().reduced (juce::jmax (4, getHeight() / 40));
+    // The editor scales the whole view uniformly, so this layout always runs
+    // at the fixed logical size — plain arithmetic, no clamping needed.
+    auto r = getLocalBounds().reduced (8, 8);
 
-    const int titleHeight = juce::jlimit (14, 20, getHeight() / 10);
-    auto titleRow = r.removeFromTop (titleHeight);
-    titleLabel.setFont (juce::Font (juce::FontOptions ((float) titleHeight - 3.0f, juce::Font::bold)));
-    titleLabel.setBounds (titleRow);
-    r.removeFromTop (2);
+    auto titleRow = r.removeFromTop (20);
+    r.removeFromTop (4);
 
-    // Bottom strip holds the anchored toggles (Bypass under the knobs,
-    // Filter On + Learn/Preview under the sidechain).
-    const int bottomH = juce::jlimit (20, 28, getHeight() / 8);
-    auto bottom = r.removeFromBottom (bottomH);
-    r.removeFromBottom (3);
+    auto bottomRow = r.removeFromBottom (26);
+    r.removeFromBottom (4);
 
     // ---- Meters on the left ----
-    const int meterW = juce::jlimit (34, 56, getWidth() / 16);
-    inputMeter.setBounds (r.removeFromLeft (meterW));
-    r.removeFromLeft (3);
-    grMeter.setBounds (r.removeFromLeft (meterW));
-    r.removeFromLeft (8);
+    auto meters = r.removeFromLeft (96);
+    inputMeter.setBounds (meters.removeFromLeft (48));
+    meters.removeFromLeft (4);
+    grMeter.setBounds (meters);
+    r.removeFromLeft (10);
 
-    auto scArea = r.removeFromRight (juce::roundToInt ((float) r.getWidth() * 0.36f));
-    r.removeFromRight (10);
-    sidechainDividerX = scArea.getX() - 5;
-
-    // ---- Main knob grid (3 × 2) with room between rows ----
-    const int rowGap = juce::jlimit (4, 14, getHeight() / 22);
-    const int cellW = r.getWidth() / 3;
+    // ---- Five equal knob columns: 3 main + gap + 2 sidechain ----
+    // Every knob cell is exactly the same size, so every knob renders at the
+    // same diameter.
+    const int dividerGap = 14;
+    const int cellW = (r.getWidth() - dividerGap) / 5;
+    const int rowGap = 8;
     const int cellH = (r.getHeight() - rowGap) / 2;
+
+    auto mainArea = r.removeFromLeft (cellW * 3);
+    auto scArea   = r.withTrimmedLeft (dividerGap);
+    sidechainDividerX = scArea.getX() - dividerGap / 2;
+
     ui::LabelledKnob* grid[2][3] = { { &threshold, &reduction, &lookahead },
                                      { &rmsWindow, &hold,      &release } };
     for (int row = 0; row < 2; ++row)
         for (int col = 0; col < 3; ++col)
-            grid[row][col]->setBounds (r.getX() + col * cellW,
-                                       r.getY() + row * (cellH + rowGap),
+            grid[row][col]->setBounds (mainArea.getX() + col * cellW,
+                                       mainArea.getY() + row * (cellH + rowGap),
                                        cellW, cellH);
 
-    // ---- Sidechain header + knobs ----
-    auto scHeader = scArea.removeFromTop (juce::jlimit (14, 18, getHeight() / 12));
-    scTitleLabel.setFont (juce::Font (juce::FontOptions ((float) scHeader.getHeight() - 4.0f, juce::Font::bold)));
-    scTitleLabel.setBounds (scHeader);
+    // Sidechain: knobs in the top row (same cells), Learn/Preview below.
+    scFreq.setBounds (scArea.getX(),         scArea.getY(), cellW, cellH);
+    scQ.setBounds    (scArea.getX() + cellW, scArea.getY(), cellW, cellH);
 
-    const int scCellW = scArea.getWidth() / 2;
-    scFreq.setBounds (scArea.getX(),           scArea.getY(), scCellW, scArea.getHeight());
-    scQ.setBounds    (scArea.getX() + scCellW, scArea.getY(), scCellW, scArea.getHeight());
+    auto scRow2 = juce::Rectangle<int> (scArea.getX(), scArea.getY() + cellH + rowGap,
+                                        cellW * 2, cellH);
+    auto learnCell   = scRow2.removeFromLeft (cellW);
+    learnButton.setBounds (learnCell.withSizeKeepingCentre (cellW - 26, 30));
+    scPreviewButton.setBounds (scRow2.withSizeKeepingCentre (cellW - 26, 30));
 
-    // ---- Bottom strip layout ----
-    // Compressor bypass: bottom-left of the main (knob) segment.
-    auto knobBottom = bottom.withRight (sidechainDividerX);
-    bypassButton.setBounds (knobBottom.removeFromLeft (juce::jlimit (66, 96, getWidth() / 9))
-                                .withSizeKeepingCentre (juce::jlimit (66, 96, getWidth() / 9), bottomH - 2));
+    // ---- Titles ----
+    titleLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+    titleLabel.setBounds (titleRow.withWidth (400));
+    scTitleLabel.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+    scTitleLabel.setBounds (titleRow.withX (scArea.getX()).withWidth (scArea.getWidth()));
 
-    // Sidechain bottom row: [Filter On]  [Learn][Preview]
-    auto scBottom = bottom.withLeft (scArea.getX());
-    const int btnW = juce::jlimit (46, 72, scBottom.getWidth() / 3);
-    scEnableButton.setBounds (scBottom.removeFromLeft (juce::jlimit (60, 84, scBottom.getWidth() / 2))
-                                  .withSizeKeepingCentre (juce::jlimit (60, 84, scBottom.getWidth()), bottomH - 2));
-    scPreviewButton.setBounds (scBottom.removeFromRight (btnW).reduced (1, 1));
-    learnButton.setBounds (scBottom.removeFromRight (btnW + 2).reduced (1, 1));
+    // ---- Anchored toggles: Bypass bottom-left of the panel, Filter On
+    //      bottom-left of the sidechain segment ----
+    bypassButton.setBounds (bottomRow.getX(), bottomRow.getY(), 92, 24);
+    scEnableButton.setBounds (scArea.getX(), bottomRow.getY(), 110, 24);
 }

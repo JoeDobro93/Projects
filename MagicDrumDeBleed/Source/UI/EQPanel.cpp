@@ -121,18 +121,32 @@ void SpectrumDisplay::paint (juce::Graphics& g)
                            area.getY() + 2.0f, area.getBottom() - 2.0f);
     };
 
+    // Standard EQ log-paper grid: minor lines at every 2..9 multiple of each
+    // decade, brighter lines on the decades (100 / 1k / 10k).
+    for (double decade : { 10.0, 100.0, 1000.0, 10000.0 })
+    {
+        for (int mult = 1; mult <= 9; ++mult)
+        {
+            const float f = (float) (decade * mult);
+            if (f < eqmap::kMinHz * 1.99f || f > eqmap::kMaxHz)
+                continue;
+            const bool major = (mult == 1);
+            g.setColour (major ? pal->spectrumGrid.brighter (0.35f) : pal->spectrumGrid.withAlpha (0.65f));
+            g.drawVerticalLine ((int) eqmap::freqToX (f, area), area.getY(), area.getBottom());
+        }
+    }
     g.setColour (pal->spectrumGrid);
-    for (float f : { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
-        g.drawVerticalLine ((int) eqmap::freqToX (f, area), area.getY(), area.getBottom());
     for (float db : { -18.0f, -36.0f, -54.0f, -72.0f })
         g.drawHorizontalLine ((int) dbToY (db), area.getX(), area.getRight());
 
     g.setColour (pal->textDim);
     g.setFont (juce::Font (juce::FontOptions (10.0f)));
-    for (float f : { 100.0f, 1000.0f, 10000.0f })
-        g.drawText (f >= 1000.0f ? juce::String (f / 1000.0f, 0) + "k" : juce::String (f, 0),
-                    (int) eqmap::freqToX (f, area) + 3, (int) area.getBottom() - 14, 34, 12,
-                    juce::Justification::left, false);
+    for (float f : { 20.0f, 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
+    {
+        const auto text = f >= 1000.0f ? juce::String (f / 1000.0f, 0) + "k" : juce::String (f, 0);
+        g.drawText (text, (int) eqmap::freqToX (f, area) - 16, (int) area.getBottom() - 14, 32, 12,
+                    juce::Justification::centred, false);
+    }
 
     if (area.getWidth() > 320.0f)
     {
@@ -580,10 +594,13 @@ void EQPanel::rebuildAttachments()
 
 void EQPanel::updateShapeSlopeControls()
 {
+    // Read from the parameter object itself: the APVTS raw-value atomic is
+    // refreshed by a listener that can run AFTER our attachment callback, so
+    // reading it here would lag one click behind.
     const bool isNotch = selectedBand >= 2;
     int current = 0;
-    if (auto* raw = processor.apvts.getRawParameterValue (eqids::shapeId (selectedBand)))
-        current = (int) raw->load();
+    if (auto* param = processor.apvts.getParameter (eqids::shapeId (selectedBand)))
+        current = (int) std::lround (param->convertFrom0to1 (param->getValue()));
 
     for (int i = 0; i < 3; ++i)
     {
@@ -654,79 +671,74 @@ void EQPanel::paint (juce::Graphics& g)
 
 void EQPanel::resized()
 {
-    auto r = getLocalBounds().reduced (juce::jmax (4, getHeight() / 50));
+    // Fixed logical layout (the editor scales the whole view uniformly).
+    auto r = getLocalBounds().reduced (8, 8);
 
-    const int titleHeight = juce::jlimit (16, 22, getHeight() / 11);
-    auto titleRow = r.removeFromTop (titleHeight);
-
-    freezeButton.setBounds (titleRow.removeFromRight (juce::jlimit (52, 76, getWidth() / 11)).reduced (1));
+    auto titleRow = r.removeFromTop (20);
+    freezeButton.setBounds (titleRow.removeFromRight (70).reduced (1));
     titleRow.removeFromRight (3);
-    accumulateButton.setBounds (titleRow.removeFromRight (juce::jlimit (72, 96, getWidth() / 8)).reduced (1));
-    titleRow.removeFromRight (6);
-    levelsSwitch.setBounds (titleRow.removeFromRight (juce::jlimit (108, 150, getWidth() / 6)));
-    titleLabel.setFont (juce::Font (juce::FontOptions ((float) titleHeight - 5.0f, juce::Font::bold)));
+    accumulateButton.setBounds (titleRow.removeFromRight (92).reduced (1));
+    titleRow.removeFromRight (8);
+    levelsSwitch.setBounds (titleRow.removeFromRight (150));
+    titleLabel.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
     titleLabel.setBounds (titleRow);
+    r.removeFromTop (2);
 
-    const int controlsHeight = juce::jlimit (66, 108, juce::roundToInt ((float) getHeight() * 0.32f));
-    auto controls = r.removeFromBottom (controlsHeight);
-    r.removeFromBottom (2);
+    auto controls = r.removeFromBottom (90);
+    r.removeFromBottom (4);
 
     spectrum.setBounds (r);
     overlay.setBounds (r);
 
-    // ---- Left: band rows + bypass anchored bottom-left ----
-    auto bandArea = controls.removeFromLeft (juce::roundToInt ((float) controls.getWidth() * 0.42f));
+    // ---- Left: band selector row, enable/solo row, Bypass bottom-left ----
+    auto bandArea = controls.removeFromLeft (420);
 
-    const int bypassH = juce::jlimit (18, 24, bandArea.getHeight() / 4);
-    auto bypassRow = bandArea.removeFromBottom (bypassH);
-    bypassButton.setBounds (bypassRow.removeFromLeft (juce::jlimit (66, 96, getWidth() / 9))
-                                .withSizeKeepingCentre (juce::jlimit (66, 96, getWidth() / 9), bypassH - 2));
-
-    const int selectorHeight = juce::jlimit (18, 26, bandArea.getHeight() / 2);
-    auto selectorRow = bandArea.removeFromTop (selectorHeight);
-    auto toggleRow = bandArea;   // remainder for enable+solo
-
-    const int bw = selectorRow.getWidth() / 7;
+    const int bw = bandArea.getWidth() / 7;
     for (int b = 0; b < 7; ++b)
     {
-        bandButtons[b].setBounds (selectorRow.getX() + b * bw, selectorRow.getY(), bw - 2, selectorHeight);
+        bandButtons[b].setBounds (bandArea.getX() + b * bw, bandArea.getY(), bw - 2, 24);
 
-        auto cell = juce::Rectangle<int> (toggleRow.getX() + b * bw, toggleRow.getY() + 1,
-                                          bw - 2, juce::jmin (toggleRow.getHeight() - 2, 20));
+        auto cell = juce::Rectangle<int> (bandArea.getX() + b * bw, bandArea.getY() + 26, bw - 2, 20);
         const int half = cell.getWidth() / 2;
         enableButtons[b].setBounds (cell.removeFromLeft (half).reduced (1, 0));
         soloButtons[b].setBounds (cell.reduced (1, 0));
     }
 
-    // ---- Right: selected-band strip (knobs + shape/slope selector) ----
+    bypassButton.setBounds (bandArea.getX(), bandArea.getBottom() - 24, 92, 24);
+
+    // ---- Right: knobs in the SAME cell size as the compressor's, plus the
+    //      shape/slope selector column ----
     controls.removeFromLeft (8);
-    auto selectorArea = controls.removeFromRight (juce::jlimit (62, 92, controls.getWidth() / 4));
+    auto selectorArea = controls.removeFromRight (92);
 
     const bool isNotch = selectedBand >= 2;
     if (isNotch)
     {
-        // three curve-icon buttons in a row
-        const int iconW = selectorArea.getWidth() / 3;
-        auto iconRow = selectorArea.withSizeKeepingCentre (selectorArea.getWidth(),
-                                                           juce::jmin (selectorArea.getHeight(), 34));
+        auto iconRow = selectorArea.withSizeKeepingCentre (selectorArea.getWidth(), 30);
+        const int iconW = iconRow.getWidth() / 3;
         for (int i = 0; i < 3; ++i)
-            shapeButtons[i].setBounds (iconRow.getX() + i * iconW, iconRow.getY(), iconW - 2, iconRow.getHeight());
+            shapeButtons[i].setBounds (iconRow.getX() + i * iconW, iconRow.getY(), iconW - 2, 30);
     }
     else
     {
-        // two stacked slope buttons
-        auto stack = selectorArea.withSizeKeepingCentre (selectorArea.getWidth(),
-                                                         juce::jmin (selectorArea.getHeight(), 52));
-        const int h = stack.getHeight() / 2;
-        slopeButtons[0].setBounds (stack.removeFromTop (h).reduced (1));
+        auto stack = selectorArea.withSizeKeepingCentre (selectorArea.getWidth(), 54);
+        slopeButtons[0].setBounds (stack.removeFromTop (27).reduced (1));
         slopeButtons[1].setBounds (stack.reduced (1));
     }
 
-    const int knobW = controls.getWidth() / (isNotch ? 3 : 1);
-    freqKnob.setBounds (controls.removeFromLeft (knobW));
+    const int cellW = juce::jmin (152, controls.getWidth() / 3);
+    const int cellH = 82;                            // matches the compressor knob cells
+    const int knobY = controls.getY() + (controls.getHeight() - cellH) / 2;
+
     if (isNotch)
     {
-        gainKnob.setBounds (controls.removeFromLeft (knobW));
-        qKnob.setBounds (controls);
+        freqKnob.setBounds (controls.getX(),             knobY, cellW, cellH);
+        gainKnob.setBounds (controls.getX() + cellW,     knobY, cellW, cellH);
+        qKnob.setBounds    (controls.getX() + cellW * 2, knobY, cellW, cellH);
+    }
+    else
+    {
+        // Single Freq knob, centred in the strip.
+        freqKnob.setBounds (controls.getX() + (controls.getWidth() - cellW) / 2, knobY, cellW, cellH);
     }
 }
