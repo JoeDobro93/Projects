@@ -52,6 +52,17 @@ jobs:
         working-directory: MagicDrumDeBleed
         run: cmake --build build --parallel
 
+      # Apple Silicon requires a valid signature to load code. We can't
+      # notarize without a paid Developer ID, but a fresh ad-hoc signature
+      # makes the bundles load once the user clears the download quarantine
+      # (xattr -dr com.apple.quarantine "…", or right-click > Open).
+      - name: Ad-hoc code sign
+        working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
+        run: |
+          codesign --force --deep --sign - "AU/Magic Drum De-Bleed.component"
+          codesign --force --deep --sign - "VST3/Magic Drum De-Bleed.vst3"
+          codesign --force --deep --sign - "Standalone/Magic Drum De-Bleed.app"
+
       # ditto-zip each bundle so unix permissions survive artifact upload
       - name: Zip bundles
         working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
