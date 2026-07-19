@@ -39,6 +39,7 @@ void Knob::attach (juce::RangedAudioParameter* p)
 {
     param = p;
     att.reset();
+    if (edit != nullptr) edit->setVisible (false);
     if (param != nullptr)
     {
         att = std::make_unique<juce::ParameterAttachment> (*param, [this] (float) { repaint(); });
@@ -106,9 +107,73 @@ void Knob::paint (juce::Graphics& g)
     g.drawLine (cx, cy, cx + (br - 1.5f) * std::cos (a), cy + (br - 1.5f) * std::sin (a), scf (2.4f));
 }
 
+juce::Rectangle<int> Knob::valueBounds() const
+{
+    // Same geometry as paint(): name strip, dial, then the value strip.
+    auto r = getLocalBounds().toFloat();
+    const float nameH = scf (14.0f), valH = scf (14.0f);
+    r.removeFromTop (nameH);
+    const float d = juce::jmin (r.getWidth(), r.getHeight() - valH, scf (50.0f));
+    return juce::Rectangle<float> (r.getX(), r.getY() + scf (1.0f) + d, r.getWidth(), valH).toNearestInt();
+}
+
+void Knob::showEditor()
+{
+    if (edit == nullptr)
+    {
+        edit = std::make_unique<juce::TextEditor>();
+        edit->setJustification (juce::Justification::centred);
+        edit->setInputRestrictions (10, "0123456789.-kK");
+        addChildComponent (*edit);
+        auto commit = [this]
+        {
+            edit->setVisible (false);
+            applyTyped (edit->getText());
+        };
+        edit->onReturnKey = commit;
+        edit->onFocusLost = commit;
+        edit->onEscapeKey = [this] { edit->setVisible (false); };
+    }
+    edit->setFont (font (11.0f));
+    auto b = valueBounds();
+    edit->setBounds (b.withSizeKeepingCentre (juce::jmax (b.getWidth(), sc (56)), sc (18)));
+    const float real = param->convertFrom0to1 (param->getValue());
+    edit->setText (juce::String (real, std::abs (real) < 10.0f ? 2 : 1), juce::dontSendNotification);
+    edit->setVisible (true);
+    edit->grabKeyboardFocus();
+    edit->selectAll();
+}
+
+void Knob::applyTyped (const juce::String& text)
+{
+    if (param == nullptr || text.trim().isEmpty()) return;
+    auto s = text.trim().toLowerCase();
+    double mul = 1.0;
+    if (s.endsWith ("k")) { mul = 1000.0; s = s.dropLastCharacters (1); }
+    const double v = s.getDoubleValue() * mul;
+
+    if (auto* ch = dynamic_cast<juce::AudioParameterChoice*> (param))
+    {
+        // Choice knobs (e.g. slope): snap to the choice whose leading number is nearest.
+        int best = 0; double bd = 1.0e18;
+        for (int i = 0; i < ch->choices.size(); ++i)
+        {
+            const double d = std::abs (ch->choices[i].getDoubleValue() - v);
+            if (d < bd) { bd = d; best = i; }
+        }
+        att->setValueAsCompleteGesture ((float) best);
+        return;
+    }
+    const auto& r = param->getNormalisableRange();
+    att->setValueAsCompleteGesture (juce::jlimit (r.start, r.end, (float) v));
+}
+
 void Knob::mouseDown (const juce::MouseEvent& e)
 {
     if (param == nullptr) return;
+    if (valueBounds().contains (e.getPosition()))   // click the value → type it
+        return;
+    draggingKnob = true;
     dragStartNorm = param->getValue();
     dragStartY = e.getScreenY();
     att->beginGesture();
@@ -116,7 +181,7 @@ void Knob::mouseDown (const juce::MouseEvent& e)
 
 void Knob::mouseDrag (const juce::MouseEvent& e)
 {
-    if (param == nullptr) return;
+    if (param == nullptr || ! draggingKnob) return;
     const float sens = e.mods.isShiftDown() ? 900.0f : 190.0f;
     float delta = (float) (dragStartY - e.getScreenY()) / sens;
     if (reversed) delta = -delta;
@@ -124,14 +189,21 @@ void Knob::mouseDrag (const juce::MouseEvent& e)
     att->setValueAsPartOfGesture (param->convertFrom0to1 (n));
 }
 
-void Knob::mouseUp (const juce::MouseEvent&)
+void Knob::mouseUp (const juce::MouseEvent& e)
 {
-    if (att != nullptr) att->endGesture();
+    if (draggingKnob)
+    {
+        att->endGesture();
+        draggingKnob = false;
+    }
+    else if (param != nullptr && valueBounds().contains (e.getPosition())
+             && (edit == nullptr || ! edit->isVisible()))
+        showEditor();
 }
 
-void Knob::mouseDoubleClick (const juce::MouseEvent&)
+void Knob::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (param != nullptr && att != nullptr)
+    if (param != nullptr && att != nullptr && ! valueBounds().contains (e.getPosition()))
         att->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
 }
 
@@ -236,51 +308,47 @@ void LevelMeter::mouseUp (const juce::MouseEvent&)
 }
 
 //==============================================================================
-ReductionMeter::ReductionMeter (std::function<float()> get, bool sCap, bool sVal)
-    : getDb (std::move (get)), showCaption (sCap), showValue (sVal)
+GateMeter::GateMeter (Getter g) : get (std::move (g))
 {
     startTimerHz (30);
 }
 
-void ReductionMeter::timerCallback()
+void GateMeter::timerCallback()
 {
-    const float v = juce::jlimit (-90.0f, 0.0f, getDb());
-    shown = v > shown ? v : shown + 0.10f * (v - shown);
+    state = get (open01, tail01);
     repaint();
 }
 
-void ReductionMeter::paint (juce::Graphics& g)
+void GateMeter::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     g.setFont (font (9.0f, true));
     g.setColour (pal->faint);
-    if (showCaption)
-    {
-        auto cr = r.removeFromTop (scf (13.0f));
-        g.drawSingleLineText ("REDUCTION", (int) cr.getCentreX(), (int) cr.getBottom() - sc (3),
-                              juce::Justification::horizontallyCentred);
-    }
-    if (showValue)
-    {
-        g.setFont (font (9.5f));
-        g.drawText (shown <= -59.5f ? juce::String::fromUTF8 ("\xe2\x80\x94") : juce::String (shown, 1),
-                    r.removeFromBottom (scf (13.0f)), juce::Justification::centred);
-    }
+    auto cr = r.removeFromTop (scf (13.0f));
+    g.drawSingleLineText ("GATE", (int) cr.getCentreX(), (int) cr.getBottom() - sc (3),
+                          juce::Justification::horizontallyCentred);
+
+    auto vr = r.removeFromBottom (scf (13.0f));
+    g.setFont (font (9.5f));
+    g.setColour (state == 2 ? pal->open : state == 1 ? pal->tail : pal->faint);
+    g.drawText (state == 2 ? "OPEN" : state == 1 ? "TAIL" : juce::String::fromUTF8 ("\xe2\x80\x94"),
+                vr, juce::Justification::centred);
+
     auto bar = r;
     g.setColour (pal->panel2); g.fillRoundedRectangle (bar, 3.0f);
     g.setColour (pal->line);   g.drawRoundedRectangle (bar, 3.0f, 1.0f);
-    for (int d = -12; d >= -48; d -= 12)
-    {
-        const float y = bar.getY() + (1.0f - (d + 60.0f) / 60.0f) * bar.getHeight();
-        g.drawHorizontalLine ((int) y, bar.getX() + 1, bar.getRight() - 1);
-    }
-    // hang downward: fill height = level above -60
-    const float h = juce::jlimit (0.0f, 1.0f, (shown + 60.0f) / 60.0f) * bar.getHeight();
+    for (int t = 1; t < 5; ++t)
+        g.drawHorizontalLine ((int) (bar.getY() + bar.getHeight() * (float) t / 5.0f),
+                              bar.getX() + 1, bar.getRight() - 1);
+
+    const float v = state == 2 ? open01 : state == 1 ? tail01 : 0.0f;
+    const float h = juce::jlimit (0.0f, 1.0f, v) * bar.getHeight();
     if (h > 1.0f)
     {
-        g.setGradientFill (juce::ColourGradient (pal->warn, 0, bar.getY(),
-                                                 pal->warn.brighter (0.4f), 0, bar.getBottom(), false));
-        g.fillRect (juce::Rectangle<float> (bar.getX() + 1, bar.getY() + 1, bar.getWidth() - 2, h));
+        const auto c = state == 2 ? pal->open : pal->tail;
+        g.setGradientFill (juce::ColourGradient (c.darker (0.4f), 0, bar.getBottom(),
+                                                 c, 0, bar.getY(), false));
+        g.fillRect (juce::Rectangle<float> (bar.getX() + 1, bar.getBottom() - h, bar.getWidth() - 2, h - 1));
     }
 }
 
@@ -380,6 +448,51 @@ void AmountFader::mouseUp (const juce::MouseEvent&)      { if (dragging) { att->
 void AmountFader::mouseDoubleClick (const juce::MouseEvent&)
 {
     att->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+}
+
+//==============================================================================
+void MonitorFader::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setFont (font (8.5f, true));
+    g.setColour (pal->faint);
+    g.drawText ("MON", r.removeFromTop (scf (12.0f)), juce::Justification::centred);
+    auto vr = r.removeFromBottom (scf (12.0f));
+    g.setFont (font (8.5f));
+    g.drawText ((value > 0.05f ? "+" : "") + juce::String (value, std::abs (value) < 10.0f ? 1 : 0),
+                vr, juce::Justification::centred);
+
+    auto track = juce::Rectangle<float> (r.getCentreX() - scf (2.5f), r.getY() + scf (4.0f),
+                                         scf (5.0f), r.getHeight() - scf (8.0f));
+    g.setColour (pal->panel2); g.fillRoundedRectangle (track, 3.0f);
+    g.setColour (pal->line);   g.drawRoundedRectangle (track, 3.0f, 1.0f);
+    g.setColour (pal->knobEdge);
+    g.drawHorizontalLine ((int) track.getCentreY(), r.getX() + scf (2.0f), r.getRight() - scf (2.0f));
+
+    const float pos = track.getCentreY() - (value / 24.0f) * track.getHeight() * 0.5f;
+    auto thumb = juce::Rectangle<float> (scf (16.0f), scf (9.0f)).withCentre ({ r.getCentreX(), pos });
+    g.setColour (pal->knob);     g.fillRoundedRectangle (thumb, 2.0f);
+    g.setColour (pal->knobEdge); g.drawRoundedRectangle (thumb, 2.0f, 1.0f);
+}
+
+void MonitorFader::setFromY (float y)
+{
+    auto r = getLocalBounds().toFloat();
+    r.removeFromTop (scf (12.0f));
+    r.removeFromBottom (scf (12.0f));
+    const float half = juce::jmax (1.0f, (r.getHeight() - scf (8.0f)) * 0.5f);
+    value = juce::jlimit (-24.0f, 24.0f, (r.getCentreY() - y) / half * 24.0f);
+    if (onChange) onChange (value);
+    repaint();
+}
+
+void MonitorFader::mouseDown (const juce::MouseEvent& e)        { setFromY (e.position.y); }
+void MonitorFader::mouseDrag (const juce::MouseEvent& e)        { setFromY (e.position.y); }
+void MonitorFader::mouseDoubleClick (const juce::MouseEvent&)
+{
+    value = 0.0f;
+    if (onChange) onChange (value);
+    repaint();
 }
 
 //==============================================================================

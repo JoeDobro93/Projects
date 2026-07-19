@@ -146,6 +146,15 @@ double TailCanvas::keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount)
     return std::sqrt (sum / 81.0);
 }
 
+int TailCanvas::gateState (MagicDrumDeBleedAudioProcessor& proc, float& open01, float& tail01)
+{
+    open01 = juce::jlimit (0.0f, 1.0f, proc.getGainReductionDb() / -96.0f);
+    tail01 = juce::jlimit (0.0f, 1.0f, std::pow (10.0f, proc.getEqGateReductionDb() / 20.0f));
+    const double amount = proc.getIntensity01();
+    const bool keepAudible = keepAvg (proc, amount) > (1.0 - amount) + 0.02;
+    return open01 > 0.5f ? 2 : (tail01 > 0.12f && keepAudible ? 1 : 0);
+}
+
 //==============================================================================
 juce::Rectangle<float> TailCanvas::plotArea() const
 {
@@ -202,7 +211,7 @@ void TailCanvas::paint (juce::Graphics& g)
     {
         const float bf = juce::jlimit (0.0f, (float) (kBins - 2), (float) (f / binHz));
         const int b = (int) bf; const float fr = bf - (float) b;
-        return bins[(size_t) b] * (1.0f - fr) + bins[(size_t) (b + 1)] * fr;
+        return bins[(size_t) b] * (1.0f - fr) + bins[(size_t) (b + 1)] * fr + monGainDb;
     };
     auto layer = [&] (bool useKeep, juce::Colour top, juce::Colour bot, juce::Colour stroke)
     {
@@ -220,15 +229,17 @@ void TailCanvas::paint (juce::Graphics& g)
         g.setColour (stroke);
         g.strokePath (p, juce::PathStrokeType (1.0f));
     };
-    layer (false, juce::Colour (0x574aa8e0), juce::Colour (0x124aa8e0), juce::Colour (0x8c4aa8e0));
-    layer (true,  juce::Colour (0x9ee07e2a), juce::Colour (0x29e07e2a), juce::Colour (0xe6f0963c));
+    if (showDry)  layer (false, juce::Colour (0x574aa8e0), juce::Colour (0x124aa8e0), juce::Colour (0x8c4aa8e0));
+    if (showKept) layer (true,  juce::Colour (0x9ee07e2a), juce::Colour (0x29e07e2a), juce::Colour (0xe6f0963c));
 
-    // gold transfer curve
+    // gold band curve: the internal cancellation curve mirrored vertically —
+    // identical shape to "Show internals", peaking up where the filter cuts
+    auto flipY = [&] (double db) { return h - dyy ((float) db, h); };
     {
         juce::Path p;
         for (int i = 0; i < kN; ++i)
         {
-            const float x = fx (freqs[i], w), y = dyy ((float) keepDb[i], h);
+            const float x = fx (freqs[i], w), y = (float) flipY (hDb[i]);
             i == 0 ? p.startNewSubPath (x, y) : p.lineTo (x, y);
         }
         g.setColour (pal->gold);
@@ -261,18 +272,10 @@ void TailCanvas::paint (juce::Graphics& g)
         if (val (onP[b]) < 0.5) { handleX[b] = -999; continue; }
         anyOn = true;
         const double f = juce::jlimit (20.0, 20000.0, val (freqP[b]));
-        float y;
-        if (b >= 2)
-        {
-            const double k = juce::jmax (1.0 - std::pow (10.0, val (gainP[b]) / 20.0), 1.0e-6);
-            y = dyy ((float) (20.0 * std::log10 (k)), h);
-        }
-        else
-        {
-            // sit on the curve at this frequency
-            int idx = (int) juce::jlimit (0.0, (double) (kN - 1), std::log (f / 20.0) / std::log (1000.0) * (kN - 1));
-            y = dyy ((float) keepDb[idx], h);
-        }
+        // every handle rides the flipped gold curve at its own frequency
+        const int idx = (int) juce::jlimit (0.0, (double) (kN - 1),
+                                            std::log (f / 20.0) / std::log (1000.0) * (kN - 1));
+        const float y = juce::jlimit (0.0f, h, (float) flipY (hDb[idx]));
         const float x = fx (f, w);
         handleX[b] = x; handleY[b] = y;
 
@@ -309,13 +312,19 @@ void TailCanvas::paint (juce::Graphics& g)
     g.setFont (font (10.5f));
     g.drawText ("drag a handle onto the frequencies you want to keep", sc (8), sc (5), sc (300), sc (12),
                 juce::Justification::centredLeft);
-    // key (top-right)
+    // key (top-right) — the chips are click-toggles for their layers
     g.setFont (font (10.0f));
     const int kx = getWidth() - sc (110);
-    g.setColour (juce::Colour (0x8c4aa8e0)); g.fillRoundedRectangle ((float) kx, scf (7.0f), scf (9.0f), scf (9.0f), 2.0f);
-    g.setColour (pal->faint); g.drawText ("dry", kx + sc (12), sc (5), sc (30), sc (12), juce::Justification::centredLeft);
-    g.setColour (juce::Colour (0xbfe07e2a)); g.fillRoundedRectangle ((float) (kx + sc (48)), scf (7.0f), scf (9.0f), scf (9.0f), 2.0f);
-    g.setColour (pal->faint); g.drawText ("kept", kx + sc (60), sc (5), sc (36), sc (12), juce::Justification::centredLeft);
+    dryLegend  = { kx, sc (3), sc (44), sc (16) };
+    keptLegend = { kx + sc (48), sc (3), sc (50), sc (16) };
+    g.setColour (juce::Colour (0x8c4aa8e0).withMultipliedAlpha (showDry ? 1.0f : 0.28f));
+    g.fillRoundedRectangle ((float) kx, scf (7.0f), scf (9.0f), scf (9.0f), 2.0f);
+    g.setColour (showDry ? pal->faint : pal->faint.withMultipliedAlpha (0.45f));
+    g.drawText ("dry", kx + sc (12), sc (5), sc (30), sc (12), juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xbfe07e2a).withMultipliedAlpha (showKept ? 1.0f : 0.28f));
+    g.fillRoundedRectangle ((float) (kx + sc (48)), scf (7.0f), scf (9.0f), scf (9.0f), 2.0f);
+    g.setColour (showKept ? pal->faint : pal->faint.withMultipliedAlpha (0.45f));
+    g.drawText ("kept", kx + sc (60), sc (5), sc (36), sc (12), juce::Justification::centredLeft);
 
     g.setColour (pal->line);
     g.drawRoundedRectangle (full, 4.0f, 1.0f);
@@ -338,6 +347,9 @@ int TailCanvas::bandAt (juce::Point<float> pos) const
 
 void TailCanvas::mouseDown (const juce::MouseEvent& e)
 {
+    if (dryLegend.contains (e.getPosition()))  { showDry  = ! showDry;  repaint(); return; }
+    if (keptLegend.contains (e.getPosition())) { showKept = ! showKept; repaint(); return; }
+
     drag = bandAt (e.position);
     if (drag < 0) return;
     sel = drag;
@@ -358,12 +370,11 @@ void TailCanvas::mouseDrag (const juce::MouseEvent& e)
 
     if (auto* gp = gainP[drag])
     {
-        const float db = kTopDb - juce::jlimit (0.0f, area.getHeight(), e.position.y - area.getY())
-                                    / area.getHeight() * (kTopDb - kBotDb);
-        // ring level → internal cut depth: gain = 20·log10(1 − 10^(ring/20))
-        const double k = juce::jlimit (1.0e-4, 0.9995, std::pow (10.0, (double) juce::jmin (db, 0.0f) / 20.0));
-        const float gain = (float) juce::jlimit (-48.0, -0.5, 20.0 * std::log10 (1.0 - k));
-        gp->setValueNotifyingHost (gp->convertTo0to1 (gain));
+        // The gold curve is the internal curve flipped, so the cursor height
+        // maps straight onto the internal cut depth at the peak.
+        const float yr = juce::jlimit (0.0f, area.getHeight(), e.position.y - area.getY());
+        const float depth = kTopDb - (area.getHeight() - yr) / area.getHeight() * (kTopDb - kBotDb);
+        gp->setValueNotifyingHost (gp->convertTo0to1 (juce::jlimit (-48.0f, -0.5f, depth)));
     }
 }
 

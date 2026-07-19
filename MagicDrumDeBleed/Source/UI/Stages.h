@@ -12,11 +12,11 @@
 class StageHeader : public juce::Component
 {
 public:
-    StageHeader (int number, juce::String title, juce::String sub, int colourSel); // 0 accent,1 open,2 tail
+    StageHeader (int number, juce::String title, int colourSel); // 0 accent,1 open,2 tail
     void paint (juce::Graphics& g) override;
 private:
     int num, clr;
-    juce::String title, sub;
+    juce::String title;
 };
 
 //==============================================================================
@@ -29,17 +29,15 @@ public:
 private:
     void rebuildTypeButtons();
     void updateWidthKnob();
-    void learnClicked();
 
     MagicDrumDeBleedAudioProcessor& processor;
-    StageHeader header { 1, "TRIGGER", juce::String::fromUTF8 ("\xe2\x80\x94 what counts as a hit"), 0 };
+    StageHeader header { 1, "TRIGGER", 0 };
     juce::TextButton bypassBtn { "Bypass" };
     ui::LevelMeter trigMeter;
     ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" }, focus { "Focus" }, width { "Width" };
     juce::TextButton typeBtns[3];
-    ui::CheckToggle filterTg { "Filter" };
-    juce::TextButton learnBtn { "Auto-find" }, listenBtn { "Listen" };
-    std::unique_ptr<juce::ParameterAttachment> typeAtt, monAtt, bypassAtt, scEnableAtt;
+    juce::TextButton enableBtn { "Enabled" }, learnBtn { "Learn" }, linkBtn { "Link to K1" };
+    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt;
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
 };
 
@@ -54,7 +52,7 @@ private:
     void timerCallback() override;
 
     MagicDrumDeBleedAudioProcessor& processor;
-    StageHeader header { 2, "GATE", juce::String::fromUTF8 ("\xe2\x80\x94 how long the drum stays through"), 1 };
+    StageHeader header { 2, "GATE", 1 };
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
              release { "Release", ui::Knob::openClr };
 
@@ -82,18 +80,21 @@ private:
     void updateSoloButtons();
 
     MagicDrumDeBleedAudioProcessor& processor;
-    StageHeader header { 3, "TAIL", juce::String::fromUTF8 ("\xe2\x80\x94 what keeps ringing after the gate shuts"), 2 };
+    StageHeader header { 3, "TAIL", 2 };
     ui::CheckToggle tailGateTg { "Tail gate", true };
     juce::TextButton internalsBtn { "Show internals" }, accumBtn { "Accumulate" }, freezeBtn { "Freeze" };
+    ui::MonitorFader mon;
     TailCanvas canvas;
 
     juce::TextButton bandBtns[7], soloBtns[7];
     juce::TextButton dotBtns[7];                        // enable dots
     std::unique_ptr<juce::ParameterAttachment> onAtts[7];
     juce::Label bandLabel;
-    ui::Knob freq { "Frequency", ui::Knob::tailClr }, widthK { "Width", ui::Knob::tailClr },
-             ring { "Ring level", ui::Knob::tailClr };
+    ui::Knob freq { "Frequency", ui::Knob::tailClr }, widthK { "Q", ui::Knob::tailClr },
+             ring { "Ring level", ui::Knob::tailClr },
+             slopeK { "Slope", ui::Knob::tailClr };     // LOWS/HIGHS only
     juce::TextButton shapeBtns[3];
+    bool selIsKeep = true;
     std::unique_ptr<juce::ParameterAttachment> shapeAtt, tailGateAtt;
     ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
@@ -113,7 +114,7 @@ private:
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
-    ui::ReductionMeter redMeter;
+    ui::GateMeter gateMeter;
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
     std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt;
     int listenY = 0;

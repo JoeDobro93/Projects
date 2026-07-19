@@ -1,4 +1,6 @@
 #include "SimpleView.h"
+#include "TailCanvas.h"
+#include "BandIds.h"
 
 using namespace ui;
 
@@ -6,14 +8,14 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     : processor (proc),
       trigMeter ("TRIGGER", [&proc] { return proc.getDetectorRmsDb(); },
                  proc.apvts.getParameter (ParamIDs::threshold)),
-      redMeter ([&proc] { return proc.getRemovedPeakDb(); }),
+      gateMeter ([&proc] (float& o, float& t) { return TailCanvas::gateState (proc, o, t); }),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); })
 {
     setHint (trigMeter, "TRIGGER", "Detector level after the trigger filter. Drag the red line to set the Threshold.");
     addAndMakeVisible (trigMeter);
-    setHint (redMeter, "REDUCTION", "How much bleed is being cancelled right now.");
-    addAndMakeVisible (redMeter);
+    setHint (gateMeter, "GATE", "Green = open (drum passing), amber = tail fading, empty = closed.");
+    addAndMakeVisible (gateMeter);
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed.");
     addAndMakeVisible (fader);
     amountVal.setJustificationType (juce::Justification::centred);
@@ -23,6 +25,16 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     amtAtt->sendInitialUpdate();
     setHint (outMeter, "OUT", "Plugin output level.");
     addAndMakeVisible (outMeter);
+
+    addAndMakeVisible (focus);
+    focus.attach (proc.apvts.getParameter (ParamIDs::scFreq));
+    setHint (focus, "Focus", "The frequency the detector listens to.");
+    addAndMakeVisible (tailHold);
+    tailHold.attach (proc.apvts.getParameter (ParamIDs::eqGateHold));
+    setHint (tailHold, "Tail hold", "How long the kept bands ring at full level before fading.");
+    setHint (learnBtn, "Learn", "Analyse the incoming audio and park the trigger filter on this drum's dominant frequency.");
+    learnBtn.onClick = [this] { eqids::handleLearnClick (processor, learnBtn); };
+    addAndMakeVisible (learnBtn);
 
     setHint (advancedBtn, "Advanced View", "Back to the full view: trigger filter, gate timing and tail shaping.");
     advancedBtn.onClick = [cb = std::move (onAdvancedView)] { if (cb) cb(); };
@@ -47,14 +59,26 @@ void SimpleView::resized()
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));
     r.removeFromBottom (sc (10));
 
-    // centred row: TRIGGER · REDUCTION · AMOUNT · OUT
+    // knob row under the meters: Focus · Tail hold · Learn
+    auto knobs = r.removeFromBottom (sc (80));
+    r.removeFromBottom (sc (6));
+    const int kw = sc (70), lw = sc (86);
+    auto krow = knobs.withSizeKeepingCentre (juce::jmin (kw * 2 + lw + sc (20), knobs.getWidth()),
+                                             knobs.getHeight());
+    focus.setBounds (krow.removeFromLeft (kw));
+    krow.removeFromLeft (sc (10));
+    tailHold.setBounds (krow.removeFromLeft (kw));
+    krow.removeFromLeft (sc (10));
+    learnBtn.setBounds (krow.withSizeKeepingCentre (juce::jmin (lw, krow.getWidth()), sc (26)));
+
+    // centred row: TRIGGER · GATE · AMOUNT · OUT
     const int mw = sc (46), fw = sc (62), gap = sc (14);
     const int total = mw * 3 + fw + gap * 3;
     auto row = r.withSizeKeepingCentre (juce::jmin (total, r.getWidth()), r.getHeight());
 
     trigMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (gap);
-    redMeter.setBounds (row.removeFromLeft (mw));
+    gateMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (gap);
     auto fcol = row.removeFromLeft (fw);
     amountX = fcol.getX();

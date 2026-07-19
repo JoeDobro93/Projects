@@ -1,5 +1,25 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v2.1 refinements (2026-07):** stage-title explanations removed. Knob value
+> text is click-to-type (`ui::Knob` inline TextEditor, "2k"=2000; choice knobs
+> snap to nearest choice's leading number). Gate Hold/Release ranges 5–200 ms.
+> Trigger filter: button stack **Enabled / Learn / Link to K1** (left) · Focus+
+> Width knobs · HP/LP/BP segment (right); Listen removed (rail "Trigger signal"
+> covers it). `linkK1` param mirrors Focus↔K1 freq (processor is an APVTS
+> Listener, reentry guard `linkSyncing`; enabling snaps K1:=Focus; Learn with
+> link on enables K1 at gain −10.69 dB = ring −3 dB if K1 was off).
+> K shapes now **Bell / Proportional Q (Qeff=q·clamp((|g|/18)^0.7,.1,3)) /
+> Band Shelf (= blendedNotch, exact floor)**; Width knob is a plain **Q** knob
+> (0.1–40, default 1, not reversed). LOWS/HIGHS slope segment replaced by a
+> stepped Slope knob in the Q cell. Gold canvas curve = **internals flipped**
+> (y = h − dyy(hDb)); handles all ride it; ring-drag maps cursor straight to
+> cut depth. dry/kept legend chips toggle their layers; `ui::MonitorFader`
+> (±24 dB, display-only) left of canvas. REDUCTION meter → **GATE meter**
+> (`ui::GateMeter`, state via `TailCanvas::gateState`, green=open fill,
+> tail-colour fading=tail). Tail columns shrink proportionally at narrow
+> widths (TAIL meter never clips). Simple view 380×520 (min 330×450) adds
+> Focus / Tail hold / Learn (shared `eqids::handleLearnClick`).
+>
 > **v2 UI overhaul (2026-07):** product renamed **Magic Drum Gate**. UI rebuilt
 > around a three-state model (CLOSED/OPEN/TAIL) per UIOVERHAULSPEC.md + mockup.
 > Key deltas vs the text below: panels are now stages **1·TRIGGER / 2·GATE /

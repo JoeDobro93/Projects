@@ -60,26 +60,24 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
         return 1;
     }
 
-    // ---- Notch bands: three selectable shapes, all single-biquad ----
+    // ---- Keep bands: Ozone-style cut shapes ----
     switch (p.shape)
     {
-        case 0:  // Bell — rounded peaking dip, Q as set
+        case 0:  // Bell — classic RBJ peaking cut, Q as set
             out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q, p.gainDb);
             break;
 
-        case 1:  // Flat — wide, flat-bottomed band-reject (steeper walls than a bell)
-            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q * 0.6, p.gainDb);
-            break;
-
-        case 2:  // Band — 4th-order contained band-reject: steep walls, and
-        default: // frequencies outside the band are left essentially untouched.
+        case 1:  // Proportional Q — bell whose width tightens as the cut deepens
         {
-            const double bwOct = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
-            const double s = std::pow (2.0, bwOct * 0.10);
-            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz / s, p.q * 0.8, p.gainDb * 0.56);
-            out[1] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz * s, p.q * 0.8, p.gainDb * 0.56);
-            return 2;
+            const double t = std::clamp (std::pow (std::abs (p.gainDb) / 18.0, 0.7), 0.1, 3.0);
+            out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q * t, p.gainDb);
+            break;
         }
+
+        case 2:  // Band Shelf — dry/notch blend: exact flat floor at gainDb,
+        default: // walls steeper and more contained than a bell at depth.
+            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q, p.gainDb);
+            break;
     }
     return 1;
 }

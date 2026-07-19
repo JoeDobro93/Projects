@@ -44,6 +44,7 @@ namespace ParamIDs
     inline constexpr const char* scType       = "scType";    // 0 HP, 1 LP, 2 BP
     inline constexpr const char* scSlope      = "scSlope";   // 6/12/18/24 dB/oct (HP/LP only)
     inline constexpr const char* learnCeiling = "learnCeiling";
+    inline constexpr const char* linkK1       = "linkK1";    // K1 freq follows Focus
 
     inline constexpr const char* hpfOn        = "hpfOn";
     inline constexpr const char* hpfFreq      = "hpfFreq";
@@ -69,7 +70,8 @@ namespace ParamIDs
     inline constexpr const char* eqBypass     = "eqBypass";
 }
 
-class MagicDrumDeBleedAudioProcessor : public juce::AudioProcessor
+class MagicDrumDeBleedAudioProcessor : public juce::AudioProcessor,
+                                       private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     enum MonitorMode
@@ -81,7 +83,7 @@ public:
     };
 
     MagicDrumDeBleedAudioProcessor();
-    ~MagicDrumDeBleedAudioProcessor() override = default;
+    ~MagicDrumDeBleedAudioProcessor() override;
 
     // ---- AudioProcessor ----
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -152,6 +154,10 @@ public:
     void  setSimpleSize (int w, int h);
 
 private:
+    // K1-link: mirrors Focus ↔ K1 frequency while ParamIDs::linkK1 is on.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    std::atomic<bool> linkSyncing { false };
+
     void updateParametersForBlock();
     void processInternal (juce::AudioBuffer<double>& buffer);
     void updateOutputPeak (const juce::AudioBuffer<double>& buffer, int numChannels, int numSamples);

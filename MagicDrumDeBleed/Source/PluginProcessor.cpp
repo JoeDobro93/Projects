@@ -65,11 +65,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::rmsWindow, 1 }, "RMS Window", r, 10.0f, ms));
     }
     {
-        juce::NormalisableRange<float> r (0.0f, 500.0f, 1.0f);  r.setSkewForCentre (60.0f);
+        juce::NormalisableRange<float> r (5.0f, 200.0f, 1.0f);  r.setSkewForCentre (40.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hold, 1 }, "Hold", r, 20.0f, ms));
     }
     {
-        juce::NormalisableRange<float> r (5.0f, 1000.0f, 1.0f); r.setSkewForCentre (150.0f);
+        juce::NormalisableRange<float> r (5.0f, 200.0f, 1.0f);  r.setSkewForCentre (60.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release", r, 100.0f, ms));
     }
 
@@ -89,6 +89,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                         .withStringFromValueFunction ([] (float v, int) { return juce::String ((int) v) + " dB/oct"; })));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::learnCeiling, 1 }, "Learn Ceiling",
                     logHzRange (200.0f, 2000.0f), 1000.0f, hz));
+    p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::linkK1, 1 }, "Link to K1", false));
 
     // ---- EQ: HPF / LPF ----
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::hpfOn, 1 }, "HPF On", true));
@@ -111,14 +112,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchFreq (i), 1 },
                         "Notch " + num + " Freq", logHzRange (20.0f, 20000.0f), kNotchDefaultFreqs[i], hz));
         {
-            juce::NormalisableRange<float> r (0.5f, 30.0f, 0.01f);  r.setSkewForCentre (4.0f);
+            juce::NormalisableRange<float> r (0.1f, 40.0f, 0.01f);  r.setSkewForCentre (1.0f);
             p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchQ (i), 1 },
-                            "Notch " + num + " Q", r, 4.0f));
+                            "Notch " + num + " Q", r, 1.0f));
         }
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
                         "Notch " + num + " Gain", juce::NormalisableRange<float> (-48.0f, 0.0f, 0.1f), -24.0f, dB));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },
-                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Flat", "Band" }, 0));
+                        "Notch " + num + " Shape", juce::StringArray { "Bell", "Proportional Q", "Band Shelf" }, 0));
     }
 
     // ---- EQ gate ----
@@ -190,6 +191,44 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pEqBypass    = raw (ParamIDs::eqBypass);
 
     spectrumFifoBuffer.resize (kSpectrumFifoSize, 0.0f);
+
+    apvts.addParameterListener (ParamIDs::linkK1, this);
+    apvts.addParameterListener (ParamIDs::scFreq, this);
+    apvts.addParameterListener (ParamIDs::notchFreq (0), this);
+}
+
+MagicDrumDeBleedAudioProcessor::~MagicDrumDeBleedAudioProcessor()
+{
+    apvts.removeParameterListener (ParamIDs::linkK1, this);
+    apvts.removeParameterListener (ParamIDs::scFreq, this);
+    apvts.removeParameterListener (ParamIDs::notchFreq (0), this);
+}
+
+void MagicDrumDeBleedAudioProcessor::parameterChanged (const juce::String& id, float newValue)
+{
+    auto setReal = [this] (const juce::String& pid, float real)
+    {
+        if (auto* p = apvts.getParameter (pid))
+            p->setValueNotifyingHost (p->convertTo0to1 (real));
+    };
+
+    if (id == ParamIDs::linkK1)
+    {
+        // Turning the link on snaps K1 onto the current Focus frequency.
+        if (newValue > 0.5f && ! linkSyncing.exchange (true))
+        {
+            setReal (ParamIDs::notchFreq (0), pScFreq->load());
+            linkSyncing.store (false);
+        }
+        return;
+    }
+
+    // Mirror Focus ↔ K1 frequency. The flag breaks the notification loop:
+    // the mirrored set re-enters this callback synchronously.
+    if (apvts.getRawParameterValue (ParamIDs::linkK1)->load() < 0.5f || linkSyncing.exchange (true))
+        return;
+    setReal (id == ParamIDs::scFreq ? ParamIDs::notchFreq (0) : juce::String (ParamIDs::scFreq), newValue);
+    linkSyncing.store (false);
 }
 
 bool MagicDrumDeBleedAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const

@@ -26,8 +26,9 @@ bool findHint (juce::Component* c, juce::String& title, juce::String& text);
 
 //==============================================================================
 /*  Rotary knob bound to a RangedAudioParameter. Drag vertically (Shift = fine),
-    double-click resets. `reversed` flips the displayed direction (used for the
-    octave-width and ring-level knobs). `fmt` overrides the value text. */
+    double-click resets, click the value text to type a value ("2k" = 2000).
+    `reversed` flips the displayed direction (used for the ring-level knob).
+    `fmt` overrides the value text. */
 class Knob : public juce::Component
 {
 public:
@@ -47,6 +48,9 @@ public:
 
 private:
     float shownNorm() const;
+    juce::Rectangle<int> valueBounds() const;
+    void showEditor();
+    void applyTyped (const juce::String& text);
 
     juce::String name;
     ColourId clr;
@@ -54,8 +58,10 @@ private:
     std::function<juce::String (float)> fmt;
     juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::ParameterAttachment> att;
+    std::unique_ptr<juce::TextEditor> edit;               // lazily created, reused
     float dragStartNorm = 0.0f;
     int dragStartY = 0;
+    bool draggingKnob = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Knob)
 };
 
@@ -86,18 +92,20 @@ private:
 };
 
 //==============================================================================
-/*  REDUCTION meter: hangs downward from the top (classic GR style), warn
-    gradient, value text ("—" when idle). */
-class ReductionMeter : public juce::Component, private juce::Timer
+/*  GATE meter: mirrors the gate state chip. OPEN = green fill, TAIL = tail
+    colour at the fading tail level, CLOSED = empty. `get` fills state
+    (0 closed, 1 tail, 2 open), open01 and tail01. */
+class GateMeter : public juce::Component, private juce::Timer
 {
 public:
-    ReductionMeter (std::function<float()> getDb, bool showCaption = true, bool showValue = true);
+    using Getter = std::function<int (float& open01, float& tail01)>;
+    explicit GateMeter (Getter get);
     void paint (juce::Graphics& g) override;
 private:
     void timerCallback() override;
-    std::function<float()> getDb;
-    bool showCaption, showValue;
-    float shown = -90.0f;
+    Getter get;
+    int state = 0;
+    float open01 = 0.0f, tail01 = 0.0f;
 };
 
 //==============================================================================
@@ -130,6 +138,23 @@ private:
     juce::RangedAudioParameter* param;
     std::unique_ptr<juce::ParameterAttachment> att;
     bool dragging = false;
+};
+
+//==============================================================================
+/*  Monitor-gain fader: vertical ±24 dB, display-only offset for the spectrum
+    layers. Double-click resets to 0. */
+class MonitorFader : public juce::Component
+{
+public:
+    std::function<void (float)> onChange;
+    float getValueDb() const                 { return value; }
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+private:
+    void setFromY (float y);
+    float value = 0.0f;
 };
 
 //==============================================================================

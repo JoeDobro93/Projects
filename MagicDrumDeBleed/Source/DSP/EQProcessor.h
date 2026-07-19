@@ -11,11 +11,12 @@
     Frequencies notched OUT of the parallel signal are the frequencies that
     survive cancellation in the final output — i.e. what the listener keeps.
 
-    Shapes (both plain biquad topologies, no linear phase / FIR):
-      - Bell:        one RBJ peaking filter.
-      - Flat-bottom: two cascaded RBJ peaking filters straddling the centre
-                     frequency — steeper walls and a flatter, wider rejection
-                     floor at approximately the same depth as the bell.
+    Shapes (all plain biquad topologies, no linear phase / FIR):
+      - Bell:           one RBJ peaking filter.
+      - Proportional Q: RBJ peaking with Q scaled by cut depth — wide when
+                        shallow, surgical when deep (iZotope-style).
+      - Band Shelf:     dry/notch blended band-reject — an exactly-flat floor
+                        at the set depth with steep, contained walls.
 */
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -28,9 +29,9 @@ struct BandParams
 {
     bool   enabled = false;
     double freqHz  = 1000.0;
-    double q       = 4.0;      // notches only
-    double gainDb  = -24.0;    // notches only
-    int    shape   = 0;        // notches: 0 = bell, 1 = flat-bottom
+    double q       = 1.0;      // keep bands only
+    double gainDb  = -24.0;    // keep bands only
+    int    shape   = 0;        // keep bands: 0 bell, 1 proportional-Q, 2 band shelf
     int    slope   = 1;        // HPF/LPF: 0 = 6 dB/oct, 1 = 12 dB/oct
 
     bool operator== (const BandParams& o) const noexcept

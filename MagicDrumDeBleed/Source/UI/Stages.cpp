@@ -12,8 +12,8 @@ static void styleSeg (juce::TextButton& b, bool on)
 }
 
 //==============================================================================
-StageHeader::StageHeader (int n, juce::String t, juce::String s, int c)
-    : num (n), clr (c), title (std::move (t)), sub (std::move (s))
+StageHeader::StageHeader (int n, juce::String t, int c)
+    : num (n), clr (c), title (std::move (t))
 {
     setInterceptsMouseClicks (false, false);
 }
@@ -32,9 +32,6 @@ void StageHeader::paint (juce::Graphics& g)
     g.setFont (font (12.5f, true));
     const int tw = sc (9) + (int) d;
     g.drawText (title, tw, 0, sc (110), getHeight(), juce::Justification::centredLeft);
-    g.setColour (pal->dim);
-    g.setFont (font (11.5f));
-    g.drawText (sub, tw + sc (70), 0, getWidth() - tw - sc (70), getHeight(), juce::Justification::centredLeft);
 }
 
 //==============================================================================
@@ -97,33 +94,31 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         [this] (float) { rebuildTypeButtons(); updateWidthKnob(); });
     typeAtt->sendInitialUpdate();
 
-    addAndMakeVisible (filterTg);
-    setHint (filterTg, "Filter", "Narrows what the detector hears so other drums don't open the gate. Never affects the sound itself.");
-    filterTg.onChange = [this] (bool on)
+    addAndMakeVisible (enableBtn);
+    setHint (enableBtn, "Enabled", "Turn the trigger filter on or off. It narrows what the detector hears so other drums don't open the gate. Never affects the sound itself.");
+    enableBtn.onClick = [this]
     {
-        scEnableAtt->setValueAsCompleteGesture (on ? 1.0f : 0.0f);
+        auto* p = processor.apvts.getParameter (ParamIDs::scEnable);
+        scEnableAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
     scEnableAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::scEnable),
-        [this] (float v) { filterTg.setState (v > 0.5f, false); });
+        [this] (float v) { styleSeg (enableBtn, v > 0.5f); });
     scEnableAtt->sendInitialUpdate();
 
     addAndMakeVisible (learnBtn);
-    setHint (learnBtn, "Auto-find", "Analyse the incoming audio and park the filter on this drum's dominant frequency.");
-    learnBtn.onClick = [this] { learnClicked(); };
+    setHint (learnBtn, "Learn", "Analyse the incoming audio and park the filter on this drum's dominant frequency. With Link to K1 on, K1 follows it too.");
+    learnBtn.onClick = [this] { eqids::handleLearnClick (processor, learnBtn); };
 
-    addAndMakeVisible (listenBtn);
-    setHint (listenBtn, "Listen", "Solo the detector's ear — hear exactly what the trigger is listening to.");
-    listenBtn.onClick = [this]
+    addAndMakeVisible (linkBtn);
+    setHint (linkBtn, "Link to K1", "Locks the K1 keep band's frequency to the Focus frequency: turning either knob moves both, and Learn updates them together.");
+    linkBtn.onClick = [this]
     {
-        auto* p = processor.apvts.getParameter (ParamIDs::monitorMode);
-        const int cur = (int) p->convertFrom0to1 (p->getValue());
-        monAtt->setValueAsCompleteGesture (cur == MagicDrumDeBleedAudioProcessor::monitorSidechain
-                                               ? (float) MagicDrumDeBleedAudioProcessor::monitorNormal
-                                               : (float) MagicDrumDeBleedAudioProcessor::monitorSidechain);
+        auto* p = processor.apvts.getParameter (ParamIDs::linkK1);
+        linkAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
-    monAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::monitorMode),
-        [this] (float v) { styleSeg (listenBtn, juce::roundToInt (v) == MagicDrumDeBleedAudioProcessor::monitorSidechain); });
-    monAtt->sendInitialUpdate();
+    linkAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::linkK1),
+        [this] (float v) { styleSeg (linkBtn, v > 0.5f); });
+    linkAtt->sendInitialUpdate();
 }
 
 void TriggerStage::rebuildTypeButtons()
@@ -155,25 +150,6 @@ void TriggerStage::updateWidthKnob()
     }
 }
 
-void TriggerStage::learnClicked()
-{
-    if (! processor.isLearning())
-    {
-        processor.startLearn();
-        learnBtn.setButtonText (juce::String::fromUTF8 ("listening\xe2\x80\xa6"));
-        return;
-    }
-    const double f = processor.finishLearnAndAnalyse();
-    learnBtn.setButtonText ("Auto-find");
-    if (f > 0.0)
-        if (auto* p = processor.apvts.getParameter (ParamIDs::scFreq))
-        {
-            p->beginChangeGesture();
-            p->setValueNotifyingHost (p->convertTo0to1 ((float) f));
-            p->endChangeGesture();
-        }
-}
-
 void TriggerStage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
@@ -183,8 +159,7 @@ void TriggerStage::paint (juce::Graphics& g)
     g.setColour (pal->faint);
     g.setFont (font (9.5f, true));
     g.drawText ("SENSITIVITY", sensLabelX, sc (34), sc (160), sc (12), juce::Justification::centredLeft);
-    g.drawText (juce::String::fromUTF8 ("TRIGGER FILTER \xe2\x80\x94 helps the detector ignore the rest of the kit"),
-                filtLabelX, sc (34), sc (400), sc (12), juce::Justification::centredLeft);
+    g.drawText ("TRIGGER FILTER", filtLabelX, sc (34), sc (400), sc (12), juce::Justification::centredLeft);
     g.setColour (pal->line);
     g.fillRect (dividerX, sc (32), 1, getHeight() - sc (42));
 }
@@ -212,16 +187,18 @@ void TriggerStage::resized()
     filtLabelX = r.getX();
     r.removeFromTop (sc (14));
 
-    auto seg = r.removeFromLeft (sc (96));
-    for (int i = 0; i < 3; ++i)
-        typeBtns[i].setBounds (seg.getX(), seg.getY() + i * sc (27), seg.getWidth(), sc (24));
+    // button stack (Enabled / Learn / Link to K1) left, knobs middle, type right
+    auto stack = r.removeFromLeft (sc (96));
+    enableBtn.setBounds (stack.getX(), stack.getY(),           stack.getWidth(), sc (24));
+    learnBtn.setBounds  (stack.getX(), stack.getY() + sc (27), stack.getWidth(), sc (24));
+    linkBtn.setBounds   (stack.getX(), stack.getY() + sc (54), stack.getWidth(), sc (24));
     r.removeFromLeft (sc (11));
     focus.setBounds (r.removeFromLeft (sc (70)));
     width.setBounds (r.removeFromLeft (sc (70)));
     r.removeFromLeft (sc (11));
-    filterTg.setBounds (r.getX(), r.getY() + sc (2), sc (90), sc (18));
-    learnBtn.setBounds (r.getX(), r.getY() + sc (26), sc (90), sc (24));
-    listenBtn.setBounds (r.getX(), r.getY() + sc (54), sc (90), sc (24));
+    auto seg = r.removeFromLeft (sc (96));
+    for (int i = 0; i < 3; ++i)
+        typeBtns[i].setBounds (seg.getX(), seg.getY() + i * sc (27), seg.getWidth(), sc (24));
 }
 
 //==============================================================================
@@ -246,11 +223,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
 void GateStage::timerCallback()
 {
-    open01 = juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f);
-    tail01 = juce::jlimit (0.0f, 1.0f, std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f));
-    const double amount = processor.getIntensity01();
-    const bool keepAudible = TailCanvas::keepAvg (processor, amount) > (1.0 - amount) + 0.02;
-    state = open01 > 0.5f ? 2 : (tail01 > 0.12f && keepAudible ? 1 : 0);
+    state = TailCanvas::gateState (processor, open01, tail01);
 
     hist.push_back ({ processor.getDetectorRmsDb(), state });
     if ((int) hist.size() > kHist)
@@ -396,8 +369,12 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     freezeBtn.setClickingTogglesState (true);
     freezeBtn.onClick = [this] { canvas.setFrozen (freezeBtn.getToggleState()); styleSeg (freezeBtn, freezeBtn.getToggleState()); };
 
+    addAndMakeVisible (mon);
+    setHint (mon, "Monitor gain", juce::String::fromUTF8 ("Boosts or cuts the dry/kept spectrum displays only \xe2\x80\x94 never the audio. Handy for quiet sources. Double-click resets."));
+    mon.onChange = [this] (float db) { canvas.setMonitorGain (db); };
+
     addAndMakeVisible (canvas);
-    setHint (canvas, "TAIL display", "Blue = the dry signal. Orange = what survives once the EQ'd cancellation copy is subtracted. Drag a handle: sideways = frequency, up/down = how loud it rings. Mouse-wheel = width.");
+    setHint (canvas, "TAIL display", "Blue = the dry signal. Orange = what survives once the EQ'd cancellation copy is subtracted. Drag a handle: sideways = frequency, up/down = how loud it rings. Mouse-wheel = Q. Click the dry/kept legend to hide a layer.");
 
     static const char* labs[7] = { "LOWS", "HIGHS", "K1", "K2", "K3", "K4", "K5" };
     static const char* bandHints[7] = {
@@ -448,9 +425,11 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (freq);
     setHint (freq, "Frequency", "Where this band sits.");
     addAndMakeVisible (widthK);
-    widthK.setReversed (true);
-    widthK.setFormat ([] (float q) { return juce::String (qToOct (q), 2) + " oct"; });
-    setHint (widthK, "Width", "How wide a slice of the spectrum rings through.");
+    widthK.setFormat ([] (float q) { return juce::String (q, q < 10.0f ? 2 : 1); });
+    setHint (widthK, "Q", "Band width. Low Q = broad, keeps general body. High Q = narrow, rings just one note.");
+    addAndMakeVisible (slopeK);
+    slopeK.setFormat ([] (float v) { return juce::String (v < 0.5f ? 6 : 12) + " dB/oct"; });
+    setHint (slopeK, "Slope", "How steeply frequencies beyond the cutoff stop ringing through.");
     addAndMakeVisible (ring);
     ring.setReversed (true);
     ring.setFormat ([] (float gdb)
@@ -485,10 +464,12 @@ void TailStage::selectBand (int b)
     canvas.setSelectedBand (sel);
     auto& ap = processor.apvts;
     const bool isKeep = sel >= 2;
+    selIsKeep = isKeep;
 
     freq.attach (ap.getParameter (eqids::freqId (sel)));
     widthK.attach (isKeep ? ap.getParameter (eqids::qId (sel)) : nullptr);
     ring.attach (isKeep ? ap.getParameter (eqids::gainId (sel)) : nullptr);
+    slopeK.attach (isKeep ? nullptr : ap.getParameter (eqids::shapeId (sel)));   // hpf/lpf slope
 
     static const char* labs[7] = { "LOWS", "HIGHS", "K1", "K2", "K3", "K4", "K5" };
     bandLabel.setText (juce::String (labs[sel]) + (sel == 0 ? juce::String::fromUTF8 (" \xe2\x80\x94 keeps everything below")
@@ -513,23 +494,20 @@ void TailStage::rebuildShapeSeg()
 {
     shapeAtt.reset();
     const bool isKeep = sel >= 2;
-    static const char* shapeNames[3] = { "Rounded", "Flat", "Focused" };
+    static const char* shapeNames[3] = { "Bell", "Prop Q", "Shelf" };
     static const char* shapeHints[3] = {
-        "A gentle bell \xe2\x80\x94 fades in and out smoothly. Most natural for drum body.",
-        "A flat-topped band with steeper edges. Keeps a defined range at an even level.",
-        "Steep walls \xe2\x80\x94 almost nothing survives an octave away. Good for isolating one ring." };
-    static const char* slopeNames[2] = { "6 dB/oct", "12 dB/oct" };
-    static const char* slopeHints[2] = { "Gentle slope.", "Steeper slope." };
+        "Bell \xe2\x80\x94 a classic smooth cut. High Q rings one note, low Q keeps broad body.",
+        "Proportional Q \xe2\x80\x94 a bell that tightens as the cut deepens: gentle when shallow, surgical when deep.",
+        "Band Shelf \xe2\x80\x94 a flat-topped range between two edges, kept at an even level." };
 
-    const int count = isKeep ? 3 : 2;
     for (int i = 0; i < 3; ++i)
     {
         auto& b = shapeBtns[i];
-        b.setVisible (i < count);
-        if (i < count)
+        b.setVisible (isKeep);          // LOWS/HIGHS use the Slope knob instead
+        if (isKeep)
         {
-            b.setButtonText (isKeep ? shapeNames[i] : slopeNames[i]);
-            setHint (b, b.getButtonText(), juce::String::fromUTF8 (isKeep ? shapeHints[i] : slopeHints[i]));
+            b.setButtonText (shapeNames[i]);
+            setHint (b, shapeNames[i], juce::String::fromUTF8 (shapeHints[i]));
             b.onClick = [this, i]
             {
                 if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
@@ -541,17 +519,19 @@ void TailStage::rebuildShapeSeg()
             };
         }
     }
-    if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
-    {
-        shapeAtt = std::make_unique<juce::ParameterAttachment> (*p, [this] (float)
+    if (isKeep)
+        if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
         {
-            auto* sp = processor.apvts.getParameter (eqids::shapeId (sel));
-            const int cur = (int) std::lround (sp->convertFrom0to1 (sp->getValue()));
-            for (int i = 0; i < 3; ++i)
-                styleSeg (shapeBtns[i], i == cur);
-        });
-        shapeAtt->sendInitialUpdate();
-    }
+            shapeAtt = std::make_unique<juce::ParameterAttachment> (*p, [this] (float)
+            {
+                auto* sp = processor.apvts.getParameter (eqids::shapeId (sel));
+                const int cur = (int) std::lround (sp->convertFrom0to1 (sp->getValue()));
+                for (int i = 0; i < 3; ++i)
+                    styleSeg (shapeBtns[i], i == cur);
+            });
+            shapeAtt->sendInitialUpdate();
+        }
+    repaint();
 }
 
 void TailStage::updateSoloButtons()
@@ -573,7 +553,8 @@ void TailStage::paint (juce::Graphics& g)
     g.setColour (pal->faint);
     g.setFont (font (9.5f, true));
     g.drawText ("KEEP BANDS", sc (11), bandLabelsY, sc (120), sc (12), juce::Justification::centredLeft);
-    g.drawText ("SHAPE", shapeX, bandLabelsY, sc (80), sc (12), juce::Justification::centredLeft);
+    if (selIsKeep)
+        g.drawText ("SHAPE", shapeX, bandLabelsY, sc (80), sc (12), juce::Justification::centredLeft);
     g.drawText ("TAIL LENGTH", tailLenX, bandLabelsY, sc (110), sc (12), juce::Justification::centredLeft);
 }
 
@@ -593,10 +574,18 @@ void TailStage::resized()
 
     auto controls = r.removeFromBottom (sc (104));
     r.removeFromBottom (sc (8));
+    mon.setBounds (r.removeFromLeft (sc (26)));
+    r.removeFromLeft (sc (5));
     canvas.setBounds (r);
 
+    // Column widths shrink proportionally when the stage is narrower than the
+    // design width, so the TAIL meter always fits.
+    const float design = scf (244 + 13 + 212 + 6 + 86 + 13 + 142 + 6 + 36);
+    const float shrink = juce::jmin (1.0f, (float) controls.getWidth() / design);
+    auto col = [&] (float px) { return (int) (scf (px) * shrink); };
+
     bandLabelsY = controls.getY();
-    auto strip = controls.removeFromLeft (sc (244));
+    auto strip = controls.removeFromLeft (col (244));
     strip.removeFromTop (sc (14));
     const int colW = strip.getWidth() / 7;
     for (int b = 0; b < 7; ++b)
@@ -606,32 +595,36 @@ void TailStage::resized()
         dotBtns[b].setBounds (x + sc (2), strip.getY() + sc (27), sc (13), sc (13));
         soloBtns[b].setBounds (x + sc (17), strip.getY() + sc (26), sc (16), sc (14));
     }
-    controls.removeFromLeft (sc (13));
+    controls.removeFromLeft (col (13));
 
-    auto bandGrp = controls.removeFromLeft (sc (212));
+    auto bandGrp = controls.removeFromLeft (col (212));
     bandLabel.setFont (font (9.5f, true));
     bandLabel.setColour (juce::Label::textColourId, pal->faint);
     bandLabel.setBounds (bandGrp.removeFromTop (sc (14)));
-    freq.setBounds (bandGrp.removeFromLeft (sc (70)));
-    widthK.setBounds (bandGrp.removeFromLeft (sc (70)));
-    ring.setBounds (bandGrp.removeFromLeft (sc (70)));
+    const int kw = bandGrp.getWidth() / 3;
+    freq.setBounds (bandGrp.removeFromLeft (kw));
+    auto wkCell = bandGrp.removeFromLeft (kw);
+    widthK.setBounds (wkCell);
+    slopeK.setBounds (wkCell);                          // shares the Q knob's cell
+    ring.setBounds (bandGrp.removeFromLeft (kw));
 
-    controls.removeFromLeft (sc (6));
+    controls.removeFromLeft (col (6));
     shapeX = controls.getX();
-    auto shapes = controls.removeFromLeft (sc (86));
+    auto shapes = controls.removeFromLeft (col (86));
     shapes.removeFromTop (sc (14));
     for (int i = 0; i < 3; ++i)
         shapeBtns[i].setBounds (shapes.getX(), shapes.getY() + i * sc (26), shapes.getWidth(), sc (23));
 
-    controls.removeFromLeft (sc (13));
+    controls.removeFromLeft (col (13));
     tailLenX = controls.getX();
-    auto tailGrp = controls.removeFromLeft (sc (142));
+    auto tailGrp = controls.removeFromLeft (col (142));
     tailGrp.removeFromTop (sc (14));
-    tailHold.setBounds (tailGrp.removeFromLeft (sc (70)));
-    tailFade.setBounds (tailGrp.removeFromLeft (sc (70)));
+    const int tw = tailGrp.getWidth() / 2;
+    tailHold.setBounds (tailGrp.removeFromLeft (tw));
+    tailFade.setBounds (tailGrp.removeFromLeft (tw));
 
-    controls.removeFromLeft (sc (6));
-    tailMeter.setBounds (controls.removeFromLeft (sc (36)));
+    controls.removeFromLeft (col (6));
+    tailMeter.setBounds (controls.removeFromLeft (col (36)));
 }
 
 //==============================================================================
@@ -639,7 +632,7 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
     : processor (proc),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); }),
-      redMeter ([&proc] { return proc.getRemovedPeakDb(); })
+      gateMeter ([&proc] (float& o, float& t) { return TailCanvas::gateState (proc, o, t); })
 {
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed. 100% = digital silence between hits. 0% = the plugin does nothing. This is the classic gate 'Range' control.");
     addAndMakeVisible (fader);
@@ -652,8 +645,8 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
 
     setHint (outMeter, "OUT", "Plugin output level.");
     addAndMakeVisible (outMeter);
-    setHint (redMeter, "REDUCTION", juce::String::fromUTF8 ("How much signal is being cancelled right now \xe2\x80\x94 the bleed you are throwing away."));
-    addAndMakeVisible (redMeter);
+    setHint (gateMeter, "GATE", juce::String::fromUTF8 ("Follows the gate state: green = open (drum passing), amber = tail ringing out and fading, empty = closed \xe2\x80\x94 bleed cancelled."));
+    addAndMakeVisible (gateMeter);
 
     static const char* names[3] = { "Output", "Removed bleed", "Trigger signal" };
     static const char* hints[3] = { "Normal plugin output.",
@@ -713,11 +706,11 @@ void RightRail::resized()
     r.removeFromBottom (sc (6));
 
     auto meters = r.removeFromBottom (sc (126));
-    const int mw = sc (34), mww = sc (44);
-    auto mrow = meters.withSizeKeepingCentre (mw + mww + sc (7), meters.getHeight());
+    const int mw = sc (34);                             // OUT and GATE share one width
+    auto mrow = meters.withSizeKeepingCentre (mw * 2 + sc (7), meters.getHeight());
     outMeter.setBounds (mrow.removeFromLeft (mw));
     mrow.removeFromLeft (sc (7));
-    redMeter.setBounds (mrow);
+    gateMeter.setBounds (mrow);
     r.removeFromBottom (sc (6));
 
     amountVal.setFont (font (15.0f, true));
@@ -729,7 +722,7 @@ void RightRail::resized()
 //==============================================================================
 HintBar::HintBar()
 {
-    setHint (simpleBtn, "Simple view", "A stripped-back view: trigger level, reduction, amount, output.");
+    setHint (simpleBtn, "Simple view", "A stripped-back view: trigger level, gate, amount, output, plus Focus, Learn and Tail hold.");
     addAndMakeVisible (simpleBtn);
     startTimerHz (15);
 }
@@ -759,7 +752,7 @@ void HintBar::paint (juce::Graphics& g)
     {
         g.setColour (pal->dim);
         g.setFont (font (11.5f));
-        g.drawText (juce::String::fromUTF8 ("Hover any control for an explanation. Drag knobs vertically \xc2\xb7 Shift for fine \xc2\xb7 double-click to reset."),
+        g.drawText (juce::String::fromUTF8 ("Hover any control for an explanation. Drag knobs vertically \xc2\xb7 Shift for fine \xc2\xb7 double-click to reset \xc2\xb7 click a value to type it."),
                     r, juce::Justification::centredLeft);
     }
     else

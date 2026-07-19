@@ -2,10 +2,12 @@
 /*  TailCanvas — the stage-3 display. Layers (back to front):
       blue  = dry input spectrum (from the processor FIFO, real FFT)
       orange= dry + 20·log10|1−H|  (what survives the EQ-only cancellation)
-      gold  = |1−H| transfer curve, carrying the band handles
+      gold  = the internal cancellation curve H mirrored vertically, carrying
+              the band handles (peaks up where the internal filter cuts)
     H is the complex product of every enabled band's stages, computed from the
     same EQProcessor::computeCoefficients the audio path runs.
-    Axis: 20 Hz–20 kHz log, +9..−54 dB. Drag: x=freq, y=ring level; wheel=width. */
+    Axis: 20 Hz–20 kHz log, +9..−54 dB. Drag: x=freq, y=ring level; wheel=Q.
+    The dry/kept legend chips toggle their layers; monitor gain offsets both. */
 #include <JuceHeader.h>
 #include "../PluginProcessor.h"
 #include "Widgets.h"
@@ -19,9 +21,14 @@ public:
     void setShowInternals (bool b)    { internals = b; repaint(); }
     void setAccumulate (bool b);
     void setFrozen (bool b)           { frozen = b; }
+    void setMonitorGain (float db)    { monGainDb = db; repaint(); }
 
     // Broadband average of |1 − amount·H| — the keepAudible() feed (spec §3).
     static double keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount);
+
+    // Shared OPEN/TAIL/CLOSED state (0 closed, 1 tail, 2 open) — used by the
+    // Gate stage chip, the rail GATE meter and the Simple view.
+    static int gateState (MagicDrumDeBleedAudioProcessor& proc, float& open01, float& tail01);
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -56,6 +63,9 @@ private:
     float pull[512];
     int fifoIdx = 0;
     bool accumulate = false, frozen = false, internals = false;
+    bool showDry = true, showKept = true;                 // legend toggles
+    float monGainDb = 0.0f;                               // display-only spectrum offset
+    juce::Rectangle<int> dryLegend, keptLegend;           // clickable legend chips
 
     double keepDb[kN], hDb[kN], freqs[kN];
     float handleX[7] {}, handleY[7] {};
