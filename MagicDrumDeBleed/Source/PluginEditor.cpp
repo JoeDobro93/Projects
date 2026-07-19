@@ -101,7 +101,10 @@ void MagicDrumDeBleedAudioProcessorEditor::rebuildViews()
             ui::pal = &theme::get (processor.isDarkTheme());
             lookAndFeel.setPalette (*ui::pal);
             // Deferred: this lambda lives on a button that rebuildViews() destroys.
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MagicDrumDeBleedAudioProcessorEditor> (this)]
+            // (SafePointer is a named local, not an init-capture — MSVC resolves
+            // `this` in nested-lambda init-captures to the outer closure type.)
+            juce::Component::SafePointer<MagicDrumDeBleedAudioProcessorEditor> safe (this);
+            juce::MessageManager::callAsync ([safe]
             {
                 if (safe != nullptr) safe->rebuildViews();
             });
