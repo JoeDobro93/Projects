@@ -1,4 +1,4 @@
-name: Build Magic Drum De-Bleed
+name: Build Magic Drum Gate
 
 # Builds downloadable plugin binaries on GitHub's Windows and macOS runners.
 # Runs whenever the plugin sources (or this file) change. Artifacts appear
@@ -29,13 +29,13 @@ jobs:
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: MagicDrumDeBleed-Windows-VST3
+          name: MagicDrumGate-Windows-VST3
           path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/VST3/*.vst3
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
-          name: MagicDrumDeBleed-Windows-Standalone
+          name: MagicDrumGate-Windows-Standalone
           path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/Standalone/*.exe
 
   macos:
@@ -59,20 +59,20 @@ jobs:
       - name: Ad-hoc code sign
         working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
         run: |
-          codesign --force --deep --sign - "AU/Magic Drum De-Bleed.component"
-          codesign --force --deep --sign - "VST3/Magic Drum De-Bleed.vst3"
-          codesign --force --deep --sign - "Standalone/Magic Drum De-Bleed.app"
+          codesign --force --deep --sign - "AU/Magic Drum Gate.component"
+          codesign --force --deep --sign - "VST3/Magic Drum Gate.vst3"
+          codesign --force --deep --sign - "Standalone/Magic Drum Gate.app"
 
       # ditto-zip each bundle so unix permissions survive artifact upload
       - name: Zip bundles
         working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
         run: |
-          ditto -c -k --keepParent "AU/Magic Drum De-Bleed.component" MagicDrumDeBleed-macOS-AU.zip
-          ditto -c -k --keepParent "VST3/Magic Drum De-Bleed.vst3" MagicDrumDeBleed-macOS-VST3.zip
-          ditto -c -k --keepParent "Standalone/Magic Drum De-Bleed.app" MagicDrumDeBleed-macOS-Standalone.zip
+          ditto -c -k --keepParent "AU/Magic Drum Gate.component" MagicDrumGate-macOS-AU.zip
+          ditto -c -k --keepParent "VST3/Magic Drum Gate.vst3" MagicDrumGate-macOS-VST3.zip
+          ditto -c -k --keepParent "Standalone/Magic Drum Gate.app" MagicDrumGate-macOS-Standalone.zip
 
       - name: Upload macOS bundles
         uses: actions/upload-artifact@v4
         with:
-          name: MagicDrumDeBleed-macOS
+          name: MagicDrumGate-macOS
           path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/*.zip

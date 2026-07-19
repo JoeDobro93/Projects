@@ -41,6 +41,8 @@ namespace ParamIDs
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
     inline constexpr const char* scQ          = "scQ";
+    inline constexpr const char* scType       = "scType";    // 0 HP, 1 LP, 2 BP
+    inline constexpr const char* scSlope      = "scSlope";   // 6/12/18/24 dB/oct (HP/LP only)
     inline constexpr const char* learnCeiling = "learnCeiling";
 
     inline constexpr const char* hpfOn        = "hpfOn";
@@ -122,6 +124,8 @@ public:
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
+    float getRemovedPeakDb() const      { return removedPeakDb.load(); }   // level being subtracted
+    float getIntensity01() const        { return pIntensity->load() * 0.01f; }
     int   readSpectrumSamples (float* dest, int maxSamples);   // mono parallel-path samples
 
     // Spectrum tap point: true = after the EQ (default), false = before it.
@@ -151,7 +155,7 @@ private:
     void updateParametersForBlock();
     void processInternal (juce::AudioBuffer<double>& buffer);
     void updateOutputPeak (const juce::AudioBuffer<double>& buffer, int numChannels, int numSamples);
-    void pushSpectrumSamples (const juce::AudioBuffer<double>& parallel, int numChannels, int numSamples);
+    void pushSpectrumSamples (const double* mono, int numSamples);
 
     // DSP blocks
     mdd::CompressorProcessor    compressor;
@@ -178,6 +182,7 @@ private:
     std::atomic<float> detectorRmsDb { -120.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
+    std::atomic<float> removedPeakDb { -120.0f };
     std::atomic<bool>  spectrumPostEq { true };
 
     // Band-solo audition state + its listen filter (one biquad per channel)
@@ -189,7 +194,7 @@ private:
 
     // Cached raw parameter pointers
     std::atomic<float> *pThreshold, *pReduction, *pLookahead, *pRmsWindow, *pHold, *pRelease;
-    std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pLearnCeiling;
+    std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pLearnCeiling;
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;

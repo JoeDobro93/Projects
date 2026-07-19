@@ -1,76 +1,62 @@
 #include "AdvancedView.h"
 
+using namespace ui;
+
 AdvancedView::AdvancedView (MagicDrumDeBleedAudioProcessor& proc,
                             std::function<void()> onThemeToggle,
                             std::function<void()> onSimpleView)
-    : presetBrowser (proc),
-      compressorPanel (proc),
-      eqPanel (proc),
-      outputStrip (proc, std::move (onThemeToggle), std::move (onSimpleView)),
-      outputMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); }, nullptr)
+    : processor (proc), presetBrowser (proc),
+      trigger (proc), gate (proc), tail (proc), rail (proc)
 {
-    titleLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (titleLabel);
+    setHint (presetBrowser, "Presets",
+             juce::String::fromUTF8 ("Factory starting points per drum. Threshold is deliberately never stored in a preset \xe2\x80\x94 it depends on your track's level."));
     addAndMakeVisible (presetBrowser);
-    addAndMakeVisible (compressorPanel);
-    addAndMakeVisible (eqPanel);
-    addAndMakeVisible (outputStrip);
 
-    intensityLabel.setJustificationType (juce::Justification::centred);
-    addAndMakeVisible (intensityLabel);
+    themeBtn.setButtonText (processor.isDarkTheme() ? "Light" : "Dark");
+    setHint (themeBtn, "Theme", "Switch between the dark and light theme.");
+    themeBtn.onClick = [cb = std::move (onThemeToggle)] { if (cb) cb(); };
+    addAndMakeVisible (themeBtn);
 
-    intensitySlider.setSliderStyle (juce::Slider::LinearVertical);
-    intensitySlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 60, 20);
-    addAndMakeVisible (intensitySlider);
-    intensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        proc.apvts, ParamIDs::intensity, intensitySlider);
+    addAndMakeVisible (trigger);
+    addAndMakeVisible (gate);
+    addAndMakeVisible (tail);
+    addAndMakeVisible (rail);
 
-    addAndMakeVisible (outputMeter);
-}
-
-void AdvancedView::setPalette (const theme::Palette& p)
-{
-    pal = &p;
-    titleLabel.setColour (juce::Label::textColourId, pal->title);
-    intensityLabel.setColour (juce::Label::textColourId, pal->text);
-    compressorPanel.setPalette (p);
-    eqPanel.setPalette (p);
-    outputStrip.setPalette (p);
-    presetBrowser.setPalette (p);
-    outputMeter.setPalette (&p);
-    repaint();
+    hintBar.simpleBtn.onClick = [cb = std::move (onSimpleView)] { if (cb) cb(); };
+    addAndMakeVisible (hintBar);
 }
 
 void AdvancedView::paint (juce::Graphics& g)
 {
-    g.fillAll (pal->windowBackground);
-
-    g.setColour (pal->headerBackground);
-    g.fillRect (0, 0, getWidth(), 40);
-    g.setColour (pal->panelOutline);
-    g.drawHorizontalLine (40, 0.0f, (float) getWidth());
+    g.fillAll (pal->bg);
+    const int hh = sc (46);
+    g.setColour (pal->panel);
+    g.fillRect (0, 0, getWidth(), hh);
+    g.setColour (pal->line);
+    g.fillRect (0, hh - 1, getWidth(), 1);
+    g.setColour (pal->accent);
+    g.setFont (font (16.0f, true));
+    g.drawText ("MAGIC DRUM GATE", sc (12), 0, sc (300), hh, juce::Justification::centredLeft);
 }
 
 void AdvancedView::resized()
 {
     auto r = getLocalBounds();
 
-    auto header = r.removeFromTop (40).reduced (8, 3);
-    titleLabel.setFont (juce::Font (juce::FontOptions (21.0f, juce::Font::bold)));
-    presetBrowser.setBounds (header.removeFromRight (380));
-    titleLabel.setBounds (header);
+    auto header = r.removeFromTop (sc (46));
+    header.reduce (sc (12), sc (8));
+    themeBtn.setBounds (header.removeFromRight (sc (56)));
+    header.removeFromRight (sc (8));
+    presetBrowser.setBounds (header.removeFromRight (sc (330)));
 
-    // ---- Right column: vertical Intensity + full-height output meter ----
-    auto rightColumn = r.removeFromRight (116).reduced (4, 6);
-    outputMeter.setBounds (rightColumn.removeFromRight (46));
-    rightColumn.removeFromRight (4);
-    intensityLabel.setFont (juce::Font (juce::FontOptions (13.0f, juce::Font::bold)));
-    intensityLabel.setBounds (rightColumn.removeFromTop (16));
-    intensitySlider.setBounds (rightColumn.reduced (2, 2));
+    hintBar.setBounds (r.removeFromBottom (sc (34)));
+    rail.setBounds (r.removeFromRight (sc (150)));
 
-    // ---- Bottom strip + panels ----
-    outputStrip.setBounds (r.removeFromBottom (54).reduced (4, 2));
-    r.reduce (4, 2);
-    compressorPanel.setBounds (r.removeFromTop (juce::roundToInt ((float) r.getHeight() * 0.42f)));
-    eqPanel.setBounds (r);
+    r.reduce (sc (9), sc (9));
+    const int gap = sc (9);
+    trigger.setBounds (r.removeFromTop (sc (164)));
+    r.removeFromTop (gap);
+    gate.setBounds (r.removeFromTop (sc (172)));
+    r.removeFromTop (gap);
+    tail.setBounds (r);                                 // stretches
 }

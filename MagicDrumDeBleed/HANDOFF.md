@@ -1,4 +1,20 @@
-# Magic Drum De-Bleed — Engineering Handoff
+# Magic Drum Gate — Engineering Handoff
+
+> **v2 UI overhaul (2026-07):** product renamed **Magic Drum Gate**. UI rebuilt
+> around a three-state model (CLOSED/OPEN/TAIL) per UIOVERHAULSPEC.md + mockup.
+> Key deltas vs the text below: panels are now stages **1·TRIGGER / 2·GATE /
+> 3·TAIL** (`UI/Stages.*`, `UI/TailCanvas.*`, `UI/Widgets.*`, right rail, hover
+> hint bar); old CompressorPanel/EQPanel/OutputStrip/UIHelpers are gone. New
+> params `scType` (HP/LP/BP, default BP) + `scSlope` (6-24 dB/oct) drive a
+> multi-mode SidechainFilter. `compBypass` now forces the gate OPEN (dry passes
+> untouched) instead of cancelling. `reduction` + monitorMode "Delta" kept in
+> APVTS but hidden. Tail display draws **|1−H|** (what is KEPT, complex math via
+> `BiquadFilter::responseAt`), axis +9..−54 dB, dry-input spectrum (blue) +
+> derived kept layer (orange); the old pre/post Input|Output switch was removed
+> (orange is computed, not tapped). GR feed inverted in UI: open01=grDb/−96.
+> Notch relabels: N→K "keep bands", gain shown as Ring level
+> ringDb=20·log10(1−10^(gain/20)), Q shown in octaves reversed. Shapes renamed
+> Rounded/Flat/Focused. eqGate = "Tail gate/hold/fade" (positive toggle).
 
 Context doc for continuing development in a fresh session. Dense by design.
 
@@ -134,11 +150,11 @@ reduction, lookahead, hpfOn, hpfFreq, notch1{on,freq,q,gain}, intensity.
 - Floor Tom: 100,1.2,on,25,40,200,-96,5,on,250,{off},95%
 
 ## 6. UI layout
-**Scaling model (critical):** each view lays out at a FIXED logical size; the editor
-sets `view.setBounds(0,0,logicalW,logicalH)` + `setTransform(scale)` where scale =
-min(w/lw, h/lh). Aspect ratio locked via `ComponentBoundsConstrainer` fixed ratio;
-min size = logical (kMinScale=1.0), max 2.2×. So proportions are identical at every
-size — NEVER add per-element min-size clamps; just use plain arithmetic at logical size.
+**Scaling model (v2):** aspect ratio UNLOCKED, no transform. `resized()` lays out
+from `getLocalBounds()`; regions stretch. A separate global `ui::scale` =
+clamp(min(w/1160,h/830),1,2.2) affects legibility only (fonts, knob/meter/button
+sizes via `ui::sc()`). Advanced default 1160×830 min 900×700; Simple 380×430 min
+330×360. Global `ui::pal` palette pointer; theme change rebuilds both views.
 Each view remembers its own size (advWidth/advHeight, simpleWidth/simpleHeight in state).
 Theme (themeDark) + view (simpleView) also in APVTS state.
 

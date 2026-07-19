@@ -146,16 +146,23 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         }
         else
         {
-            currentGainDb = 0.0;            // bypassed: keep envelope released
+            // Trigger bypassed: the gate is forced permanently OPEN — the
+            // parallel copy is fully ducked, so no bleed is removed and the
+            // dry signal passes untouched.
+            currentGainDb = reductionDb;
         }
 
-        const double gain = applyGain ? std::pow (10.0, currentGainDb / 20.0) : 1.0;
+        const double gain = std::pow (10.0, currentGainDb / 20.0);
         minGainDb = juce::jmin (minGainDb, (float) currentGainDb);
 
         // ---- EQ-gate envelope: instant engage (within lookahead), hold, release ----
         if (eqGateEnvOut != nullptr)
         {
-            if (rmsDb > thresholdDb)
+            if (! applyGain)
+            {
+                eqGateEnv = 1.0;           // trigger bypassed: tail rings too
+            }
+            else if (rmsDb > thresholdDb)
             {
                 eqGateEnv = 1.0;               // instant, full engagement
                 eqGateHoldCounter = eqGateHoldSamples;

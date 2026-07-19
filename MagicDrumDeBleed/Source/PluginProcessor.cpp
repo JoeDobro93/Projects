@@ -81,6 +81,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         juce::NormalisableRange<float> r (0.3f, 12.0f, 0.01f);  r.setSkewForCentre (1.9f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scQ, 1 }, "SC Q", r, 1.5f));
     }
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::scType, 1 }, "Trigger Filter Type",
+                    juce::StringArray { "High Pass", "Low Pass", "Bandpass" }, 2));
+    p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::scSlope, 1 }, "Trigger Filter Slope",
+                    juce::NormalisableRange<float> (6.0f, 24.0f, 6.0f), 12.0f,
+                    juce::AudioParameterFloatAttributes().withLabel ("dB/oct")
+                        .withStringFromValueFunction ([] (float v, int) { return juce::String ((int) v) + " dB/oct"; })));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::learnCeiling, 1 }, "Learn Ceiling",
                     logHzRange (200.0f, 2000.0f), 1000.0f, hz));
 
@@ -155,6 +161,8 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pScEnable     = raw (ParamIDs::scEnable);
     pScFreq       = raw (ParamIDs::scFreq);
     pScQ          = raw (ParamIDs::scQ);
+    pScType       = raw (ParamIDs::scType);
+    pScSlope      = raw (ParamIDs::scSlope);
     pLearnCeiling = raw (ParamIDs::learnCeiling);
     pHpfOn        = raw (ParamIDs::hpfOn);
     pHpfFreq      = raw (ParamIDs::hpfFreq);
@@ -253,7 +261,7 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
                               pRmsWindow->load(), pHold->load(), pRelease->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
     eqGateOnCached = pEqGateOn->load() > 0.5f;
-    scFilter.setParameters (pScFreq->load(), pScQ->load());
+    scFilter.setParameters ((int) pScType->load(), pScFreq->load(), pScQ->load(), pScSlope->load());
     scEnabledCached = pScEnable->load() > 0.5f;
 
     // ---- EQ bands ----
@@ -446,10 +454,12 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
             dst[i] = delay.processSample (src[i]);
     }
 
+    // ---- Spectrum feed: the DRY input (blue layer; "kept" is derived in UI) ----
+    pushSpectrumSamples (detectorRaw.data(), n);
+
     // ---- Band solo audition: bandpass the processed signal, mute the dry ----
     if (soloBandCached >= 0)
     {
-        pushSpectrumSamples (parallelBuffer, nCh, n);   // pre-EQ view while soloing
         intensitySmoothed.skip (n);
 
         for (int ch = 0; ch < nCh; ++ch)
@@ -464,10 +474,7 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
         return;
     }
 
-    // ---- 4. EQ + gate blend + spectrum feed (tap selectable pre/post) ----
-    if (! spectrumPostEqCached)
-        pushSpectrumSamples (parallelBuffer, nCh, n);
-
+    // ---- 4. EQ + gate blend ----
     const bool eqActive   = ! eqBypassCached;
     const bool gateActive = eqActive && eqGateOnCached;
 
@@ -502,8 +509,14 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
         eqGateDb.store (0.0f);
     }
 
-    if (spectrumPostEqCached)
-        pushSpectrumSamples (parallelBuffer, nCh, n);
+    // Level of the signal being subtracted (REDUCTION meter feed).
+    {
+        double peak = 0.0;
+        for (int ch = 0; ch < nCh; ++ch)
+            peak = juce::jmax (peak, parallelBuffer.getMagnitude (ch, 0, n));
+        peak *= (double) pIntensity->load() * 0.01;
+        removedPeakDb.store ((float) (20.0 * std::log10 (juce::jmax (1.0e-6, peak))));
+    }
 
     // ---- 5. Compose the output ----
     // The parallel path's polarity flip is linear, so it is applied here as
@@ -576,26 +589,16 @@ void MagicDrumDeBleedAudioProcessor::updateOutputPeak (const juce::AudioBuffer<d
 }
 
 //==============================================================================
-void MagicDrumDeBleedAudioProcessor::pushSpectrumSamples (const juce::AudioBuffer<double>& parallel,
-                                                          int numChannels, int numSamples)
+void MagicDrumDeBleedAudioProcessor::pushSpectrumSamples (const double* mono, int numSamples)
 {
     int start1, size1, start2, size2;
     spectrumFifo.prepareToWrite (numSamples, start1, size1, start2, size2);
 
-    const double invCh = 1.0 / (double) numChannels;
-    auto writeRange = [&] (int start, int size, int offset)
-    {
-        for (int i = 0; i < size; ++i)
-        {
-            double sum = 0.0;
-            for (int ch = 0; ch < numChannels; ++ch)
-                sum += parallel.getReadPointer (ch)[offset + i];
-            spectrumFifoBuffer[(size_t) (start + i)] = (float) (sum * invCh);
-        }
-    };
+    for (int i = 0; i < size1; ++i)
+        spectrumFifoBuffer[(size_t) (start1 + i)] = (float) mono[i];
+    for (int i = 0; i < size2; ++i)
+        spectrumFifoBuffer[(size_t) (start2 + i)] = (float) mono[size1 + i];
 
-    writeRange (start1, size1, 0);
-    writeRange (start2, size2, size1);
     spectrumFifo.finishedWrite (size1 + size2);   // whatever didn't fit is dropped
 }
 

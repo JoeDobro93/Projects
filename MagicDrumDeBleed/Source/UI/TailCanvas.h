@@ -1,0 +1,65 @@
+#pragma once
+/*  TailCanvas — the stage-3 display. Layers (back to front):
+      blue  = dry input spectrum (from the processor FIFO, real FFT)
+      orange= dry + 20·log10|1−H|  (what survives the EQ-only cancellation)
+      gold  = |1−H| transfer curve, carrying the band handles
+    H is the complex product of every enabled band's stages, computed from the
+    same EQProcessor::computeCoefficients the audio path runs.
+    Axis: 20 Hz–20 kHz log, +9..−54 dB. Drag: x=freq, y=ring level; wheel=width. */
+#include <JuceHeader.h>
+#include "../PluginProcessor.h"
+#include "Widgets.h"
+
+class TailCanvas : public juce::Component, private juce::Timer
+{
+public:
+    TailCanvas (MagicDrumDeBleedAudioProcessor& proc, std::function<void (int)> onBandSelected);
+
+    void setSelectedBand (int b)      { sel = b; repaint(); }
+    void setShowInternals (bool b)    { internals = b; repaint(); }
+    void setAccumulate (bool b);
+    void setFrozen (bool b)           { frozen = b; }
+
+    // Broadband average of |1 − amount·H| — the keepAudible() feed (spec §3).
+    static double keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount);
+
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    static constexpr float kTopDb = 9.0f, kBotDb = -54.0f;
+
+private:
+    void timerCallback() override;
+    void runFFT();
+    void recomputeCurve();
+    int  bandAt (juce::Point<float> pos) const;
+    juce::Rectangle<float> plotArea() const;
+    float fx (double f, float w) const;
+    double xf (float x, float w) const;
+    float dyy (float db, float h) const;
+
+    MagicDrumDeBleedAudioProcessor& processor;
+    std::function<void (int)> onBandSelected;
+
+    // band params, index 0=LOWS(hpf) 1=HIGHS(lpf) 2..6=K1..5
+    juce::RangedAudioParameter *onP[7] {}, *freqP[7] {}, *qP[7] {}, *gainP[7] {}, *shapeP[7] {};
+
+    static constexpr int kFftOrder = 11, kFftSize = 1 << kFftOrder, kBins = kFftSize / 2;
+    static constexpr int kN = 240;
+    juce::dsp::FFT fft { kFftOrder };
+    juce::dsp::WindowingFunction<float> window { (size_t) kFftSize, juce::dsp::WindowingFunction<float>::hann };
+    std::vector<float> sampleFifo, fftData, smoothedDb, accumDb;
+    float pull[512];
+    int fifoIdx = 0;
+    bool accumulate = false, frozen = false, internals = false;
+
+    double keepDb[kN], hDb[kN], freqs[kN];
+    float handleX[7] {}, handleY[7] {};
+    int sel = 0, drag = -1;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TailCanvas)
+};

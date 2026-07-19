@@ -32,9 +32,9 @@ endif()
 
 # AU is only built on macOS; JUCE's CMake skips it elsewhere automatically.
 juce_add_plugin(MagicDrumDeBleed
-    PRODUCT_NAME                "Magic Drum De-Bleed"
+    PRODUCT_NAME                "Magic Drum Gate"
     COMPANY_NAME                "MagicDSP"
-    BUNDLE_ID                   "com.magicdsp.MagicDrumDeBleed"
+    BUNDLE_ID                   "com.magicdsp.MagicDrumGate"
     PLUGIN_MANUFACTURER_CODE    Magi
     PLUGIN_CODE                 Mddb
     FORMATS                     VST3 AU Standalone
@@ -57,9 +57,9 @@ target_sources(MagicDrumDeBleed PRIVATE
     Source/DSP/CompressorProcessor.cpp
     Source/DSP/EQProcessor.cpp
     Source/DSP/LearnAnalyzer.cpp
-    Source/UI/CompressorPanel.cpp
-    Source/UI/EQPanel.cpp
-    Source/UI/OutputStrip.cpp
+    Source/UI/Widgets.cpp
+    Source/UI/TailCanvas.cpp
+    Source/UI/Stages.cpp
     Source/UI/PresetBrowser.cpp
     Source/UI/AdvancedView.cpp
     Source/UI/SimpleView.cpp

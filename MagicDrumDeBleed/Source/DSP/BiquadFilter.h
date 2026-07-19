@@ -56,6 +56,11 @@ public:
     // from the exact same coefficients the audio path runs.
     static double magnitudeAt (const Coeffs& c, double freq, double sampleRate);
 
+    // Complex H(e^jw): needed for |1 − H| (the "kept" transfer curve), where
+    // phase matters. re/im out-params to keep <complex> out of this header.
+    static void responseAt (const Coeffs& c, double freq, double sampleRate,
+                            double& re, double& im);
+
 private:
     static double clampFreq (double sampleRate, double freq) noexcept;
 

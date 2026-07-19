@@ -140,6 +140,16 @@ BiquadFilter::Coeffs BiquadFilter::makeBlendedNotch (double sampleRate, double f
     return c;
 }
 
+void BiquadFilter::responseAt (const Coeffs& c, double freq, double sampleRate,
+                               double& re, double& im)
+{
+    const std::complex<double> z  = std::polar (1.0, -2.0 * kPi * freq / sampleRate);
+    const std::complex<double> z2 = z * z;
+    const auto h = (c.b0 + c.b1 * z + c.b2 * z2) / (1.0 + c.a1 * z + c.a2 * z2);
+    re = h.real();
+    im = h.imag();
+}
+
 double BiquadFilter::magnitudeAt (const Coeffs& c, double freq, double sampleRate)
 {
     const std::complex<double> z  = std::polar (1.0, -2.0 * kPi * freq / sampleRate);
