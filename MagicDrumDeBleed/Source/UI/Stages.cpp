@@ -452,7 +452,7 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (tailMeter);
     setHint (tailMeter, "TAIL", "How much of the tail is currently ringing through.");
 
-    selectBand (0);
+    selectBand (2);                                     // K1 — the default-enabled band
     updateSoloButtons();
 }
 
@@ -555,7 +555,6 @@ void TailStage::paint (juce::Graphics& g)
     g.drawText ("KEEP BANDS", sc (11), bandLabelsY, sc (120), sc (12), juce::Justification::centredLeft);
     if (selIsKeep)
         g.drawText ("SHAPE", shapeX, bandLabelsY, sc (80), sc (12), juce::Justification::centredLeft);
-    g.drawText ("TAIL LENGTH", tailLenX, bandLabelsY, sc (110), sc (12), juce::Justification::centredLeft);
 }
 
 void TailStage::resized()
@@ -567,8 +566,6 @@ void TailStage::resized()
     freezeBtn.setBounds (head.removeFromRight (sc (62)));
     head.removeFromRight (sc (4));
     accumBtn.setBounds (head.removeFromRight (sc (88)));
-    head.removeFromRight (sc (7));
-    tailGateTg.setBounds (head.removeFromRight (sc (86)));
     header.setBounds (head);
     r.removeFromTop (sc (4));
 
@@ -616,9 +613,8 @@ void TailStage::resized()
         shapeBtns[i].setBounds (shapes.getX(), shapes.getY() + i * sc (26), shapes.getWidth(), sc (23));
 
     controls.removeFromLeft (col (13));
-    tailLenX = controls.getX();
     auto tailGrp = controls.removeFromLeft (col (142));
-    tailGrp.removeFromTop (sc (14));
+    tailGateTg.setBounds (tailGrp.removeFromTop (sc (14)));   // acts as the group header
     const int tw = tailGrp.getWidth() / 2;
     tailHold.setBounds (tailGrp.removeFromLeft (tw));
     tailFade.setBounds (tailGrp.removeFromLeft (tw));

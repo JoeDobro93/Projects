@@ -19,6 +19,12 @@
 > tail-colour fading=tail). Tail columns shrink proportionally at narrow
 > widths (TAIL meter never clips). Simple view 380×520 (min 330×450) adds
 > Focus / Tail hold / Learn (shared `eqids::handleLearnClick`).
+> **Defaults:** hold 7 / release 5 ms; scQ 2.871 (0.5 oct); linkK1 ON; only
+> K1 enabled (200 Hz, Q 1, gain −23.5 = ring −0.6 dB, shape Prop Q); hpfOn
+> now default OFF; eqGateHold 120 / eqGateRelease 100 ms. Tail gate toggle
+> lives above the Tail hold/fade knobs (group header). TailStage starts on
+> K1. `setStateInformation` wraps replaceState in `linkSyncing` so the link
+> can't cross-write freqs while params load in undefined order.
 >
 > **v2 UI overhaul (2026-07):** product renamed **Magic Drum Gate**. UI rebuilt
 > around a three-state model (CLOSED/OPEN/TAIL) per UIOVERHAULSPEC.md + mockup.

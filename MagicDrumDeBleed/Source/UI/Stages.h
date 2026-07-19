@@ -99,7 +99,7 @@ private:
     ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
     int sel = 0;
-    int bandLabelsY = 0, shapeX = 0, tailLenX = 0;
+    int bandLabelsY = 0, shapeX = 0;
 };
 
 //==============================================================================
