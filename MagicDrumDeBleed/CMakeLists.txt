@@ -36,7 +36,7 @@ juce_add_plugin(MagicDrumDeBleed
     COMPANY_NAME                "MagicDSP"
     BUNDLE_ID                   "com.magicdsp.MagicDrumGate"
     PLUGIN_MANUFACTURER_CODE    Magi
-    PLUGIN_CODE                 Mddb
+    PLUGIN_CODE                 Mdgt
     FORMATS                     VST3 AU Standalone
     VST3_CATEGORIES             Fx Dynamics
     AU_MAIN_TYPE                kAudioUnitType_Effect
