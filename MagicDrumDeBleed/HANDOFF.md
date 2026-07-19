@@ -1,5 +1,21 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
+> marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
+> UI. (1) OPEN on fast RMS (one-pole, τ=clamp(rmsWindow/6, 0.5–3 ms)) OR slow
+> windowed RMS crossing T. (2) CLOSE on slow RMS only with 8 dB hysteresis,
+> but the zone only sustains a FALLING level (slowDb trails its 6 ms lag by
+> >0.15 dB ≈ 25 dB/s) — a decaying hit rings through the zone, bleed parked
+> in it releases normally. (3) Soft knee: within 6 dB below T, open01 =
+> knee01(fast)−knee01(slow), gated by fast leading slow by >4 dB — pre-opens
+> during attack rises only; zero for steady bleed (incl. LF detector ripple).
+> targetDb = reduction·open01. eqGate env now triggers off the shared
+> gateOpen state. Constants in CompressorProcessor.cpp anon namespace.
+> test_host: 17 tests incl. ghost open-time, open latency <4.5 ms, knee
+> no-leak, re-close onto in-zone bleed. NOTE: test signals need a ~12 ms
+> peak plateau — a from-birth decaying tone never crosses T after RMS
+> smoothing (the knee blip it gets instead is by design).
+>
 > **v2.1 refinements (2026-07):** stage-title explanations removed. Knob value
 > text is click-to-type (`ui::Knob` inline TextEditor, "2k"=2000; choice knobs
 > snap to nearest choice's leading number). Gate Hold/Release ranges 5–200 ms.

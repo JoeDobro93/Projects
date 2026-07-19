@@ -63,7 +63,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
 
     addAndMakeVisible (smoothing);
     smoothing.attach (ap.getParameter (ParamIDs::rmsWindow));
-    setHint (smoothing, "Smoothing", "How much the detector averages before deciding. Short = twitchy, catches ghost notes. Long = steadier, ignores short spikes of bleed.");
+    setHint (smoothing, "Smoothing", "How much the detector averages. Opening always uses a fast detector so attacks are never clipped; Smoothing mainly steadies when the gate closes and rejects short spikes of bleed.");
 
     addAndMakeVisible (focus);
     focus.attach (ap.getParameter (ParamIDs::scFreq));

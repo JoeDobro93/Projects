@@ -4,12 +4,26 @@
     CompressorProcessor — the fixed-reduction gate at the heart of the
     parallel null-cancellation path.
 
-    This is NOT a ratio compressor. When the RMS of the (externally
-    filtered) detector signal exceeds the threshold, a fixed gain reduction
-    (reductionDb) is applied to the audio, regardless of how far above
-    threshold the detector is. The engage/disengage envelope is binary,
-    smoothed by an attack ramp sized to the lookahead, a hold timer and a
-    release ramp.
+    This is NOT a ratio compressor. When the detector exceeds the threshold,
+    a fixed gain reduction (reductionDb) is applied to the audio, regardless
+    of how far above threshold the detector is. The envelope is smoothed by
+    an attack ramp sized to the lookahead, a hold timer and a release ramp.
+
+    Detection (v2.2) uses a fast/slow split so marginal hits neither click
+    nor cut short:
+      - OPEN on a fast RMS (~rmsWindow/6, 0.5–3 ms) OR the slow RMS crossing
+        the threshold — ghost notes and low-frequency kicks are caught near
+        their true onset, preserving the lookahead margin.
+      - CLOSE on the slow RMS only, with 8 dB of hysteresis: once open, the
+        gate sustains while the level is still falling through the 8 dB
+        below the threshold, so a barely-over hit rings out through its own
+        decay like a loud one. The sustain requires a falling level, so
+        bleed parked steadily inside the zone releases normally.
+      - SOFT KNEE: within 6 dB below the threshold, the amount by which the
+        fast detector leads the slow one pre-opens the gate proportionally.
+        This spreads the opening over the attack's rise instead of a step
+        (no click), and cannot leak on steady bleed: fast == slow in steady
+        state, so the knee term vanishes.
 
     Lookahead: the audio passing through this processor is delayed by the
     lookahead amount; the detector is analysed *un-delayed*, so the gain
@@ -105,15 +119,23 @@ private:
 
     std::vector<MonoDelay> delays;          // one per channel
 
-    // RMS detector (circular buffer of squared samples + running sum)
+    // Slow RMS detector (circular buffer of squared samples + running sum);
+    // window = the Smoothing knob. Governs closing and the meter.
     std::vector<double> rmsBuffer;
     double rmsSum = 0.0;
     int rmsLength = 1, rmsIndex = 0, rmsRefreshCounter = 0;
     double currentRmsWindowMs = -1.0;
 
+    // Fast RMS detector (single-pole mean-square) — opening only.
+    double fastMeanSq = 0.0, fastCoeff = 1.0;
+
+    // Lagged copy of the slow level (dB) — the hysteresis falling test.
+    double slowDbLag = -120.0, hystLagCoeff = 1.0;
+
     // Envelope
     double currentGainDb = 0.0;
     int holdCounter = 0;
+    bool gateOpen = false;
 
     // EQ-gate envelope (0..1 linear)
     double eqGateEnv = 0.0;
