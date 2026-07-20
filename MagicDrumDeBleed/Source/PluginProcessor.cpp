@@ -81,7 +81,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         juce::NormalisableRange<float> r (0.3f, 12.0f);  r.setSkewForCentre (1.9f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scQ, 1 }, "SC Q", r, 2.871f,   // 0.5 oct
                         juce::AudioParameterFloatAttributes()
-                            .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2); })));
+                            .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1); })));
     }
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::scType, 1 }, "Trigger Filter Type",
                     juce::StringArray { "High Pass", "Low Pass", "Bandpass" }, 2));
@@ -118,7 +118,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
             p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchQ (i), 1 },
                             "Notch " + num + " Q", r, 1.0f,
                             juce::AudioParameterFloatAttributes()
-                                .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2); })));
+                                .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1); })));
         }
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
                         "Notch " + num + " Ring", juce::NormalisableRange<float> (0.0f, 20.0f, 0.1f), 9.8f,

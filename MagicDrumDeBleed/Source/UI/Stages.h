@@ -139,10 +139,16 @@ class HintBar : public juce::Component, private juce::Timer
 {
 public:
     HintBar();
+    ~HintBar() override;
     void paint (juce::Graphics& g) override;
     juce::TextButton simpleBtn { "Simple view" };
     void resized() override;
+    // Global mouse listener: locks the hint to the pressed control while
+    // dragging, instead of whatever the pointer happens to cross.
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 private:
     void timerCallback() override;
+    juce::Component::SafePointer<juce::Component> pressed;
     juce::String title, text;
 };

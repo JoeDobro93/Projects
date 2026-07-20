@@ -786,16 +786,36 @@ HintBar::HintBar()
 {
     setHint (simpleBtn, "Simple view", "A stripped-back view: trigger level, gate, amount, output, plus Focus, Learn and Tail hold.");
     addAndMakeVisible (simpleBtn);
+    juce::Desktop::getInstance().addGlobalMouseListener (this);
     startTimerHz (15);
 }
+
+HintBar::~HintBar()
+{
+    juce::Desktop::getInstance().removeGlobalMouseListener (this);
+}
+
+void HintBar::mouseDown (const juce::MouseEvent& e)   { pressed = e.eventComponent; }
+void HintBar::mouseUp (const juce::MouseEvent&)       { pressed = nullptr; }
 
 void HintBar::timerCallback()
 {
     juce::String t, x;
-    auto pos = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition();
     if (auto* top = getTopLevelComponent())
-        if (auto* c = top->getComponentAt (top->getLocalPoint (nullptr, pos.toInt())))
-            ui::findHint (c, t, x);
+    {
+        if (pressed != nullptr)                 // a control is being held/dragged
+        {
+            ui::findHint (pressed.getComponent(), t, x);
+        }
+        else if (auto* peer = top->getPeer(); peer != nullptr && peer->isFocused())
+        {
+            const auto pos = top->getLocalPoint (nullptr,
+                juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().toInt());
+            if (top->getLocalBounds().contains (pos))
+                if (auto* c = top->getComponentAt (pos))
+                    ui::findHint (c, t, x);
+        }
+    }
     if (t != title || x != text)
     {
         title = t; text = x;

@@ -137,8 +137,9 @@ void Knob::showEditor()
     edit->setFont (font (11.0f));
     auto b = valueBounds();
     edit->setBounds (b.withSizeKeepingCentre (juce::jmax (b.getWidth(), sc (56)), sc (18)));
+    // The editor reveals the exact value; the knob display rounds it.
     const float real = param->convertFrom0to1 (param->getValue());
-    edit->setText (juce::String (real, std::abs (real) < 10.0f ? 2 : 1), juce::dontSendNotification);
+    edit->setText (juce::String (real, 4), juce::dontSendNotification);
     edit->setVisible (true);
     edit->grabKeyboardFocus();
     edit->selectAll();
@@ -186,9 +187,9 @@ void Knob::mouseDrag (const juce::MouseEvent& e)
     if (dy == 0) return;
     lastDragY = e.getScreenY();
 
-    // Velocity-sensitive: slow mouse movement gets much finer resolution.
-    const float speed = std::abs (dy) <= 2 ? 0.3f : std::abs (dy) <= 6 ? 0.65f : 1.0f;
-    const float sens = e.mods.isShiftDown() ? 1600.0f : 300.0f;
+    // Velocity-sensitive: slow mouse movement gets finer resolution.
+    const float speed = std::abs (dy) <= 2 ? 0.5f : std::abs (dy) <= 6 ? 0.85f : 1.0f;
+    const float sens = e.mods.isShiftDown() ? 1200.0f : 220.0f;
     float delta = (float) dy * speed / sens;
     if (reversed) delta = -delta;
     dragNorm = juce::jlimit (0.0f, 1.0f, dragNorm + delta);
