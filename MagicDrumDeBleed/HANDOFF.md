@@ -166,6 +166,12 @@
 > monitor-signal-axis ticks + labels at 0/−12/−24/−36/−48 (dyy mapping,
 > kTopDb +9..kBotDb −54) — ticks only, not gridlines, since it's the
 > spectra's axis, not the cut axis.
+> **v2.3.13:** Knob base sens 170→136 px (shift 740). Right-edge signal
+> ticks now mark TRUE input dB tracking the MON fader — y = (kTopDb −
+> (v + monGainDb))/(span)·h for v = +36..−84 step 12, drawn only inside
+> [22px, h−6px] — and alternate dry-blue 0x4aa8e0 / kept-orange 0xe07e2a
+> (0.75 alpha; even multiples of 12 blue) so they read as the spectra's
+> axis; positive values show a + sign.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

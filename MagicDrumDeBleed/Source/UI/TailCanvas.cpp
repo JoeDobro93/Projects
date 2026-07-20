@@ -250,12 +250,19 @@ void TailCanvas::paint (juce::Graphics& g)
             g.setColour (pal->faint);
             g.drawText ("-" + juce::String ((int) d) + " dB", lr, juce::Justification::centredLeft);
         }
-        for (int v : { 0, -12, -24, -36, -48 })
+        // Signal-level ticks track the MON offset (they mark true input dB,
+        // wherever the fader has shifted the drawn spectra), alternating the
+        // dry-blue / kept-orange colours so it reads as the spectra's axis.
+        for (int v = 36; v >= -84; v -= 12)
         {
-            const float y = dyy ((float) v, h);
-            g.setColour (pal->faint);
+            const float y = (kTopDb - ((float) v + monGainDb)) / (kTopDb - kBotDb) * h;
+            if (y < scf (22.0f) || y > h - scf (6.0f))
+                continue;
+            g.setColour (((v / 12) % 2 == 0 ? juce::Colour (0xff4aa8e0)
+                                            : juce::Colour (0xffe07e2a)).withAlpha (0.75f));
             g.drawHorizontalLine ((int) y, w - scf (5.0f), w);
-            g.drawText (juce::String (v), (int) w - sc (33), (int) y - sc (5), sc (26), sc (10),
+            g.drawText ((v > 0 ? "+" : "") + juce::String (v),
+                        (int) w - sc (33), (int) y - sc (5), sc (26), sc (10),
                         juce::Justification::centredRight);
         }
     }
