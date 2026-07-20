@@ -46,15 +46,22 @@ private:
             // crossed drumsticks — the neutral "any drum" starting point
             auto c = b.getCentre().translated (0.0f, b.getHeight() * 0.04f);
             const float L = juce::jmin (b.getWidth() * 0.87f, b.getHeight()) * 0.5f;
-            const float tipR = L * 0.13f;
             g.setColour (strong);
             for (int side = 0; side < 2; ++side)
             {
                 const float dir = side == 0 ? -1.0f : 1.0f;
-                const juce::Point<float> tip  (c.x + dir * L * 0.78f, c.y - L * 0.80f);
+                const juce::Point<float> tip  (c.x + dir * L * 0.74f, c.y - L * 0.76f);
                 const juce::Point<float> butt (c.x - dir * L * 0.56f, c.y + L * 0.94f);
-                g.drawLine ({ butt, tip }, lw * 1.1f);
-                g.fillEllipse (tip.x - tipR, tip.y - tipR, tipR * 2, tipR * 2);
+                const auto mid = butt + (tip - butt) * 0.55f;
+                g.drawLine ({ butt, mid }, lw * 1.4f);      // grip half is thicker,
+                g.drawLine ({ mid, tip }, lw * 0.9f);       // shaft tapers to the tip
+                const float ang = std::atan2 (tip.y - butt.y, tip.x - butt.x);
+                juce::Path bead;                            // small elongated acorn tip
+                bead.addEllipse (-L * 0.11f, -L * 0.055f, L * 0.22f, L * 0.11f);
+                bead.applyTransform (juce::AffineTransform::rotation (ang)
+                    .translated (tip.x + std::cos (ang) * L * 0.09f,
+                                 tip.y + std::sin (ang) * L * 0.09f));
+                g.fillPath (bead);
             }
         }
         else if (kind == kick)
@@ -196,9 +203,14 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
 void SimpleView::paint (juce::Graphics& g)
 {
     g.fillAll (pal->bg);
+    const int hh = sc (46);                 // toolbar strip matches the Advanced view
+    g.setColour (pal->panel);
+    g.fillRect (0, 0, getWidth(), hh);
+    g.setColour (pal->line);
+    g.fillRect (0, hh - 1, getWidth(), 1);
     g.setColour (pal->accent);
-    g.setFont (font (13.0f, true));
-    g.drawText ("MAGIC DRUM GATE", 0, sc (10), getWidth(), sc (16), juce::Justification::centred);
+    g.setFont (font (16.0f, true));
+    g.drawText ("MAGIC DRUM GATE", sc (12), 0, getWidth() - sc (24), hh, juce::Justification::centredLeft);
     g.setColour (pal->faint);
     g.setFont (font (9.0f, true));
     g.drawText ("AMOUNT", amountX, amountY, sc (62), sc (12), juce::Justification::centred);
@@ -211,9 +223,12 @@ void SimpleView::paint (juce::Graphics& g)
 
 void SimpleView::resized()
 {
-    auto r = getLocalBounds().reduced (sc (12));
-    themeBtn.setBounds (r.getRight() - sc (48), r.getY(), sc (48), sc (20));
-    r.removeFromTop (sc (22));                                // title
+    auto full = getLocalBounds();
+    auto bar = full.removeFromTop (sc (46));
+    bar.reduce (sc (12), sc (8));
+    themeBtn.setBounds (bar.removeFromRight (sc (56)));
+    auto r = full.reduced (sc (12));
+    r.removeFromTop (sc (2));
 
     // One shared content width — the knob row — aligns every section:
     // meter row edges, preset button edges and knobs all line up.

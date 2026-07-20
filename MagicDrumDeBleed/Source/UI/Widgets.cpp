@@ -621,6 +621,8 @@ void LightToggle::mouseUp (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+MiniSwitch::MiniSwitch (juce::String l) : label (std::move (l)) {}
+
 void MiniSwitch::setState (bool on, bool notify)
 {
     if (state != on)
@@ -633,7 +635,11 @@ void MiniSwitch::setState (bool on, bool notify)
 
 void MiniSwitch::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    auto full = getLocalBounds().toFloat();
+    auto r = full.reduced (0.5f);
+    if (label.isNotEmpty())     // pill on the left, label text beside it
+        r = juce::Rectangle<float> (scf (22.0f), scf (12.0f))
+                .withCentre ({ full.getX() + scf (11.5f), full.getCentreY() });
     const auto on = onColour.isTransparent() ? pal->accent : onColour;
     g.setColour (state ? on.withAlpha (0.35f) : pal->panel2);
     g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
@@ -643,6 +649,14 @@ void MiniSwitch::paint (juce::Graphics& g)
     const float cx = state ? r.getRight() - d * 0.5f - scf (1.5f) : r.getX() + d * 0.5f + scf (1.5f);
     g.setColour (state ? on : pal->knob);
     g.fillEllipse (cx - d * 0.5f, r.getCentreY() - d * 0.5f, d, d);
+    if (label.isNotEmpty())
+    {
+        g.setColour (state ? pal->txt : pal->dim);
+        g.setFont (font (11.5f));
+        g.drawText (label, (int) r.getRight() + sc (6), 0,
+                    getWidth() - (int) r.getRight() - sc (6), getHeight(),
+                    juce::Justification::centredLeft);
+    }
 }
 
 void MiniSwitch::mouseUp (const juce::MouseEvent& e)
@@ -652,15 +666,19 @@ void MiniSwitch::mouseUp (const juce::MouseEvent& e)
 }
 
 //==============================================================================
-MiniSlider::MiniSlider (float defaultValue) : value (defaultValue), def (defaultValue)
+MiniSlider::MiniSlider (float defaultValue, bool vertical)
+    : value (defaultValue), def (defaultValue), vert (vertical)
 {
-    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    setMouseCursor (vert ? juce::MouseCursor::UpDownResizeCursor
+                         : juce::MouseCursor::LeftRightResizeCursor);
 }
 
-void MiniSlider::setFromX (float x)
+void MiniSlider::setFromPos (juce::Point<float> p)
 {
     const float inset = scf (5.0f);
-    value = juce::jlimit (0.0f, 1.0f, (x - inset) / juce::jmax (1.0f, (float) getWidth() - inset * 2));
+    const float len = juce::jmax (1.0f, (float) (vert ? getHeight() : getWidth()) - inset * 2);
+    const float along = vert ? (float) getHeight() - inset - p.y : p.x - inset;
+    value = juce::jlimit (0.0f, 1.0f, along / len);
     if (onChange) onChange (value);
     repaint();
 }
@@ -669,20 +687,27 @@ void MiniSlider::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     const float inset = scf (5.0f);
-    auto track = juce::Rectangle<float> (r.getX() + inset, r.getCentreY() - scf (2.0f),
-                                         r.getWidth() - inset * 2, scf (4.0f));
+    auto track = vert
+        ? juce::Rectangle<float> (r.getCentreX() - scf (2.0f), r.getY() + inset,
+                                  scf (4.0f), r.getHeight() - inset * 2)
+        : juce::Rectangle<float> (r.getX() + inset, r.getCentreY() - scf (2.0f),
+                                  r.getWidth() - inset * 2, scf (4.0f));
     g.setColour (pal->panel2); g.fillRoundedRectangle (track, 2.0f);
     g.setColour (pal->line);   g.drawRoundedRectangle (track, 2.0f, 1.0f);
     g.setColour (pal->accent.withAlpha (0.8f));
-    g.fillRoundedRectangle (track.withWidth (track.getWidth() * value), 2.0f);
-    const float cx = track.getX() + track.getWidth() * value;
-    auto thumb = juce::Rectangle<float> (scf (7.0f), scf (11.0f)).withCentre ({ cx, r.getCentreY() });
+    g.fillRoundedRectangle (vert ? track.withTrimmedTop (track.getHeight() * (1.0f - value))
+                                 : track.withWidth (track.getWidth() * value), 2.0f);
+    const auto centre = vert
+        ? juce::Point<float> (r.getCentreX(), track.getBottom() - track.getHeight() * value)
+        : juce::Point<float> (track.getX() + track.getWidth() * value, r.getCentreY());
+    auto thumb = (vert ? juce::Rectangle<float> (scf (11.0f), scf (7.0f))
+                       : juce::Rectangle<float> (scf (7.0f), scf (11.0f))).withCentre (centre);
     g.setColour (pal->knob);     g.fillRoundedRectangle (thumb, 2.0f);
     g.setColour (pal->knobEdge); g.drawRoundedRectangle (thumb, 2.0f, 1.0f);
 }
 
-void MiniSlider::mouseDown (const juce::MouseEvent& e)        { setFromX (e.position.x); }
-void MiniSlider::mouseDrag (const juce::MouseEvent& e)        { setFromX (e.position.x); }
+void MiniSlider::mouseDown (const juce::MouseEvent& e)        { setFromPos (e.position); }
+void MiniSlider::mouseDrag (const juce::MouseEvent& e)        { setFromPos (e.position); }
 void MiniSlider::mouseDoubleClick (const juce::MouseEvent&)
 {
     value = def;
@@ -735,46 +760,4 @@ void MonitorFader::mouseDoubleClick (const juce::MouseEvent&)
     repaint();
 }
 
-//==============================================================================
-CheckToggle::CheckToggle (juce::String l, bool tc) : label (std::move (l)), tailColour (tc) {}
-
-void CheckToggle::setState (bool on, bool notify)
-{
-    if (state == on) return;
-    state = on;
-    if (notify && onChange) onChange (state);
-    repaint();
-}
-
-void CheckToggle::paint (juce::Graphics& g)
-{
-    auto r = getLocalBounds().toFloat();
-    auto box = juce::Rectangle<float> (scf (14.0f), scf (14.0f)).withCentre ({ r.getX() + scf (8.0f), r.getCentreY() });
-    if (state)
-    {
-        g.setColour (tailColour ? pal->tail : pal->accent);
-        g.fillRoundedRectangle (box, 3.0f);
-        g.setColour (pal->bg);
-        juce::Path tick;
-        tick.startNewSubPath (box.getX() + box.getWidth() * 0.25f, box.getCentreY());
-        tick.lineTo (box.getCentreX() - box.getWidth() * 0.05f, box.getBottom() - box.getHeight() * 0.28f);
-        tick.lineTo (box.getRight() - box.getWidth() * 0.2f, box.getY() + box.getHeight() * 0.25f);
-        g.strokePath (tick, juce::PathStrokeType (2.0f * scale));
-    }
-    else
-    {
-        g.setColour (pal->panel2); g.fillRoundedRectangle (box, 3.0f);
-        g.setColour (pal->knobEdge); g.drawRoundedRectangle (box, 3.0f, 1.0f);
-    }
-    g.setColour (state ? pal->txt : pal->dim);
-    g.setFont (font (11.5f));
-    g.drawText (label, (int) box.getRight() + sc (6), 0, getWidth() - (int) box.getRight() - sc (6), getHeight(),
-                juce::Justification::centredLeft);
-}
-
-void CheckToggle::mouseUp (const juce::MouseEvent& e)
-{
-    if (getLocalBounds().contains (e.getPosition()))
-        setState (! state, true);
-}
 } // namespace ui

@@ -42,6 +42,7 @@ private:
     eqids::LearnButton learnBtn { processor };
     std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt;
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
+    bool filterOn = true;
 };
 
 //==============================================================================
@@ -58,12 +59,13 @@ private:
     StageHeader header { 2, "GATE", 1 };
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
              release { "Release", ui::Knob::openClr };
-    ui::MiniSlider speedSlider { 0.5f };                // history scroll speed
+    ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
 
+    std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
     struct Sample { float det; int state; };            // state 0 closed 1 tail 2 open
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
-    juce::Rectangle<int> canvasArea, stateArea;
+    juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;
     float open01 = 0.0f, tail01 = 0.0f;
     int state = 0;
     juce::String latencyText;
@@ -85,7 +87,7 @@ private:
 
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 3, "TAIL", 2 };
-    ui::CheckToggle tailGateTg { "Tail gate", true };
+    ui::MiniSwitch tailGateSw { "Tail gate" };
     juce::TextButton bypassBtn { "Bypass" };
     juce::TextButton internalsBtn { "Show internals" }, accumBtn { "Accumulate" }, freezeBtn { "Freeze" };
     ui::LightSelector scaleSel { { { "Fine", ui::LightSelector::iconNone },
@@ -108,8 +110,10 @@ private:
     std::unique_ptr<juce::ParameterAttachment> shapeAtt, tailGateAtt, bypassAtt;
     ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
+    void updateDim();
     int sel = 0;
     int bandLabelsY = 0, shapeX = 0, scaleLabelY = 0;
+    bool eqByp = false, tgOn = true;
 };
 
 //==============================================================================

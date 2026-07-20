@@ -11,8 +11,8 @@
 class SimpleView : public juce::Component
 {
 public:
-    static constexpr int kDefaultW = 380, kDefaultH = 666;
-    static constexpr int kMinW = 330,  kMinH = 582;
+    static constexpr int kDefaultW = 380, kDefaultH = 692;
+    static constexpr int kMinW = 330,  kMinH = 608;
 
     SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onThemeToggle,
                 std::function<void()> onAdvancedView);

@@ -112,6 +112,7 @@ private:
 class MiniSwitch : public juce::Component
 {
 public:
+    explicit MiniSwitch (juce::String label = {});     // labelled: pill left, text right
     std::function<void (bool)> onChange;
     void setOnColour (juce::Colour c)          { onColour = c; repaint(); }
     void setState (bool on, bool notify);
@@ -119,17 +120,18 @@ public:
     void paint (juce::Graphics& g) override;
     void mouseUp (const juce::MouseEvent&) override;
 private:
+    juce::String label;
     juce::Colour onColour;
     bool state = false;
 };
 
 //==============================================================================
-/*  Small horizontal 0..1 slider (display/update-rate style controls).
-    Double-click resets to the default value. */
+/*  Small 0..1 slider (display/update-rate style controls), horizontal or
+    vertical. Double-click resets to the default value. */
 class MiniSlider : public juce::Component
 {
 public:
-    explicit MiniSlider (float defaultValue = 0.5f);
+    explicit MiniSlider (float defaultValue = 0.5f, bool vertical = false);
     std::function<void (float)> onChange;
     float getValue() const                     { return value; }
     void paint (juce::Graphics& g) override;
@@ -137,8 +139,9 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 private:
-    void setFromX (float x);
+    void setFromPos (juce::Point<float> p);
     float value, def;
+    bool vert;
 };
 
 //==============================================================================
@@ -233,19 +236,4 @@ private:
     float value = 0.0f;
 };
 
-//==============================================================================
-/*  Mockup-style checkbox toggle: 14px rounded box + tick + label. */
-class CheckToggle : public juce::Component
-{
-public:
-    CheckToggle (juce::String label, bool tailColour = false);
-    void setState (bool on, bool notify);
-    bool getState() const                    { return state; }
-    std::function<void (bool)> onChange;
-    void paint (juce::Graphics& g) override;
-    void mouseUp (const juce::MouseEvent&) override;
-private:
-    juce::String label;
-    bool tailColour, state = true;
-};
 } // namespace ui

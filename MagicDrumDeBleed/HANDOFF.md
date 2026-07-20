@@ -101,6 +101,24 @@
 > notches). Simple view: 4th preset button **Default** (crossed
 > drumsticks icon, leftmost; presetBtns[4], DrumButton::def; row is
 > equal-width buttons justified at cx0 + i·(contentW−bw)/3).
+> **v2.3.8 (QoL round):** (1) Skewed parameter ranges lost their step
+> intervals — step+skew makes a dead zone at the range bottom (first step
+> ≈ 19% of knob travel on band Q, 11% Smoothing/Tail-hold, 9% Hold, ~5%
+> freq knobs) that read as a sticky "snap" at the minimum; ranges are now
+> continuous, scQ/notchQ gained 2-decimal stringFromValue (interval no
+> longer implies display rounding). (2) Tail gate = labelled
+> `ui::MiniSwitch` (widget gained an optional label: pill left, text
+> right) centred UNDER Tail hold/fade; CheckToggle deleted. (3) Bypass
+> dulling via setAlpha 0.45 wired into the existing attachments:
+> compBypass dims Threshold/Smoothing + the three gate knobs; scEnable
+> off dims Focus/Width/type + TRIGGER FILTER caption; eqBypass dims all
+> band controls/captions/shape/tail group (TailStage::updateDim with
+> eqByp/tgOn); tail-gate-off dims Tail hold/fade. (4) History speed
+> slider is vertical (MiniSlider vertical mode) right of the history
+> display, rotated SPEED label (speedLabelArea). (5) Simple view opens
+> with the same 46px toolbar strip as Advanced (panel fill, hairline,
+> 16pt title left, theme btn right); 380×692 min 330×608. (6) Default
+> icon: tapered stick shafts + small elongated acorn tips.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

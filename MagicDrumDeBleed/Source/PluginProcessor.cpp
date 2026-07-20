@@ -5,7 +5,7 @@ namespace
 {
     juce::NormalisableRange<float> logHzRange (float minHz, float maxHz)
     {
-        juce::NormalisableRange<float> r (minHz, maxHz, 0.01f);
+        juce::NormalisableRange<float> r (minHz, maxHz);
         r.setSkewForCentre (std::sqrt (minHz * maxHz));
         return r;
     }
@@ -61,15 +61,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                                 .withLabel ("ms")
                                 .withStringFromValueFunction ([] (int v, int) { return juce::String (v) + " ms"; })));
     {
-        juce::NormalisableRange<float> r (1.0f, 100.0f, 0.1f);  r.setSkewForCentre (10.0f);
+        juce::NormalisableRange<float> r (1.0f, 100.0f);  r.setSkewForCentre (10.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::rmsWindow, 1 }, "RMS Window", r, 10.0f, ms));
     }
     {
-        juce::NormalisableRange<float> r (5.0f, 200.0f, 1.0f);  r.setSkewForCentre (40.0f);
+        juce::NormalisableRange<float> r (5.0f, 200.0f);  r.setSkewForCentre (40.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hold, 1 }, "Hold", r, 7.0f, ms));
     }
     {
-        juce::NormalisableRange<float> r (5.0f, 200.0f, 1.0f);  r.setSkewForCentre (60.0f);
+        juce::NormalisableRange<float> r (5.0f, 200.0f);  r.setSkewForCentre (60.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release", r, 5.0f, ms));
     }
 
@@ -78,8 +78,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scFreq, 1 }, "SC Frequency",
                     logHzRange (30.0f, 2000.0f), 200.0f, hz));
     {
-        juce::NormalisableRange<float> r (0.3f, 12.0f, 0.01f);  r.setSkewForCentre (1.9f);
-        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scQ, 1 }, "SC Q", r, 2.871f));   // 0.5 oct
+        juce::NormalisableRange<float> r (0.3f, 12.0f);  r.setSkewForCentre (1.9f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scQ, 1 }, "SC Q", r, 2.871f,   // 0.5 oct
+                        juce::AudioParameterFloatAttributes()
+                            .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2); })));
     }
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::scType, 1 }, "Trigger Filter Type",
                     juce::StringArray { "High Pass", "Low Pass", "Bandpass" }, 2));
@@ -112,9 +114,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchFreq (i), 1 },
                         "Notch " + num + " Freq", logHzRange (20.0f, 20000.0f), kNotchDefaultFreqs[i], hz));
         {
-            juce::NormalisableRange<float> r (0.1f, 40.0f, 0.01f);  r.setSkewForCentre (1.0f);
+            juce::NormalisableRange<float> r (0.1f, 40.0f);  r.setSkewForCentre (1.0f);
             p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::notchQ (i), 1 },
-                            "Notch " + num + " Q", r, 1.0f));
+                            "Notch " + num + " Q", r, 1.0f,
+                            juce::AudioParameterFloatAttributes()
+                                .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2); })));
         }
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
                         "Notch " + num + " Ring", juce::NormalisableRange<float> (0.0f, 20.0f, 0.1f), 9.8f,
@@ -127,11 +131,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     // ---- EQ gate ----
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::eqGateOn, 1 }, "EQ Gate", true));
     {
-        juce::NormalisableRange<float> r (0.0f, 2000.0f, 1.0f);  r.setSkewForCentre (150.0f);
+        juce::NormalisableRange<float> r (0.0f, 2000.0f);  r.setSkewForCentre (150.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateHold, 1 }, "EQ Gate Hold", r, 120.0f, ms));
     }
     {
-        juce::NormalisableRange<float> r (5.0f, 5000.0f, 1.0f);  r.setSkewForCentre (800.0f);
+        juce::NormalisableRange<float> r (5.0f, 5000.0f);  r.setSkewForCentre (800.0f);
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateRelease, 1 }, "EQ Gate Release", r, 100.0f, ms));
     }
 

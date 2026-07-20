@@ -51,7 +51,13 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         bypassAtt->setValueAsCompleteGesture (p->convertFrom0to1 (p->getValue()) > 0.5f ? 0.0f : 1.0f);
     };
     bypassAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
-        [this] (float v) { styleSeg (bypassBtn, v > 0.5f); bypassBtn.repaint(); });
+        [this] (float v)
+        {
+            styleSeg (bypassBtn, v > 0.5f); bypassBtn.repaint();
+            const float a = v > 0.5f ? 0.45f : 1.0f;
+            threshold.setAlpha (a);
+            smoothing.setAlpha (a);
+        });
     bypassAtt->sendInitialUpdate();
 
     addAndMakeVisible (trigMeter);
@@ -89,7 +95,16 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         scEnableAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
     scEnableAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::scEnable),
-        [this] (float v) { enableBtn.setState (v > 0.5f); });
+        [this] (float v)
+        {
+            filterOn = v > 0.5f;
+            enableBtn.setState (filterOn);
+            const float a = filterOn ? 1.0f : 0.45f;
+            focus.setAlpha (a);
+            width.setAlpha (a);
+            typeSel.setAlpha (a);
+            repaint();
+        });
     scEnableAtt->sendInitialUpdate();
 
     addAndMakeVisible (learnBtn);
@@ -136,7 +151,9 @@ void TriggerStage::paint (juce::Graphics& g)
     g.setColour (pal->faint);
     g.setFont (font (9.5f, true));
     g.drawText ("SENSITIVITY", sensLabelX, sc (34), sc (160), sc (12), juce::Justification::centredLeft);
+    if (! filterOn) g.setColour (pal->faint.withAlpha (0.45f));
     g.drawText ("TRIGGER FILTER", filtLabelX, sc (34), sc (400), sc (12), juce::Justification::centredLeft);
+    g.setColour (pal->faint);
     g.setColour (pal->line);
     g.fillRect (dividerX, sc (32), 1, getHeight() - sc (42));
 }
@@ -197,6 +214,16 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
     speedSlider.onChange = [this] (float v) { startTimerHz (juce::roundToInt (10.0f * std::pow (3.0f, 2.0f * v))); };
 
+    dimAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
+        [this] (float v)
+        {
+            const float a = v > 0.5f ? 0.45f : 1.0f;
+            lookahead.setAlpha (a);
+            hold.setAlpha (a);
+            release.setAlpha (a);
+        });
+    dimAtt->sendInitialUpdate();
+
     hist.reserve (kHist);
     startTimerHz (30);
 }
@@ -222,6 +249,16 @@ void GateStage::paint (juce::Graphics& g)
     g.setColour (pal->faint);
     g.setFont (font (10.5f));
     g.drawText (latencyText, getWidth() - sc (200), sc (8), sc (188), sc (14), juce::Justification::centredRight);
+
+    if (! speedLabelArea.isEmpty())     // reads bottom-up beside the vertical slider
+    {
+        juce::Graphics::ScopedSaveState ss (g);
+        const auto c = speedLabelArea.getCentre().toFloat();
+        g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, c.x, c.y));
+        g.setFont (font (8.5f, true));
+        g.drawText ("SPEED", juce::Rectangle<int> (sc (70), sc (12)).withCentre (speedLabelArea.getCentre()),
+                    juce::Justification::centred);
+    }
 
     // ---- history canvas ----
     auto cv = canvasArea.toFloat();
@@ -314,9 +351,12 @@ void GateStage::resized()
 
     r.removeFromLeft (sc (13));
     stateArea = r.removeFromRight (sc (124));
-    r.removeFromRight (sc (13));
+    r.removeFromRight (sc (8));
+    auto scol = r.removeFromRight (sc (16));
+    speedLabelArea = r.removeFromRight (sc (12));
+    r.removeFromRight (sc (2));
     canvasArea = r;
-    speedSlider.setBounds (canvasArea.getRight() - sc (96), sc (6), sc (90), sc (16));
+    speedSlider.setBounds (scol.reduced (0, sc (2)));
 }
 
 //==============================================================================
@@ -336,7 +376,7 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
         bypassAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
     bypassAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::eqBypass),
-        [this] (float v) { styleSeg (bypassBtn, v > 0.5f); });
+        [this] (float v) { styleSeg (bypassBtn, v > 0.5f); eqByp = v > 0.5f; updateDim(); });
     bypassAtt->sendInitialUpdate();
 
     addAndMakeVisible (scaleSel);
@@ -352,11 +392,12 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
         canvas.setDisplayScale (i == 0 ? 12.0f : i == 1 ? 18.0f : 24.0f);
     }
 
-    addAndMakeVisible (tailGateTg);
-    setHint (tailGateTg, "Tail gate", juce::String::fromUTF8 ("When off, the kept bands ring continuously \xe2\x80\x94 including between hits, where they will rumble. Normally leave this on."));
-    tailGateTg.onChange = [this] (bool on) { tailGateAtt->setValueAsCompleteGesture (on ? 1.0f : 0.0f); };
+    addAndMakeVisible (tailGateSw);
+    tailGateSw.setOnColour (pal->tail);
+    setHint (tailGateSw, "Tail gate", juce::String::fromUTF8 ("When off, the kept bands ring continuously \xe2\x80\x94 including between hits, where they will rumble. Normally leave this on."));
+    tailGateSw.onChange = [this] (bool on) { tailGateAtt->setValueAsCompleteGesture (on ? 1.0f : 0.0f); };
     tailGateAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::eqGateOn),
-        [this] (float v) { tailGateTg.setState (v > 0.5f, false); });
+        [this] (float v) { tailGateSw.setState (v > 0.5f, false); tgOn = v > 0.5f; updateDim(); });
     tailGateAtt->sendInitialUpdate();
 
     addAndMakeVisible (internalsBtn);
@@ -531,12 +572,37 @@ void TailStage::paint (juce::Graphics& g)
     g.setColour (pal->panel);  g.fillRoundedRectangle (r, 5.0f);
     g.setColour (pal->line);   g.drawRoundedRectangle (r, 5.0f, 1.0f);
 
-    g.setColour (pal->faint);
+    g.setColour (eqByp ? pal->faint.withAlpha (0.45f) : pal->faint);
     g.setFont (font (9.5f, true));
     g.drawText ("KEEP BANDS", sc (11), bandLabelsY, sc (120), sc (12), juce::Justification::centredLeft);
     if (selIsKeep)
         g.drawText ("SHAPE", shapeX, bandLabelsY, sc (80), sc (12), juce::Justification::centredLeft);
+    g.setColour (pal->faint);
     g.drawText ("SCALE", sc (11), scaleLabelY, sc (52), sc (12), juce::Justification::centredLeft);
+}
+
+void TailStage::updateDim()
+{
+    // Bypassed EQ dulls every sound-shaping control; the tail knobs also dim
+    // when the tail gate is off (they only time the gated tail).
+    const float band = eqByp ? 0.45f : 1.0f;
+    const float tail = (eqByp || ! tgOn) ? 0.45f : 1.0f;
+    for (int b = 0; b < 7; ++b)
+    {
+        bandBtns[b].setAlpha (band);
+        soloBtns[b].setAlpha (band);
+        bandSw[b].setAlpha (band);
+    }
+    bandLabel.setAlpha (band);
+    freq.setAlpha (band);
+    widthK.setAlpha (band);
+    ring.setAlpha (band);
+    slopeK.setAlpha (band);
+    shapeSel.setAlpha (band);
+    tailGateSw.setAlpha (band);
+    tailHold.setAlpha (tail);
+    tailFade.setAlpha (tail);
+    repaint();
 }
 
 void TailStage::resized()
@@ -588,7 +654,9 @@ void TailStage::resized()
     auto right = juce::Rectangle<int> (controls.getRight() - (int) (rightW * shrink), controls.getY(),
                                        (int) (rightW * shrink), controls.getHeight());
     auto tailGrp = right.removeFromLeft (col (142));
-    tailGateTg.setBounds (tailGrp.removeFromTop (sc (14)));   // acts as the group header
+    tailGrp.removeFromTop (sc (14));                          // aligns with the other knob groups
+    auto swRow = tailGrp.removeFromBottom (sc (16));
+    tailGateSw.setBounds (swRow.withSizeKeepingCentre (juce::jmin (swRow.getWidth(), sc (96)), sc (16)));
     const int tw = tailGrp.getWidth() / 2;
     tailHold.setBounds (tailGrp.removeFromLeft (tw));
     tailFade.setBounds (tailGrp.removeFromLeft (tw));
