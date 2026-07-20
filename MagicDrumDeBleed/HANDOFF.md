@@ -58,6 +58,11 @@
 > shelfQ param. DrumButtons: label under icon; all three share one
 > measured width (max of icon width & GlyphArrangement label width
 > + padding), centred as a group; row 58 tall (Simple 380×654 min 570).
+> **v2.3.5:** Shelf edge Q 0.9→**1.05** (same drive-fade): plateau visible
+> at Q1 for 1–5 dB cuts (full plateau 1.1 oct at −2 dB, Q1); overshoot
+> ≤0.21 dB. Simple view rows align to ONE content rect (= knob-row
+> width): meters spread edge-to-edge across it, preset buttons equal
+> size justified first-left/last-right to the same edges.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

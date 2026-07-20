@@ -90,10 +90,10 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
                  // shelves reach (below −20 dB: invisible on every display
                  // scale, inaudible in ring level) comes from a centre notch.
             const double bw = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
-            // Corners pushed 0.12 oct past the nominal edges and shelf Q 0.9
+            // Corners pushed 0.12 oct past the nominal edges and shelf Q 1.05
             // (fading to 0.707 as drive grows, so deep bands never ripple):
-            // flank intrusion then matches Ozone (~0.45 oct per side), with a
-            // visible plateau from Q ≈ 1 downwards.
+            // flanks are steep enough that a plateau is visible at Q 1 even
+            // for 1-5 dB cuts, and intrusion matches Ozone's character.
             const double s = std::pow (2.0, 0.5 * bw + 0.12);
             const double fLo = p.freqHz / s, fHi = p.freqHz * s;
 
@@ -103,7 +103,7 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
             double ctr = 0.0;
             for (int it = 0; it < 10; ++it)
             {
-                const double sq = 0.70710678 + (0.9 - 0.70710678) * std::exp (-std::abs (gp) / 5.0);
+                const double sq = 0.70710678 + (1.05 - 0.70710678) * std::exp (-std::abs (gp) / 5.0);
                 out[0] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp, sq);
                 out[1] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp, sq);
                 out[2] = out[0];

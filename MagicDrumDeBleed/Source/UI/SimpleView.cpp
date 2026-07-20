@@ -194,29 +194,31 @@ void SimpleView::resized()
     themeBtn.setBounds (r.getRight() - sc (48), r.getY(), sc (48), sc (20));
     r.removeFromTop (sc (22));                                // title
 
+    // One shared content width — the knob row — aligns every section:
+    // meter row edges, preset button edges and knobs all line up.
+    const int kw = sc (66);
+    const int contentW = juce::jmin (r.getWidth(), kw * 4 + sc (8) * 3);
+    const int cx0 = r.getX() + (r.getWidth() - contentW) / 2;
+
     // preset row at the top, away from the working controls. All three
-    // buttons share one width: the widest icon-or-label plus padding.
+    // buttons are the same size (widest icon-or-label plus padding),
+    // justified so the outer edges meet the content edges.
     auto prow = r.removeFromTop (sc (58));
     r.removeFromTop (sc (10));
     {
         const auto f = font (11.5f, true);
         const float iconW = scf (58 - 8 - 13 - 2) * 1.15f;
-        float content = iconW;
+        float widest = iconW;
         for (auto& b : presetBtns)
         {
             juce::GlyphArrangement ga;
             ga.addLineOfText (f, b->getButtonText(), 0.0f, 0.0f);
-            content = juce::jmax (content, ga.getBoundingBox (0, -1, true).getWidth());
+            widest = juce::jmax (widest, ga.getBoundingBox (0, -1, true).getWidth());
         }
-        const int bw = (int) content + sc (20), gap = sc (6);
-        auto row = prow.withSizeKeepingCentre (juce::jmin (bw * 3 + gap * 2, prow.getWidth()),
-                                               prow.getHeight());
-        const int ew = juce::jmin (bw, (row.getWidth() - gap * 2) / 3);
-        for (int i = 0; i < 3; ++i)
-        {
-            presetBtns[i]->setBounds (row.removeFromLeft (ew));
-            row.removeFromLeft (gap);
-        }
+        const int bw = juce::jmin ((int) widest + sc (20), (contentW - sc (12)) / 3);
+        presetBtns[0]->setBounds (cx0, prow.getY(), bw, prow.getHeight());
+        presetBtns[1]->setBounds (cx0 + (contentW - bw) / 2, prow.getY(), bw, prow.getHeight());
+        presetBtns[2]->setBounds (cx0 + contentW - bw, prow.getY(), bw, prow.getHeight());
     }
 
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));
@@ -225,29 +227,29 @@ void SimpleView::resized()
     // knob row: Resonance (Learn under it) · Reso Amt · Tail hold · Tail fade
     auto knobs = r.removeFromBottom (sc (108));
     r.removeFromBottom (sc (6));
-    const int kw = sc (66);
-    auto krow = knobs.withSizeKeepingCentre (juce::jmin (kw * 4 + sc (24), knobs.getWidth()),
-                                             knobs.getHeight());
+    auto krow = juce::Rectangle<int> (cx0, knobs.getY(), contentW, knobs.getHeight());
+    const int kgap = (contentW - kw * 4) / 3;
     auto rcol = krow.removeFromLeft (kw);
     learnBtn.setBounds (rcol.removeFromBottom (sc (24)));
     rcol.removeFromBottom (sc (4));
     resonance.setBounds (rcol);
-    krow.removeFromLeft (sc (8));
+    krow.removeFromLeft (kgap);
     resoAmt.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
-    krow.removeFromLeft (sc (8));
+    krow.removeFromLeft (kgap);
     tailHold.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
-    krow.removeFromLeft (sc (8));
+    krow.removeFromLeft (kgap);
     tailFade.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
 
-    // centred row: TRIGGER · GATE · AMOUNT · OUT
-    const int mw = sc (46), fw = sc (62), gap = sc (14);
-    const int total = mw * 3 + fw + gap * 3;
-    auto row = r.withSizeKeepingCentre (juce::jmin (total, r.getWidth()), r.getHeight());
+    // meter row: TRIGGER · GATE · AMOUNT · OUT spread across the content
+    // width so its bounding box matches the knobs below
+    const int mw = sc (46), fw = sc (62);
+    const int mgap = (contentW - mw * 3 - fw) / 3;
+    auto row = juce::Rectangle<int> (cx0, r.getY(), contentW, r.getHeight());
 
     trigMeter.setBounds (row.removeFromLeft (mw));
-    row.removeFromLeft (gap);
+    row.removeFromLeft (mgap);
     gateMeter.setBounds (row.removeFromLeft (mw));
-    row.removeFromLeft (gap);
+    row.removeFromLeft (mgap);
     auto fcol = row.removeFromLeft (fw);
     amountX = fcol.getX();
     amountY = fcol.getY();
@@ -256,6 +258,6 @@ void SimpleView::resized()
     amountVal.setColour (juce::Label::textColourId, pal->txt);
     amountVal.setBounds (fcol.removeFromBottom (sc (16)));
     fader.setBounds (fcol);
-    row.removeFromLeft (gap);
+    row.removeFromLeft (mgap);
     outMeter.setBounds (row.removeFromLeft (mw));
 }
