@@ -194,7 +194,7 @@ void Knob::applyTyped (const juce::String& text)
         return;
     }
     const auto& r = param->getNormalisableRange();
-    att->setValueAsCompleteGesture (juce::jlimit (r.start, r.end, (float) v));
+    att->setValueAsCompleteGesture (r.snapToLegalValue ((float) v));
 }
 
 void Knob::mouseDown (const juce::MouseEvent& e)
@@ -223,7 +223,8 @@ void Knob::mouseDrag (const juce::MouseEvent& e)
     float delta = (float) dy * speed / sens;
     if (reversed) delta = -delta;
     dragNorm = juce::jlimit (0.0f, 1.0f, dragNorm + delta);
-    att->setValueAsPartOfGesture (param->convertFrom0to1 (dragNorm));
+    const auto& r = param->getNormalisableRange();
+    att->setValueAsPartOfGesture (r.snapToLegalValue (r.convertFrom0to1 (dragNorm)));
 }
 
 void Knob::mouseUp (const juce::MouseEvent& e)

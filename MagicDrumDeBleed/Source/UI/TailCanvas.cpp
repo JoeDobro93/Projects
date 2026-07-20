@@ -233,9 +233,21 @@ void TailCanvas::paint (juce::Graphics& g)
             g.drawText (nm, (int) x - sc (14), (int) h + sc (1), sc (28), sc (10), juce::Justification::centred);
         }
     }
-    g.setColour (pal->line.withAlpha (0.3f));
-    for (int q = 1; q <= 3; ++q)
-        g.drawHorizontalLine ((int) (h * (float) q / 4.0f), 0.0f, w);
+    // horizontal lines at whole-dB cut levels, labelled so the gold curve's
+    // depth stays readable on every Scale setting
+    {
+        const float stepDb = dispMax <= 12.0f ? 3.0f : 6.0f;
+        g.setFont (font (8.5f));
+        for (float d = stepDb; d < dispMax - 0.5f; d += stepDb)
+        {
+            const float y = h * (1.0f - d / dispMax);
+            g.setColour (pal->line.withAlpha (0.3f));
+            g.drawHorizontalLine ((int) y, 0.0f, w);
+            g.setColour (pal->faint);
+            g.drawText ("-" + juce::String ((int) d) + " dB",
+                        sc (4), (int) y - sc (11), sc (40), sc (10), juce::Justification::centredLeft);
+        }
+    }
 
     // keep the spectral layers inside the plot (out of the label strip)
     g.reduceClipRegion (0, 0, (int) w, (int) h);

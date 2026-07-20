@@ -14,8 +14,11 @@ namespace
     }
 
     // Two-segment log range keeping a chosen value at 12 o'clock.
-    juce::NormalisableRange<float> logRange (float min, float centre, float max)
+    // wholeNumbers snaps every produced value to integers (times in ms).
+    juce::NormalisableRange<float> logRange (float min, float centre, float max,
+                                             bool wholeNumbers = false)
     {
+        using Remap = juce::NormalisableRange<float>::ValueRemapFunction;
         return { min, max,
             [centre] (float s, float e, float n)
             {
@@ -26,7 +29,10 @@ namespace
             {
                 return v < centre ? 0.5f * std::log (v / s) / std::log (centre / s)
                                   : 0.5f + 0.5f * std::log (v / centre) / std::log (e / centre);
-            } };
+            },
+            wholeNumbers ? Remap ([] (float s, float e, float v)
+                                  { return juce::jlimit (s, e, (float) juce::roundToInt (v)); })
+                         : Remap() };
     }
 
     constexpr float kNotchDefaultFreqs[5] = { 200.0f, 200.0f, 400.0f, 800.0f, 1600.0f };   // K1 matches Focus
@@ -50,6 +56,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     const auto ms = juce::AudioParameterFloatAttributes()
         .withLabel ("ms")
         .withStringFromValueFunction ([] (float v, int) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; });
+
+    const auto msInt = juce::AudioParameterFloatAttributes()
+        .withLabel ("ms")
+        .withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v)) + " ms"; });
 
     const auto hz = juce::AudioParameterFloatAttributes()
         .withLabel ("Hz")
@@ -85,11 +95,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     }
     {
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hold, 1 }, "Hold",
-                        logRange (5.0f, 40.0f, 200.0f), 7.0f, ms));
+                        logRange (5.0f, 40.0f, 200.0f, true), 7.0f, msInt));
     }
     {
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release",
-                        logRange (5.0f, 60.0f, 200.0f), 5.0f, ms));
+                        logRange (5.0f, 60.0f, 200.0f, true), 5.0f, msInt));
     }
 
     // ---- Sidechain ----
@@ -149,12 +159,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     // ---- EQ gate ----
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::eqGateOn, 1 }, "EQ Gate", true));
     {
-        juce::NormalisableRange<float> r (0.0f, 2000.0f);  r.setSkewForCentre (150.0f);
-        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateHold, 1 }, "EQ Gate Hold", r, 120.0f, ms));
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateHold, 1 }, "EQ Gate Hold",
+                        logRange (1.0f, 150.0f, 2000.0f, true), 120.0f, msInt));
     }
     {
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateRelease, 1 }, "EQ Gate Release",
-                        logRange (5.0f, 800.0f, 5000.0f), 100.0f, ms));
+                        logRange (5.0f, 800.0f, 5000.0f, true), 100.0f, msInt));
     }
 
     // ---- Output / monitoring ----

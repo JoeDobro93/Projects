@@ -148,6 +148,18 @@
 > height (window minimums unchanged). (5) Drumsticks: single tapered
 > polygon per shaft (half-widths 1.15→0.55·lw) + round butt — no more
 > mid-shaft step.
+> **v2.3.11:** (1) Hold/Release (gate) + Tail hold/fade are whole-ms:
+> `logRange(..., wholeNumbers)` adds a round-to-int snapToLegalValue
+> lambda; Knob::mouseDrag and applyTyped now route through
+> range.snapToLegalValue (pure clamp for everything else); new `msInt`
+> attributes (0-dec display); eqGateHold range is logRange(1|150|2000)
+> (min 0→1 ms — log needs a positive floor; 1 ms ≈ none). Smoothing
+> keeps its decimal. (2) TailCanvas: quarter-height gridlines replaced
+> by whole-dB lines + "-N dB" labels (step 3 dB on Fine, 6 dB on
+> Med/Wide), following dispMax so the Scale is always readable.
+> (3) Drumsticks composite inside g.beginTransparencyLayer(0.85) with
+> opaque fills — overlapping shaft/butt/bead no longer double-blend
+> into a brighter spot.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

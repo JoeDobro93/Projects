@@ -46,7 +46,10 @@ private:
             // crossed drumsticks — the neutral "any drum" starting point
             auto c = b.getCentre().translated (0.0f, b.getHeight() * 0.04f);
             const float L = juce::jmin (b.getWidth() * 0.87f, b.getHeight()) * 0.5f;
-            g.setColour (strong);
+            // one transparency layer so overlapping fills (shaft + round butt
+            // + tip bead) composite to a single uniform tone
+            g.beginTransparencyLayer (strong.getFloatAlpha());
+            g.setColour (pal->txt);
             for (int side = 0; side < 2; ++side)
             {
                 const float dir = side == 0 ? -1.0f : 1.0f;
@@ -70,6 +73,7 @@ private:
                                  tip.y + std::sin (ang) * L * 0.11f));
                 g.fillPath (bead);
             }
+            g.endTransparencyLayer();
         }
         else if (kind == kick)
         {
