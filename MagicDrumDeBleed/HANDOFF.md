@@ -31,6 +31,15 @@
 > jitter on narrow-Q sweeps. Simple view 380×636 (min 552): + Tail fade,
 > Kick/Snare/Toms are `DrumButton`s with vector line-art icons. Light
 > palette contrast raised (panel2/line/knob/knobEdge/btn darker).
+> **v2.3.2:** LightToggle is chrome-less (LED + text only). Drum icons:
+> vertical kick pedal, straight side views (no tilted head/wires), tom legs.
+> Prop-Q reference 18→12 dB: equal to Bell at ring 5, NARROWER above
+> (0.89 vs 1.39 oct at ring 9.8, Q1), broader only when shallow. Views
+> open at their MINIMUM (editor `applyViewSize`; adv min 940×750 so the
+> MON fader never collapses); per-view sizes remembered, saves guarded
+> (≥300px) against mid-construction/switch contamination — verified by
+> 4 size checks in snapshot.cpp. Simple view has a theme toggle
+> (shared `themeToggle` lambda passed to both views).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

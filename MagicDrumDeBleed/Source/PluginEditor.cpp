@@ -64,20 +64,7 @@ MagicDrumDeBleedAudioProcessorEditor::MagicDrumDeBleedAudioProcessorEditor (Magi
 
     rebuildViews();
 
-    const bool simpleOn = processor.isSimpleView();
-    const auto saved = simpleOn ? processor.getSimpleSize() : processor.getAdvancedSize();
-    if (simpleOn)
-    {
-        constrainer.setSizeLimits (SimpleView::kMinW, SimpleView::kMinH, 1000, 1200);
-        setSize (saved.x > 0 ? saved.x : SimpleView::kDefaultW,
-                 saved.y > 0 ? saved.y : SimpleView::kDefaultH);
-    }
-    else
-    {
-        constrainer.setSizeLimits (AdvancedView::kMinW, AdvancedView::kMinH, 3200, 2400);
-        setSize (saved.x > 0 ? saved.x : AdvancedView::kDefaultW,
-                 saved.y > 0 ? saved.y : AdvancedView::kDefaultH);
-    }
+    applyViewSize();
 
    #if ENABLE_DONATION_NAG
     juce::MessageManager::callAsync ([] { license::NagDialog::launchIfNeeded(); });
@@ -94,23 +81,22 @@ void MagicDrumDeBleedAudioProcessorEditor::rebuildViews()
     const bool simpleOn = processor.isSimpleView();
     advanced.reset(); simple.reset();
 
-    advanced = std::make_unique<AdvancedView> (processor,
-        [this]                                              // theme toggle
+    auto themeToggle = [this]
+    {
+        processor.setDarkTheme (! processor.isDarkTheme());
+        ui::pal = &theme::get (processor.isDarkTheme());
+        lookAndFeel.setPalette (*ui::pal);
+        // Deferred: this lambda lives on a button that rebuildViews() destroys.
+        // (SafePointer is a named local, not an init-capture — MSVC resolves
+        // `this` in nested-lambda init-captures to the outer closure type.)
+        juce::Component::SafePointer<MagicDrumDeBleedAudioProcessorEditor> safe (this);
+        juce::MessageManager::callAsync ([safe]
         {
-            processor.setDarkTheme (! processor.isDarkTheme());
-            ui::pal = &theme::get (processor.isDarkTheme());
-            lookAndFeel.setPalette (*ui::pal);
-            // Deferred: this lambda lives on a button that rebuildViews() destroys.
-            // (SafePointer is a named local, not an init-capture — MSVC resolves
-            // `this` in nested-lambda init-captures to the outer closure type.)
-            juce::Component::SafePointer<MagicDrumDeBleedAudioProcessorEditor> safe (this);
-            juce::MessageManager::callAsync ([safe]
-            {
-                if (safe != nullptr) safe->rebuildViews();
-            });
-        },
-        [this] { setView (true); });
-    simple = std::make_unique<SimpleView> (processor, [this] { setView (false); });
+            if (safe != nullptr) safe->rebuildViews();
+        });
+    };
+    advanced = std::make_unique<AdvancedView> (processor, themeToggle, [this] { setView (true); });
+    simple = std::make_unique<SimpleView> (processor, themeToggle, [this] { setView (false); });
 
     addChildComponent (*advanced);
     addChildComponent (*simple);
@@ -125,20 +111,20 @@ void MagicDrumDeBleedAudioProcessorEditor::setView (bool simpleOn)
     processor.setSimpleView (simpleOn);
     advanced->setVisible (! simpleOn);
     simple->setVisible (simpleOn);
+    applyViewSize();
+}
 
+void MagicDrumDeBleedAudioProcessorEditor::applyViewSize()
+{
+    // Fresh instances open at the view's minimum size; each view remembers
+    // its own last user size. Saved sizes below the (possibly raised)
+    // minimum are ignored so old sessions can't undercut the constrainer.
+    const bool simpleOn = processor.isSimpleView();
     const auto saved = simpleOn ? processor.getSimpleSize() : processor.getAdvancedSize();
-    if (simpleOn)
-    {
-        constrainer.setSizeLimits (SimpleView::kMinW, SimpleView::kMinH, 1000, 1200);
-        setSize (saved.x > 0 ? saved.x : SimpleView::kDefaultW,
-                 saved.y > 0 ? saved.y : SimpleView::kDefaultH);
-    }
-    else
-    {
-        constrainer.setSizeLimits (AdvancedView::kMinW, AdvancedView::kMinH, 3200, 2400);
-        setSize (saved.x > 0 ? saved.x : AdvancedView::kDefaultW,
-                 saved.y > 0 ? saved.y : AdvancedView::kDefaultH);
-    }
+    const int minW = simpleOn ? SimpleView::kMinW : AdvancedView::kMinW;
+    const int minH = simpleOn ? SimpleView::kMinH : AdvancedView::kMinH;
+    constrainer.setSizeLimits (minW, minH, simpleOn ? 1000 : 3200, simpleOn ? 1200 : 2400);
+    setSize (juce::jmax (minW, saved.x), juce::jmax (minH, saved.y));
 }
 
 void MagicDrumDeBleedAudioProcessorEditor::paint (juce::Graphics& g)
@@ -161,6 +147,11 @@ void MagicDrumDeBleedAudioProcessorEditor::resized()
     if (advanced != nullptr) advanced->setBounds (getLocalBounds());
     if (simple != nullptr)   simple->setBounds (getLocalBounds());
 
-    if (simpleOn) processor.setSimpleSize (getWidth(), getHeight());
-    else          processor.setAdvancedSize (getWidth(), getHeight());
+    // Remember the size for the active view — but never a degenerate size
+    // from mid-construction or mid-switch layouts.
+    if (getWidth() >= 300 && getHeight() >= 300)
+    {
+        if (simpleOn) processor.setSimpleSize (getWidth(), getHeight());
+        else          processor.setAdvancedSize (getWidth(), getHeight());
+    }
 }

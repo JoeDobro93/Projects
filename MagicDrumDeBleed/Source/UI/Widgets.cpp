@@ -590,15 +590,12 @@ void LightToggle::setState (bool on)
 
 void LightToggle::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    auto r = getLocalBounds().toFloat();
     const bool over = isMouseOverOrDragging();
-    auto bg = over ? pal->btnHover : pal->btn;
-    g.setColour (bg);         g.fillRoundedRectangle (r, 4.0f);
-    g.setColour (pal->line);  g.drawRoundedRectangle (r, 4.0f, 1.0f);
 
     const auto on = selColour (clr);
     const float led = scf (7.0f);
-    auto lr = juce::Rectangle<float> (led, led).withCentre ({ r.getX() + scf (12.0f), r.getCentreY() });
+    auto lr = juce::Rectangle<float> (led, led).withCentre ({ r.getX() + scf (6.0f), r.getCentreY() });
     if (state)
     {
         g.setColour (on.withAlpha (0.35f));
@@ -611,7 +608,7 @@ void LightToggle::paint (juce::Graphics& g)
         g.setColour (pal->panel2);   g.fillEllipse (lr);
         g.setColour (pal->knobEdge); g.drawEllipse (lr, 1.0f);
     }
-    g.setColour (state ? pal->txt : pal->dim);
+    g.setColour (state || over ? pal->txt : pal->dim);
     g.setFont (font (11.0f));
     g.drawText (label, (int) lr.getRight() + sc (6), 0,
                 getWidth() - (int) lr.getRight() - sc (8), getHeight(), juce::Justification::centredLeft);

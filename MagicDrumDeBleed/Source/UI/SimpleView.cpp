@@ -53,20 +53,20 @@ private:
                 g.drawLine (c.x + std::cos (a) * r2, c.y + std::sin (a) * r2,
                             c.x + std::cos (a) * R,  c.y + std::sin (a) * R, lw * 0.8f);
             }
-            g.setColour (strong);                           // beater pad + shaft + pedal
+            g.setColour (strong);                           // beater pad + vertical shaft + pedal base
             g.fillEllipse (c.x - R * 0.14f, c.y - R * 0.14f, R * 0.28f, R * 0.28f);
-            const float bx = c.x + R * 0.55f, by = b.getBottom();
-            g.drawLine (bx, by, c.x + R * 0.08f, c.y + R * 0.10f, lw);
-            g.drawLine (bx - R * 0.35f, by, bx + R * 0.35f, by, lw);
+            const float by = b.getBottom();
+            g.drawLine (c.x, by, c.x, c.y + R * 0.14f, lw);
+            g.drawLine (c.x - R * 0.35f, by, c.x + R * 0.35f, by, lw);
         }
         else
         {
-            // side view: shell with hoops + lugs; snare is shallow with wires,
-            // tom is deeper. Tilted top head hinted as a thin ellipse.
+            // straight side view: shell with overhanging hoops + lugs.
+            // Snare = shallow shell; tom = deep shell with legs.
             const bool isSnare = kind == snare;
-            const float shellH = b.getHeight() * (isSnare ? 0.42f : 0.62f);
+            const float shellH = b.getHeight() * (isSnare ? 0.44f : 0.66f);
             auto shell = juce::Rectangle<float> (b.getX() + b.getWidth() * 0.08f,
-                                                 b.getCentreY() - shellH * (isSnare ? 0.38f : 0.48f),
+                                                 b.getCentreY() - shellH * (isSnare ? 0.5f : 0.56f),
                                                  b.getWidth() * 0.84f, shellH);
             g.setColour (strong);
             g.drawRect (shell, lw);
@@ -84,23 +84,13 @@ private:
                 g.drawLine (x, shell.getY() + m, x, shell.getBottom() - m, lw);
             }
 
-            // tilted top head
-            juce::Path head;
-            head.addEllipse (shell.getX() - hoopOver, shell.getY() - shell.getHeight() * 0.16f,
-                             shell.getWidth() + hoopOver * 2, shell.getHeight() * 0.30f);
-            g.setColour (line);
-            g.strokePath (head, juce::PathStrokeType (lw * 0.8f),
-                          juce::AffineTransform::rotation (-0.06f, shell.getCentreX(), shell.getY()));
-
-            if (isSnare)                                    // snare wires under the shell
+            if (! isSnare)                                  // tom legs
             {
                 g.setColour (strong);
-                const float wy = shell.getBottom() + b.getHeight() * 0.10f;
-                for (int i = 0; i < 3; ++i)
-                    g.drawLine (shell.getCentreX() - shell.getWidth() * 0.18f,
-                                wy + (float) i * 1.6f * scale,
-                                shell.getCentreX() + shell.getWidth() * 0.18f,
-                                wy + (float) i * 1.6f * scale, lw * 0.7f);
+                g.drawLine (shell.getX() + shell.getWidth() * 0.16f, shell.getBottom(),
+                            shell.getX() + shell.getWidth() * 0.05f, b.getBottom(), lw * 0.9f);
+                g.drawLine (shell.getRight() - shell.getWidth() * 0.16f, shell.getBottom(),
+                            shell.getRight() - shell.getWidth() * 0.05f, b.getBottom(), lw * 0.9f);
             }
         }
     }
@@ -108,7 +98,8 @@ private:
     Kind kind;
 };
 
-SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onAdvancedView)
+SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onThemeToggle,
+                        std::function<void()> onAdvancedView)
     : processor (proc),
       trigMeter ("TRIGGER", [&proc] { return proc.getDetectorRmsDb(); },
                  proc.apvts.getParameter (ParamIDs::threshold)),
@@ -165,6 +156,11 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     setHint (advancedBtn, "Advanced View", "Back to the full view: trigger filter, gate timing and tail shaping.");
     advancedBtn.onClick = [cb = std::move (onAdvancedView)] { if (cb) cb(); };
     addAndMakeVisible (advancedBtn);
+
+    themeBtn.setButtonText (processor.isDarkTheme() ? "Light" : "Dark");
+    setHint (themeBtn, "Theme", "Switch between the dark and light theme.");
+    themeBtn.onClick = [cb = std::move (onThemeToggle)] { if (cb) cb(); };
+    addAndMakeVisible (themeBtn);
 }
 
 void SimpleView::paint (juce::Graphics& g)
@@ -181,6 +177,7 @@ void SimpleView::paint (juce::Graphics& g)
 void SimpleView::resized()
 {
     auto r = getLocalBounds().reduced (sc (12));
+    themeBtn.setBounds (r.getRight() - sc (48), r.getY(), sc (48), sc (20));
     r.removeFromTop (sc (22));                                // title
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));
     r.removeFromBottom (sc (8));

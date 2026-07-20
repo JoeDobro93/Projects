@@ -11,7 +11,7 @@ class AdvancedView : public juce::Component
 {
 public:
     static constexpr int kDefaultW = 1200, kDefaultH = 830;
-    static constexpr int kMinW = 940,  kMinH = 700;
+    static constexpr int kMinW = 940,  kMinH = 750;
 
     AdvancedView (MagicDrumDeBleedAudioProcessor& proc,
                   std::function<void()> onThemeToggle,

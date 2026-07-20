@@ -75,9 +75,10 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
             out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q, p.gainDb);
             break;
 
-        case 1:  // Proportional Q — bell whose width tightens as the cut deepens
-        {
-            const double t = std::clamp (std::pow (std::abs (p.gainDb) / 18.0, 0.7), 0.1, 3.0);
+        case 1:  // Proportional Q — bell whose width tightens as the cut deepens.
+        {        // Reference 12 dB: shallower cuts are broader than Bell,
+                 // deeper cuts (ring > 5) are progressively narrower.
+            const double t = std::clamp (std::pow (std::abs (p.gainDb) / 12.0, 0.7), 0.1, 3.0);
             out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q * t, p.gainDb);
             break;
         }

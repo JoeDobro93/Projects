@@ -32,6 +32,7 @@ public:
 private:
     void rebuildViews();
     void setView (bool simple);
+    void applyViewSize();
 
     MagicDrumDeBleedAudioProcessor& processor;
     StyledLookAndFeel lookAndFeel;
