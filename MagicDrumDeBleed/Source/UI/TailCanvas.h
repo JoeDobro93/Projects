@@ -47,6 +47,8 @@ private:
     void timerCallback() override;
     void runFFT();
     void recomputeCurve();
+    void buildGoldCurve();                    // adaptive grid: exact band tips
+    double hDbAt (double f) const;
     int  bandAt (juce::Point<float> pos) const;
     juce::Rectangle<float> plotArea() const;
     float fx (double f, float w) const;
@@ -73,6 +75,7 @@ private:
     juce::Rectangle<int> dryLegend, keptLegend;           // clickable legend chips
 
     double keepDb[kN], hDb[kN], freqs[kN];
+    std::vector<double> curveF, curveHdB;     // gold/internals grid (base + band tips)
     float handleX[7] {}, handleY[7] {};
     int sel = 0, drag = -1;
 

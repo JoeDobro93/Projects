@@ -25,6 +25,12 @@
 > Tail hold, and Kick/Snare/Toms factory-preset buttons. Factory presets
 > rebuilt (Default/Kick/Snare/Toms, PresetDefaults.h; applied via
 > `eqids::applyFactoryPreset`, threshold never touched).
+> **v2.3.1:** Enabled/Link are `ui::LightToggle` (LED-in-button); Bandpass
+> icon = bell shape; gold curve grid adds 7 clustered samples per enabled
+> band (`buildGoldCurve`) + handles eval `hDbAt(f0)` exactly — no tip
+> jitter on narrow-Q sweeps. Simple view 380×636 (min 552): + Tail fade,
+> Kick/Snare/Toms are `DrumButton`s with vector line-art icons. Light
+> palette contrast raised (panel2/line/knob/knobEdge/btn darker).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

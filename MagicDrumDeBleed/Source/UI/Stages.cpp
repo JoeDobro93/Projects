@@ -89,7 +89,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         scEnableAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
     scEnableAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::scEnable),
-        [this] (float v) { styleSeg (enableBtn, v > 0.5f); });
+        [this] (float v) { enableBtn.setState (v > 0.5f); });
     scEnableAtt->sendInitialUpdate();
 
     addAndMakeVisible (learnBtn);
@@ -103,7 +103,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         linkAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
     };
     linkAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::linkK1),
-        [this] (float v) { styleSeg (linkBtn, v > 0.5f); });
+        [this] (float v) { linkBtn.setState (v > 0.5f); });
     linkAtt->sendInitialUpdate();
 }
 

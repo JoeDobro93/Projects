@@ -38,7 +38,7 @@ private:
     ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
-    juce::TextButton enableBtn { "Enabled" }, linkBtn { "Link to K1" };
+    ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" };
     eqids::LearnButton learnBtn { processor };
     std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt;
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;

@@ -11,8 +11,8 @@
 class SimpleView : public juce::Component
 {
 public:
-    static constexpr int kDefaultW = 380, kDefaultH = 620;
-    static constexpr int kMinW = 330,  kMinH = 540;
+    static constexpr int kDefaultW = 380, kDefaultH = 636;
+    static constexpr int kMinW = 330,  kMinH = 552;
 
     SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onAdvancedView);
 
@@ -27,9 +27,10 @@ private:
     juce::Label amountVal;
     ui::LevelMeter outMeter;
     ui::Knob resonance { "Resonance" }, resoAmt { "Reso Amt", ui::Knob::tailClr },
-             tailHold { "Tail hold", ui::Knob::tailClr };
+             tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     eqids::LearnButton learnBtn { processor };
-    juce::TextButton presetBtns[3];
+    class DrumButton;
+    std::unique_ptr<juce::Button> presetBtns[3];
     juce::TextButton advancedBtn { "Advanced View" };
     std::unique_ptr<juce::ParameterAttachment> amtAtt;
     int amountX = 0;

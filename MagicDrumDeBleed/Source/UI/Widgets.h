@@ -90,6 +90,24 @@ private:
 };
 
 //==============================================================================
+/*  Toggle button styled like a LightSelector row: rounded button background
+    with an LED light next to the label. */
+class LightToggle : public juce::Component
+{
+public:
+    explicit LightToggle (juce::String label, Knob::ColourId clr = Knob::accentClr);
+    std::function<void()> onClick;
+    void setState (bool on);
+    bool getState() const                      { return state; }
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    juce::String label;
+    Knob::ColourId clr;
+    bool state = false;
+};
+
+//==============================================================================
 /*  Tiny pill switch: dark knob left = off, highlighted knob right = on. */
 class MiniSwitch : public juce::Component
 {

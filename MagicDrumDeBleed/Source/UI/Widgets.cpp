@@ -479,11 +479,7 @@ static void drawSelectorIcon (juce::Graphics& g, LightSelector::Icon ic,
             p.lineTo (x + w * 0.55f, y);
             p.quadraticTo (x + w * 0.70f, y + h, x + w, y + h);
             break;
-        case LightSelector::iconBP:
-            p.startNewSubPath (x, y + h);
-            p.quadraticTo (x + w * 0.38f, y + h, x + w * 0.5f, y);
-            p.quadraticTo (x + w * 0.62f, y + h, x + w, y + h);
-            break;
+        case LightSelector::iconBP:           // same smooth bell as iconBell
         case LightSelector::iconBell:
             p.startNewSubPath (x, y + h);
             p.cubicTo (x + w * 0.32f, y + h, x + w * 0.28f, y, x + w * 0.5f, y);
@@ -575,6 +571,56 @@ void LightSelector::mouseUp (const juce::MouseEvent& e)
             setSelected (i, true);
             return;
         }
+}
+
+//==============================================================================
+LightToggle::LightToggle (juce::String l, Knob::ColourId c) : label (std::move (l)), clr (c)
+{
+    setRepaintsOnMouseActivity (true);
+}
+
+void LightToggle::setState (bool on)
+{
+    if (state != on)
+    {
+        state = on;
+        repaint();
+    }
+}
+
+void LightToggle::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    const bool over = isMouseOverOrDragging();
+    auto bg = over ? pal->btnHover : pal->btn;
+    g.setColour (bg);         g.fillRoundedRectangle (r, 4.0f);
+    g.setColour (pal->line);  g.drawRoundedRectangle (r, 4.0f, 1.0f);
+
+    const auto on = selColour (clr);
+    const float led = scf (7.0f);
+    auto lr = juce::Rectangle<float> (led, led).withCentre ({ r.getX() + scf (12.0f), r.getCentreY() });
+    if (state)
+    {
+        g.setColour (on.withAlpha (0.35f));
+        g.fillEllipse (lr.expanded (scf (2.5f)));
+        g.setColour (on);
+        g.fillEllipse (lr);
+    }
+    else
+    {
+        g.setColour (pal->panel2);   g.fillEllipse (lr);
+        g.setColour (pal->knobEdge); g.drawEllipse (lr, 1.0f);
+    }
+    g.setColour (state ? pal->txt : pal->dim);
+    g.setFont (font (11.0f));
+    g.drawText (label, (int) lr.getRight() + sc (6), 0,
+                getWidth() - (int) lr.getRight() - sc (8), getHeight(), juce::Justification::centredLeft);
+}
+
+void LightToggle::mouseUp (const juce::MouseEvent& e)
+{
+    if (getLocalBounds().contains (e.getPosition()) && onClick)
+        onClick();
 }
 
 //==============================================================================

@@ -119,6 +119,43 @@ void TailCanvas::recomputeCurve()
     }
 }
 
+double TailCanvas::hDbAt (double f) const
+{
+    const double sr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
+    double re, im;
+    chainH (onP, freqP, qP, gainP, shapeP, f, sr, re, im);
+    return 20.0 * std::log10 (juce::jmax (std::hypot (re, im), 1.0e-6));
+}
+
+void TailCanvas::buildGoldCurve()
+{
+    // The fixed log grid undersamples narrow peaks (the tip visibly jitters
+    // during a frequency sweep), so cluster extra samples around every
+    // enabled band's centre — the drawn tip is then always exact.
+    curveF.clear();
+    curveF.reserve ((size_t) kN + 7 * 7);
+    curveF.insert (curveF.end(), std::begin (freqs), std::end (freqs));
+
+    static const double offs[] = { -0.10, -0.045, -0.016, 0.0, 0.016, 0.045, 0.10 };
+    auto val = [] (juce::RangedAudioParameter* p) { return p != nullptr ? (double) p->convertFrom0to1 (p->getValue()) : 0.0; };
+    for (int b = 0; b < 7; ++b)
+    {
+        if (val (onP[b]) < 0.5) continue;
+        const double f0 = val (freqP[b]);
+        for (double o : offs)
+        {
+            const double f = f0 * std::pow (2.0, o);
+            if (f >= 20.0 && f <= 20000.0)
+                curveF.push_back (f);
+        }
+    }
+    std::sort (curveF.begin(), curveF.end());
+
+    curveHdB.resize (curveF.size());
+    for (size_t i = 0; i < curveF.size(); ++i)
+        curveHdB[i] = hDbAt (curveF[i]);
+}
+
 double TailCanvas::keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount)
 {
     juce::RangedAudioParameter *onP[7], *freqP[7], *qP[7] {}, *gainP[7] {}, *shapeP[7];
@@ -236,11 +273,12 @@ void TailCanvas::paint (juce::Graphics& g)
     // bottom line. Identical shape to "Show internals", mirrored. Deep tips
     // clip offscreen (normal EQ behaviour).
     auto goldY = [&] (double db) { return h * (1.0f - (float) (-db) / dispMax); };
+    buildGoldCurve();
     {
         juce::Path p;
-        for (int i = 0; i < kN; ++i)
+        for (size_t i = 0; i < curveF.size(); ++i)
         {
-            const float x = fx (freqs[i], w), y = (float) goldY (hDb[i]);
+            const float x = fx (curveF[i], w), y = (float) goldY (curveHdB[i]);
             i == 0 ? p.startNewSubPath (x, y) : p.lineTo (x, y);
         }
         g.setColour (pal->gold);
@@ -249,9 +287,9 @@ void TailCanvas::paint (juce::Graphics& g)
     if (internals)
     {
         juce::Path p;
-        for (int i = 0; i < kN; ++i)
+        for (size_t i = 0; i < curveF.size(); ++i)
         {
-            const float x = fx (freqs[i], w), y = h * (float) (-hDb[i]) / dispMax;
+            const float x = fx (curveF[i], w), y = h * (float) (-curveHdB[i]) / dispMax;
             i == 0 ? p.startNewSubPath (x, y) : p.lineTo (x, y);
         }
         const float dash[2] = { 4.0f, 3.0f };
@@ -273,10 +311,8 @@ void TailCanvas::paint (juce::Graphics& g)
         if (val (onP[b]) < 0.5) { handleX[b] = -999; continue; }
         anyOn = true;
         const double f = juce::jlimit (20.0, 20000.0, val (freqP[b]));
-        // every handle rides the gold curve at its own frequency
-        const int idx = (int) juce::jlimit (0.0, (double) (kN - 1),
-                                            std::log (f / 20.0) / std::log (1000.0) * (kN - 1));
-        const float y = juce::jlimit (0.0f, h, (float) goldY (hDb[idx]));
+        // every handle rides the gold curve, evaluated exactly at its frequency
+        const float y = juce::jlimit (0.0f, h, (float) goldY (hDbAt (f)));
         const float x = fx (f, w);
         handleX[b] = x; handleY[b] = y;
 
