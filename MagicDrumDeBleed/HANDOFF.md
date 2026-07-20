@@ -63,6 +63,26 @@
 > ≤0.21 dB. Simple view rows align to ONE content rect (= knob-row
 > width): meters spread edge-to-edge across it, preset buttons equal
 > size justified first-left/last-right to the same edges.
+> **v2.3.6 (shelf flat-top + far-field):** Band Shelf rebuilt around tail
+> cancellation: corner Q is no longer a drive-fade but
+> `min(0.90, 0.80 + 0.08·max(0,1−bw) + 0.02·max(0,−gp−6))` — each shelf's
+> corner lobe cancels its own S=1 tail, so the response returns to 0 dB
+> ~1 oct past the edges (visible spurious cut ≤0.1 dB for q≤1 through
+> −24 dB vs up to 1.7 dB before; any leftover is a small boost the
+> cut-axis canvas clips). Corners at ±(bw/2+**0.16**) oct. **kMaxStages
+> 5→6**: stage 5 = shallow wide "flattener" bell (Q from 0.8·bw, gain
+> −sag·1/(1−w) with w = the bell's own shoulder/centre ratio at ±0.20·bw,
+> clamp ±6.5 — sized by cgscan worst case 6.07), stage 6 = centre
+> blendedNotch; both can coexist so capped depths keep exact centres AND
+> flat shoulders. Drive iteration (14 its, tol 0.04) converges the
+> *post-correction shoulder level* `ctr − sag + w·cg` onto the plateau —
+> honest even when the clamp saturates. Measured (plugcheck.cpp): ripple
+> ≤0.33 dB through −20 for q≤1 (was 0.44 at −8), centres exact at depth,
+> Q1 plateau widths 1.12/0.98/0.84 oct at −2/−3/−5 (up ~40%); Ozone ref
+> case flat −4.43 through ±0.6 oct. Simple view: 1 px `pal->line` divider
+> under the preset row (member `divider`, spans the content rect), gap
+> 10→22; 380×**666** min 330×**582** (snapshot size-check + render sizes
+> now read the SimpleView constants).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

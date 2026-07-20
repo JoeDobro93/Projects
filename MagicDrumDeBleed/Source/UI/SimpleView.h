@@ -11,8 +11,8 @@
 class SimpleView : public juce::Component
 {
 public:
-    static constexpr int kDefaultW = 380, kDefaultH = 654;
-    static constexpr int kMinW = 330,  kMinH = 570;
+    static constexpr int kDefaultW = 380, kDefaultH = 666;
+    static constexpr int kMinW = 330,  kMinH = 582;
 
     SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onThemeToggle,
                 std::function<void()> onAdvancedView);
@@ -35,6 +35,7 @@ private:
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
     std::unique_ptr<juce::ParameterAttachment> amtAtt;
     int amountX = 0, amountY = 0;
+    juce::Rectangle<int> divider;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleView)
 };

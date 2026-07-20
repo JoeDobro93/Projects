@@ -84,45 +84,78 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
         }
 
         case 2:  // Band Shelf — a genuinely flat-topped cut between two edges
-        default: // (matches Ozone): two cascaded ±gain S=1 shelf pairs give the
+        default: // (matches Ozone): two cascaded ±gain shelf pairs give the
         {        // plateau; drive is iterated so the floor hits the target and
                  // bounded so narrow bands don't smear. Depth beyond what the
                  // shelves reach (below −20 dB: invisible on every display
                  // scale, inaudible in ring level) comes from a centre notch.
             const double bw = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
-            // Corners pushed 0.12 oct past the nominal edges and shelf Q 1.05
-            // (fading to 0.707 as drive grows, so deep bands never ripple):
-            // flanks are steep enough that a plateau is visible at Q 1 even
-            // for 1-5 dB cuts, and intrusion matches Ozone's character.
-            const double s = std::pow (2.0, 0.5 * bw + 0.12);
+            const double s = std::pow (2.0, 0.5 * bw + 0.16);
             const double fLo = p.freqHz / s, fHi = p.freqHz * s;
 
             const double plateau = std::max (p.gainDb, -std::min (20.0, 14.0 * bw));
             const double gpMin = -10.0 * bw;
-            double gp = std::max (gpMin, plateau * 0.5);
-            double ctr = 0.0;
-            for (int it = 0; it < 10; ++it)
+
+            // A shallow wide bell (5th stage) flattens the plateau's residual
+            // dome. The bell spans the ±0.20·bw probe points itself, so its
+            // gain must be scaled by its own shoulder/centre response ratio w,
+            // and flattening moves the whole top to ctr − sag/(1−w) — which is
+            // therefore the level the drive iteration has to aim at.
+            const double fSh = std::pow (2.0, 0.20 * bw);
+            const double qc = 1.0 / (2.0 * std::sinh (0.5 * std::log (2.0) * std::max (0.5, 0.8 * bw)));
+            const auto probe = BiquadFilter::makePeaking (sampleRate, p.freqHz, qc, -1.0);
+            const double w = std::log10 (BiquadFilter::magnitudeAt (probe, p.freqHz * fSh, sampleRate))
+                           / std::log10 (BiquadFilter::magnitudeAt (probe, p.freqHz, sampleRate));
+            const double flatGain = 1.0 / std::max (0.25, 1.0 - w);
+
+            auto pairDbAt = [&] (double f)
             {
-                const double sq = 0.70710678 + (1.05 - 0.70710678) * std::exp (-std::abs (gp) / 5.0);
+                double m = 0.0;
+                for (int i = 0; i < 4; ++i)
+                    m += 20.0 * std::log10 (BiquadFilter::magnitudeAt (out[i], f, sampleRate));
+                return m;
+            };
+
+            double gp = std::max (gpMin, plateau * 0.5);
+            double ctr = 0.0, cg = 0.0;
+            for (int it = 0; it < 14; ++it)
+            {
+                // Corner Q sizes each shelf's corner lobe to cancel its own
+                // slow S=1 tail, so the response returns to 0 dB within about
+                // an octave of the edges instead of drifting for several:
+                // 0.80 is the wide-band optimum; narrow bands and hard-driven
+                // shelves cancel best slightly higher (any leftover there is
+                // a sub-0.4 dB boost, which the cut-depth canvas clips at the
+                // zero line, rather than a visible spurious cut).
+                const double sq = std::min (0.90, 0.80 + 0.08 * std::max (0.0, 1.0 - bw)
+                                                + 0.02 * std::max (0.0, -gp - 6.0));
                 out[0] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp, sq);
                 out[1] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp, sq);
                 out[2] = out[0];
                 out[3] = out[1];
-                ctr = 0.0;
-                for (int i = 0; i < 4; ++i)
-                    ctr += 20.0 * std::log10 (BiquadFilter::magnitudeAt (out[i], p.freqHz, sampleRate));
-                if (ctr < plateau + 0.2 || gp <= gpMin + 0.01)
+                ctr = pairDbAt (p.freqHz);
+                const double sag = ctr - 0.5 * (pairDbAt (p.freqHz * fSh) + pairDbAt (p.freqHz / fSh));
+                cg = std::clamp (-sag * flatGain, -6.5, 6.5);
+                // Level of the corrected plateau's shoulders — the target the
+                // drive has to hit (with the clamped bell folded in, so the
+                // loop stays honest when the correction saturates).
+                const double top = ctr - sag + w * cg;
+                if (std::abs (top - plateau) < 0.04 || (gp <= gpMin + 0.01 && top > plateau))
                     break;
-                gp = std::max (gpMin, gp + (plateau - ctr) * 0.35);
+                gp = std::max (gpMin, gp + (plateau - top) * 0.5);
             }
 
-            const double rem = p.gainDb - ctr;               // depth the shelves didn't reach
-            if (rem < -0.1)
+            int n = 4;
+            double centre = ctr;
+            if (std::abs (cg) > 0.02)
             {
-                out[4] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q, rem);
-                return 5;
+                out[n++] = BiquadFilter::makePeaking (sampleRate, p.freqHz, qc, cg);
+                centre += cg;
             }
-            return 4;
+            const double rem = p.gainDb - centre;            // depth the shelves didn't reach
+            if (rem < -0.05)
+                out[n++] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q, rem);
+            return n;
         }
     }
     return 1;

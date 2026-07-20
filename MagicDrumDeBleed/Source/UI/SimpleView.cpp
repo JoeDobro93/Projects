@@ -186,6 +186,11 @@ void SimpleView::paint (juce::Graphics& g)
     g.setColour (pal->faint);
     g.setFont (font (9.0f, true));
     g.drawText ("AMOUNT", amountX, amountY, sc (62), sc (12), juce::Justification::centred);
+    if (! divider.isEmpty())
+    {
+        g.setColour (pal->line);
+        g.fillRect (divider);
+    }
 }
 
 void SimpleView::resized()
@@ -204,7 +209,9 @@ void SimpleView::resized()
     // buttons are the same size (widest icon-or-label plus padding),
     // justified so the outer edges meet the content edges.
     auto prow = r.removeFromTop (sc (58));
-    r.removeFromTop (sc (10));
+    r.removeFromTop (sc (9));
+    divider = { cx0, r.getY(), contentW, 1 };
+    r.removeFromTop (sc (13));
     {
         const auto f = font (11.5f, true);
         const float iconW = scf (58 - 8 - 13 - 2) * 1.15f;
