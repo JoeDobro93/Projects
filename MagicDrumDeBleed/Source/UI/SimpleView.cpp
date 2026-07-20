@@ -52,10 +52,17 @@ private:
                 const float dir = side == 0 ? -1.0f : 1.0f;
                 const juce::Point<float> tip  (c.x + dir * L * 0.74f, c.y - L * 0.76f);
                 const juce::Point<float> butt (c.x - dir * L * 0.56f, c.y + L * 0.94f);
-                const auto mid = butt + (tip - butt) * 0.55f;
-                g.drawLine ({ butt, mid }, lw * 2.1f);      // grip half is thicker,
-                g.drawLine ({ mid, tip }, lw * 1.4f);       // shaft tapers to the tip
                 const float ang = std::atan2 (tip.y - butt.y, tip.x - butt.x);
+                const juce::Point<float> perp (-std::sin (ang), std::cos (ang));
+                const float wb = lw * 1.15f, wt = lw * 0.55f;   // half-widths
+                juce::Path shaft;                           // one continuous taper
+                shaft.startNewSubPath (butt + perp * wb);
+                shaft.lineTo (tip + perp * wt);
+                shaft.lineTo (tip - perp * wt);
+                shaft.lineTo (butt - perp * wb);
+                shaft.closeSubPath();
+                g.fillPath (shaft);
+                g.fillEllipse (butt.x - wb, butt.y - wb, wb * 2, wb * 2);
                 juce::Path bead;                            // elongated acorn tip
                 bead.addEllipse (-L * 0.13f, -L * 0.075f, L * 0.26f, L * 0.15f);
                 bead.applyTransform (juce::AffineTransform::rotation (ang)

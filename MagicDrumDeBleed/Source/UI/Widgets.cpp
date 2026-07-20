@@ -35,6 +35,29 @@ bool findHint (juce::Component* c, juce::String& title, juce::String& text)
 //==============================================================================
 Knob::Knob (juce::String n, ColourId col) : name (std::move (n)), clr (col) {}
 
+/*  While the value editor is open, any click landing outside it commits and
+    closes it — needed because most controls never take keyboard focus, so
+    the editor would otherwise stay open until Enter. */
+struct Knob::ClickAway : public juce::MouseListener
+{
+    explicit ClickAway (Knob& k) : knob (k) {}
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        auto* ed = knob.edit.get();
+        if (ed != nullptr && ed->isVisible()
+            && e.eventComponent != ed && ! ed->isParentOf (e.eventComponent)
+            && ed->onFocusLost)
+            ed->onFocusLost();
+    }
+    Knob& knob;
+};
+
+Knob::~Knob()
+{
+    if (clickAway != nullptr)
+        juce::Desktop::getInstance().removeGlobalMouseListener (clickAway.get());
+}
+
 void Knob::attach (juce::RangedAudioParameter* p)
 {
     param = p;
@@ -143,6 +166,11 @@ void Knob::showEditor()
     edit->setVisible (true);
     edit->grabKeyboardFocus();
     edit->selectAll();
+    if (clickAway == nullptr)
+    {
+        clickAway = std::make_unique<ClickAway> (*this);
+        juce::Desktop::getInstance().addGlobalMouseListener (clickAway.get());
+    }
 }
 
 void Knob::applyTyped (const juce::String& text)
@@ -172,6 +200,8 @@ void Knob::applyTyped (const juce::String& text)
 void Knob::mouseDown (const juce::MouseEvent& e)
 {
     if (param == nullptr) return;
+    if (edit != nullptr && edit->isVisible() && edit->onFocusLost)
+        edit->onFocusLost();                        // commit before this click acts
     if (valueBounds().contains (e.getPosition()))   // click the value → type it
         return;
     draggingKnob = true;

@@ -35,6 +35,7 @@ public:
     enum ColourId { accentClr = 0, openClr, tailClr };
 
     Knob (juce::String name, ColourId clr = accentClr);
+    ~Knob() override;
     void attach (juce::RangedAudioParameter* p);          // may be re-attached
     void setNameText (const juce::String& n)              { name = n; repaint(); }
     void setFormat (std::function<juce::String (float)> f){ fmt = std::move (f); }
@@ -59,6 +60,8 @@ private:
     juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::ParameterAttachment> att;
     std::unique_ptr<juce::TextEditor> edit;               // lazily created, reused
+    struct ClickAway;
+    std::unique_ptr<ClickAway> clickAway;                 // closes the editor on outside clicks
     float dragNorm = 0.0f;
     int lastDragY = 0;
     bool draggingKnob = false;

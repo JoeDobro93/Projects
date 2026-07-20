@@ -622,13 +622,14 @@ void TailStage::resized()
     auto controls = r.removeFromBottom (sc (104));
     r.removeFromBottom (sc (8));
 
-    // left column beside the canvas: SCALE selector on top, MON fader below
+    // left of the canvas: SCALE selector column, then the MON fader spanning
+    // the full canvas height between the selector and the display
     auto leftCol = r.removeFromLeft (sc (56));
     scaleLabelY = leftCol.getY();
     leftCol.removeFromTop (sc (14));
     scaleSel.setBounds (leftCol.removeFromTop (sc (54)));
-    leftCol.removeFromTop (sc (6));
-    mon.setBounds (leftCol.withSizeKeepingCentre (sc (26), leftCol.getHeight()));
+    r.removeFromLeft (sc (4));
+    mon.setBounds (r.removeFromLeft (sc (26)));
     r.removeFromLeft (sc (5));
     canvas.setBounds (r);
 
@@ -747,14 +748,14 @@ void RightRail::paint (juce::Graphics& g)
     g.fillRect (0, 0, 1, getHeight());
     g.setColour (pal->faint);
     g.setFont (font (9.5f, true));
-    g.drawText ("AMOUNT", 0, sc (9), getWidth(), sc (12), juce::Justification::centred);
+    g.drawText ("AMOUNT", amountX, amountY, sc (52), sc (12), juce::Justification::centred);
     g.drawText ("LISTEN TO", 0, listenY, getWidth(), sc (12), juce::Justification::centred);
 }
 
 void RightRail::resized()
 {
     auto r = getLocalBounds().reduced (sc (9));
-    r.removeFromTop (sc (14));
+    r.removeFromTop (sc (4));
 
     auto listen = r.removeFromBottom (sc (94));
     listenY = listen.getY();
@@ -766,15 +767,18 @@ void RightRail::resized()
     }
     r.removeFromBottom (sc (6));
 
-    amountVal.setFont (font (15.0f, true));
-    amountVal.setColour (juce::Label::textColourId, pal->txt);
-    amountVal.setBounds (r.removeFromBottom (sc (20)));
-    r.removeFromBottom (sc (4));
-
-    // fader and the OUT / GATE meters side by side, same height
-    const int mw = sc (34), rowW = sc (52) + sc (8) + mw * 2 + sc (7);
+    // fader column (AMOUNT caption above, % value below, both fader-width)
+    // beside the OUT / GATE meters, which span the full row height
+    const int fw = sc (52), mw = sc (34), rowW = fw + sc (8) + mw * 2 + sc (7);
     auto row = r.withSizeKeepingCentre (juce::jmin (rowW, r.getWidth()), r.getHeight());
-    fader.setBounds (row.removeFromLeft (sc (52)));
+    auto fcol = row.removeFromLeft (fw);
+    amountX = fcol.getX();
+    amountY = fcol.getY();
+    fcol.removeFromTop (sc (14));
+    amountVal.setFont (font (13.0f, true));
+    amountVal.setColour (juce::Label::textColourId, pal->txt);
+    amountVal.setBounds (fcol.removeFromBottom (sc (16)));
+    fader.setBounds (fcol);
     row.removeFromLeft (sc (8));
     outMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (sc (7));

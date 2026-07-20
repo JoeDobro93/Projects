@@ -131,7 +131,7 @@ private:
     ui::GateMeter gateMeter;
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
     std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt;
-    int listenY = 0;
+    int listenY = 0, amountX = 0, amountY = 0;
 };
 
 //==============================================================================

@@ -128,6 +128,26 @@
 > when the editor's peer isFocused() and the pointer is inside the
 > window. Drumsticks thickened (grip 2.1·lw, shaft 1.4·lw, bead
 > 0.26×0.15·L) so the tips survive small sizes.
+> **v2.3.10:** (1) Skewed ranges → GENUINE log mappings (custom
+> convertFrom/To0to1 lambdas — constant relative resolution, so the old
+> dead zones now change value everywhere): logHzRange = pure log;
+> `logRange(min, centre, max)` two-segment log keeps the old 12-o'clock
+> centres for rmsWindow(1|10|100), hold(5|40|200), release(5|60|200),
+> scQ(0.3|1.9|12), notchQ(0.1|1|40), eqGateRelease(5|800|5000);
+> eqGateHold keeps its power skew (min is 0). Q displays back to 2 dec
+> (user-specified; everything else 0–1 dec). (2) Knob value editor
+> commits on ANY outside click: `Knob::ClickAway` global mouse listener
+> fires edit->onFocusLost when the click isn't in the editor (needed
+> since controls don't take keyboard focus — was staying open until
+> Enter, which also looked like "knobs showing 4 decimals");
+> Knob::mouseDown also commits first; Knob gained a dtor that
+> unregisters. (3) RightRail: AMOUNT caption + % value are fader-column
+> width (amountX/amountY), caption top level with the meter tops, value
+> bottom level with meter bottoms; meters span the full row. (4) MON
+> fader moved BETWEEN the SCALE column and the canvas, full canvas
+> height (window minimums unchanged). (5) Drumsticks: single tapered
+> polygon per shaft (half-widths 1.15→0.55·lw) + round butt — no more
+> mid-shaft step.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
