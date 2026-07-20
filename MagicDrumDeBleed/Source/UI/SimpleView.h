@@ -34,7 +34,7 @@ private:
     std::unique_ptr<juce::Button> presetBtns[3];
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
     std::unique_ptr<juce::ParameterAttachment> amtAtt;
-    int amountX = 0;
+    int amountX = 0, amountY = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleView)
 };

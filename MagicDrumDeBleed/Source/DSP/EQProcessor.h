@@ -54,7 +54,7 @@ public:
     static constexpr int kBandLPF    = 1;
     static constexpr int kFirstNotch = 2;
     static constexpr int kMaxChannels = 2;
-    static constexpr int kMaxStages  = 4;               // 48 dB/oct = 4 biquads
+    static constexpr int kMaxStages  = 5;               // band shelf: 2 shelf pairs + centre notch
 
     void prepare (double sampleRate, int numChannels);
     void reset();

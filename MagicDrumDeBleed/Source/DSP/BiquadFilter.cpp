@@ -109,6 +109,27 @@ BiquadFilter::Coeffs BiquadFilter::makeFirstOrderLowpass (double sampleRate, dou
     return c;
 }
 
+BiquadFilter::Coeffs BiquadFilter::makeHighShelf (double sampleRate, double freq, double gainDb)
+{
+    freq = clampFreq (sampleRate, freq);
+
+    const double A    = std::pow (10.0, gainDb / 40.0);
+    const double w0   = 2.0 * kPi * freq / sampleRate;
+    const double cosw = std::cos (w0);
+    const double sinw = std::sin (w0);
+    const double alpha = 0.5 * sinw * std::sqrt (2.0);   // shelf slope S = 1
+    const double k    = 2.0 * std::sqrt (A) * alpha;
+
+    const double a0 = (A + 1.0) - (A - 1.0) * cosw + k;
+    Coeffs c;
+    c.b0 =  A * ((A + 1.0) + (A - 1.0) * cosw + k) / a0;
+    c.b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cosw) / a0;
+    c.b2 =  A * ((A + 1.0) + (A - 1.0) * cosw - k) / a0;
+    c.a1 =  2.0 * ((A - 1.0) - (A + 1.0) * cosw) / a0;
+    c.a2 = ((A + 1.0) - (A - 1.0) * cosw - k) / a0;
+    return c;
+}
+
 BiquadFilter::Coeffs BiquadFilter::makeBlendedNotch (double sampleRate, double freq, double q, double gainDb)
 {
     freq = clampFreq (sampleRate, freq);

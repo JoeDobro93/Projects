@@ -40,6 +40,17 @@
 > (≥300px) against mid-construction/switch contamination — verified by
 > 4 size checks in snapshot.cpp. Simple view has a theme toggle
 > (shared `themeToggle` lambda passed to both views).
+> **v2.3.3 (Ozone-calibrated shapes):** Prop-Q ref 18→12→**3 dB**, clamp
+> [0.4,4] — verified vs Ozone screenshots (906 Hz/−4.4/Q0.5): PropQ now
+> narrower than Bell at all but very shallow cuts. **Band Shelf = two
+> cascaded ±gp S=1 shelf pairs** (edges f0·2^(±bw/2), gp iterated to a
+> plateau of max(g, −min(20, 14·bw)), bounded gp ≥ −10·bw against smear)
+> **+ centre blendedNotch for the remainder** — kMaxStages now **5**;
+> centre depth exact at all settings, plateau genuinely flat, leak
+> ≤ ~−2.6 dB at 1 oct out. Kick pedal base tangent to shell bottom; tom
+> legs straight down the shell sides w/ outward foot. Simple view preset
+> row moved to the TOP (accidental-click safety); AMOUNT caption follows
+> the fader (amountY).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

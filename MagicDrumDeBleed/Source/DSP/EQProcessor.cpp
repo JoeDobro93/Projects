@@ -76,17 +76,49 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
             break;
 
         case 1:  // Proportional Q — bell whose width tightens as the cut deepens.
-        {        // Reference 12 dB: shallower cuts are broader than Bell,
-                 // deeper cuts (ring > 5) are progressively narrower.
-            const double t = std::clamp (std::pow (std::abs (p.gainDb) / 12.0, 0.7), 0.1, 3.0);
+        {        // 3 dB reference calibrated against Ozone: broader than Bell
+                 // only for very shallow cuts, distinctly narrower above.
+            const double t = std::clamp (std::pow (std::abs (p.gainDb) / 3.0, 0.7), 0.4, 4.0);
             out[0] = BiquadFilter::makePeaking (sampleRate, p.freqHz, p.q * t, p.gainDb);
             break;
         }
 
-        case 2:  // Band Shelf — dry/notch blend: exact flat floor at gainDb,
-        default: // walls steeper and more contained than a bell at depth.
-            out[0] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q, p.gainDb);
-            break;
+        case 2:  // Band Shelf — a genuinely flat-topped cut between two edges
+        default: // (matches Ozone): two cascaded ±gain S=1 shelf pairs give the
+        {        // plateau; drive is iterated so the floor hits the target and
+                 // bounded so narrow bands don't smear. Depth beyond what the
+                 // shelves reach (below −20 dB: invisible on every display
+                 // scale, inaudible in ring level) comes from a centre notch.
+            const double bw = (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * p.q));
+            const double s = std::pow (2.0, 0.5 * bw);
+            const double fLo = p.freqHz / s, fHi = p.freqHz * s;
+
+            const double plateau = std::max (p.gainDb, -std::min (20.0, 14.0 * bw));
+            const double gpMin = -10.0 * bw;
+            double gp = std::max (gpMin, plateau * 0.5);
+            double ctr = 0.0;
+            for (int it = 0; it < 10; ++it)
+            {
+                out[0] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp);
+                out[1] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp);
+                out[2] = out[0];
+                out[3] = out[1];
+                ctr = 0.0;
+                for (int i = 0; i < 4; ++i)
+                    ctr += 20.0 * std::log10 (BiquadFilter::magnitudeAt (out[i], p.freqHz, sampleRate));
+                if (ctr < plateau + 0.2 || gp <= gpMin + 0.01)
+                    break;
+                gp = std::max (gpMin, gp + (plateau - ctr) * 0.35);
+            }
+
+            const double rem = p.gainDb - ctr;               // depth the shelves didn't reach
+            if (rem < -0.1)
+            {
+                out[4] = BiquadFilter::makeBlendedNotch (sampleRate, p.freqHz, p.q, rem);
+                return 5;
+            }
+            return 4;
+        }
     }
     return 1;
 }

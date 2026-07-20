@@ -55,9 +55,9 @@ private:
             }
             g.setColour (strong);                           // beater pad + vertical shaft + pedal base
             g.fillEllipse (c.x - R * 0.14f, c.y - R * 0.14f, R * 0.28f, R * 0.28f);
-            const float by = b.getBottom();
+            const float by = c.y + R;                       // base level with the shell bottom
             g.drawLine (c.x, by, c.x, c.y + R * 0.14f, lw);
-            g.drawLine (c.x - R * 0.35f, by, c.x + R * 0.35f, by, lw);
+            g.drawLine (c.x - R * 0.38f, by, c.x + R * 0.38f, by, lw * 1.2f);
         }
         else
         {
@@ -84,13 +84,23 @@ private:
                 g.drawLine (x, shell.getY() + m, x, shell.getBottom() - m, lw);
             }
 
-            if (! isSnare)                                  // tom legs
-            {
-                g.setColour (strong);
-                g.drawLine (shell.getX() + shell.getWidth() * 0.16f, shell.getBottom(),
-                            shell.getX() + shell.getWidth() * 0.05f, b.getBottom(), lw * 0.9f);
-                g.drawLine (shell.getRight() - shell.getWidth() * 0.16f, shell.getBottom(),
-                            shell.getRight() - shell.getWidth() * 0.05f, b.getBottom(), lw * 0.9f);
+            if (! isSnare)                                  // tom legs: straight down the
+            {                                               // shell sides, small outward
+                g.setColour (strong);                       // foot, then straight again
+                const float legTop = shell.getBottom(), legBot = b.getBottom();
+                const float jut = shell.getWidth() * 0.06f;
+                for (int side = 0; side < 2; ++side)
+                {
+                    const float x = side == 0 ? shell.getX() : shell.getRight();
+                    const float dir = side == 0 ? -1.0f : 1.0f;
+                    juce::Path leg;
+                    leg.startNewSubPath (x, legTop);
+                    leg.lineTo (x, legTop + (legBot - legTop) * 0.45f);
+                    leg.lineTo (x + dir * jut, legTop + (legBot - legTop) * 0.72f);
+                    leg.lineTo (x + dir * jut, legBot);
+                    g.strokePath (leg, juce::PathStrokeType (lw * 0.9f, juce::PathStrokeType::curved,
+                                                             juce::PathStrokeType::rounded));
+                }
             }
         }
     }
@@ -171,7 +181,7 @@ void SimpleView::paint (juce::Graphics& g)
     g.drawText ("MAGIC DRUM GATE", 0, sc (10), getWidth(), sc (16), juce::Justification::centred);
     g.setColour (pal->faint);
     g.setFont (font (9.0f, true));
-    g.drawText ("AMOUNT", amountX, sc (34), sc (62), sc (12), juce::Justification::centred);
+    g.drawText ("AMOUNT", amountX, amountY, sc (62), sc (12), juce::Justification::centred);
 }
 
 void SimpleView::resized()
@@ -179,18 +189,19 @@ void SimpleView::resized()
     auto r = getLocalBounds().reduced (sc (12));
     themeBtn.setBounds (r.getRight() - sc (48), r.getY(), sc (48), sc (20));
     r.removeFromTop (sc (22));                                // title
-    advancedBtn.setBounds (r.removeFromBottom (sc (26)));
-    r.removeFromBottom (sc (8));
 
-    // preset row: Kick · Snare · Toms with drum line art
-    auto prow = r.removeFromBottom (sc (40));
-    r.removeFromBottom (sc (10));
+    // preset row at the top, away from the working controls
+    auto prow = r.removeFromTop (sc (40));
+    r.removeFromTop (sc (10));
     const int pw = (prow.getWidth() - sc (12)) / 3;
     for (int i = 0; i < 3; ++i)
     {
         presetBtns[i]->setBounds (prow.removeFromLeft (pw));
         prow.removeFromLeft (sc (6));
     }
+
+    advancedBtn.setBounds (r.removeFromBottom (sc (26)));
+    r.removeFromBottom (sc (8));
 
     // knob row: Resonance (Learn under it) · Reso Amt · Tail hold · Tail fade
     auto knobs = r.removeFromBottom (sc (108));
@@ -220,6 +231,7 @@ void SimpleView::resized()
     row.removeFromLeft (gap);
     auto fcol = row.removeFromLeft (fw);
     amountX = fcol.getX();
+    amountY = fcol.getY();
     fcol.removeFromTop (sc (14));
     amountVal.setFont (font (12.0f, true));
     amountVal.setColour (juce::Label::textColourId, pal->txt);
