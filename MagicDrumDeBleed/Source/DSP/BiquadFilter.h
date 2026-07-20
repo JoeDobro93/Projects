@@ -47,7 +47,8 @@ public:
     static Coeffs makeHighpass         (double sampleRate, double freq, double q);
     static Coeffs makeFirstOrderLowpass  (double sampleRate, double freq);
     static Coeffs makeFirstOrderHighpass (double sampleRate, double freq);
-    static Coeffs makeHighShelf          (double sampleRate, double freq, double gainDb);   // S = 1
+    static Coeffs makeHighShelf          (double sampleRate, double freq, double gainDb,
+                                          double shelfQ = 0.70710678118654752);
 
     // Finite-depth flat-bottom band-reject: a dry/notch crossfade folded into
     // one biquad. Floor sits exactly at gainDb, walls are steeper than a bell.

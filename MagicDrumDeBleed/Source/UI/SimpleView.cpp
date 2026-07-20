@@ -10,6 +10,8 @@ public:
     enum Kind { kick = 0, snare, toms };
     DrumButton (Kind k, const juce::String& name) : juce::Button (name), kind (k) {}
 
+    static constexpr float kIconAspect = 1.15f;
+
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
@@ -18,16 +20,18 @@ public:
         g.setColour (pal->line);
         g.drawRoundedRectangle (r, 4.0f, 1.0f);
 
-        const float ih = r.getHeight() - scf (10.0f);
-        auto icon = juce::Rectangle<float> (ih * 1.15f, ih)
-                        .withPosition (r.getX() + scf (8.0f), r.getY() + scf (5.0f));
+        // icon centred on top, label centred underneath
+        auto inner = r.reduced (scf (4.0f));
+        auto textArea = inner.removeFromBottom (scf (13.0f));
+        inner.removeFromBottom (scf (2.0f));
+        const float ih = inner.getHeight();
+        auto icon = juce::Rectangle<float> (juce::jmin (ih * kIconAspect, inner.getWidth()), ih)
+                        .withCentre ({ inner.getCentreX(), inner.getCentreY() });
         drawIcon (g, icon);
 
         g.setColour (pal->txt);
         g.setFont (font (11.5f, true));
-        g.drawText (getButtonText(), (int) icon.getRight() + sc (6), 0,
-                    (int) (r.getRight() - icon.getRight()) - sc (10), getHeight(),
-                    juce::Justification::centredLeft);
+        g.drawText (getButtonText(), textArea.toNearestInt(), juce::Justification::centred);
     }
 
 private:
@@ -190,14 +194,29 @@ void SimpleView::resized()
     themeBtn.setBounds (r.getRight() - sc (48), r.getY(), sc (48), sc (20));
     r.removeFromTop (sc (22));                                // title
 
-    // preset row at the top, away from the working controls
-    auto prow = r.removeFromTop (sc (40));
+    // preset row at the top, away from the working controls. All three
+    // buttons share one width: the widest icon-or-label plus padding.
+    auto prow = r.removeFromTop (sc (58));
     r.removeFromTop (sc (10));
-    const int pw = (prow.getWidth() - sc (12)) / 3;
-    for (int i = 0; i < 3; ++i)
     {
-        presetBtns[i]->setBounds (prow.removeFromLeft (pw));
-        prow.removeFromLeft (sc (6));
+        const auto f = font (11.5f, true);
+        const float iconW = scf (58 - 8 - 13 - 2) * 1.15f;
+        float content = iconW;
+        for (auto& b : presetBtns)
+        {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (f, b->getButtonText(), 0.0f, 0.0f);
+            content = juce::jmax (content, ga.getBoundingBox (0, -1, true).getWidth());
+        }
+        const int bw = (int) content + sc (20), gap = sc (6);
+        auto row = prow.withSizeKeepingCentre (juce::jmin (bw * 3 + gap * 2, prow.getWidth()),
+                                               prow.getHeight());
+        const int ew = juce::jmin (bw, (row.getWidth() - gap * 2) / 3);
+        for (int i = 0; i < 3; ++i)
+        {
+            presetBtns[i]->setBounds (row.removeFromLeft (ew));
+            row.removeFromLeft (gap);
+        }
     }
 
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));

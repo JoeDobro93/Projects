@@ -51,6 +51,13 @@
 > legs straight down the shell sides w/ outward foot. Simple view preset
 > row moved to the TOP (accidental-click safety); AMOUNT caption follows
 > the fader (amountY).
+> **v2.3.4:** Shelf edges Ozone-tuned: corners at ±(bw/2 + 0.12 oct),
+> shelf Q 0.9 fading →0.707 as |gp| grows (no ripple when deep):
+> reference-case plateau 1.66 oct ≈ Ozone's 1.65, flank intrusion
+> ~0.45 oct/side, visible plateau from Q≈1. `makeHighShelf` gained a
+> shelfQ param. DrumButtons: label under icon; all three share one
+> measured width (max of icon width & GlyphArrangement label width
+> + padding), centred as a group; row 58 tall (Simple 380×654 min 570).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
