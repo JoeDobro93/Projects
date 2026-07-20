@@ -160,6 +160,12 @@
 > (3) Drumsticks composite inside g.beginTransparencyLayer(0.85) with
 > opaque fills — overlapping shaft/butt/bead no longer double-blend
 > into a brighter spot.
+> **v2.3.12 (v1.0 candidate):** Knob drags 30% faster again (base sens
+> 220→170 px full-travel, shift 1200→920). Canvas: left dB labels sit ON
+> their gridlines (panel2 patch under the text); right edge gains
+> monitor-signal-axis ticks + labels at 0/−12/−24/−36/−48 (dyy mapping,
+> kTopDb +9..kBotDb −54) — ticks only, not gridlines, since it's the
+> spectra's axis, not the cut axis.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

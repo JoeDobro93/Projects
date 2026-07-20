@@ -233,8 +233,9 @@ void TailCanvas::paint (juce::Graphics& g)
             g.drawText (nm, (int) x - sc (14), (int) h + sc (1), sc (28), sc (10), juce::Justification::centred);
         }
     }
-    // horizontal lines at whole-dB cut levels, labelled so the gold curve's
-    // depth stays readable on every Scale setting
+    // horizontal gridlines at whole-dB cut levels, each labelled ON its line
+    // (small bg patch under the text) so line and value read as one; the
+    // right edge gets ticks for the monitor-signal axis the spectra use
     {
         const float stepDb = dispMax <= 12.0f ? 3.0f : 6.0f;
         g.setFont (font (8.5f));
@@ -243,9 +244,19 @@ void TailCanvas::paint (juce::Graphics& g)
             const float y = h * (1.0f - d / dispMax);
             g.setColour (pal->line.withAlpha (0.3f));
             g.drawHorizontalLine ((int) y, 0.0f, w);
+            const auto lr = juce::Rectangle<int> (sc (4), (int) y - sc (5), sc (36), sc (10));
+            g.setColour (pal->panel2);
+            g.fillRect (lr);
             g.setColour (pal->faint);
-            g.drawText ("-" + juce::String ((int) d) + " dB",
-                        sc (4), (int) y - sc (11), sc (40), sc (10), juce::Justification::centredLeft);
+            g.drawText ("-" + juce::String ((int) d) + " dB", lr, juce::Justification::centredLeft);
+        }
+        for (int v : { 0, -12, -24, -36, -48 })
+        {
+            const float y = dyy ((float) v, h);
+            g.setColour (pal->faint);
+            g.drawHorizontalLine ((int) y, w - scf (5.0f), w);
+            g.drawText (juce::String (v), (int) w - sc (33), (int) y - sc (5), sc (26), sc (10),
+                        juce::Justification::centredRight);
         }
     }
 

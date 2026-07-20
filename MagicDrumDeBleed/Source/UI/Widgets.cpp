@@ -219,7 +219,7 @@ void Knob::mouseDrag (const juce::MouseEvent& e)
 
     // Velocity-sensitive: slow mouse movement gets finer resolution.
     const float speed = std::abs (dy) <= 2 ? 0.5f : std::abs (dy) <= 6 ? 0.85f : 1.0f;
-    const float sens = e.mods.isShiftDown() ? 1200.0f : 220.0f;
+    const float sens = e.mods.isShiftDown() ? 920.0f : 170.0f;
     float delta = (float) dy * speed / sens;
     if (reversed) delta = -delta;
     dragNorm = juce::jlimit (0.0f, 1.0f, dragNorm + delta);
