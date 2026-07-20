@@ -119,6 +119,15 @@
 > with the same 46px toolbar strip as Advanced (panel fill, hairline,
 > 16pt title left, theme btn right); 380×692 min 330×608. (6) Default
 > icon: tapered stick shafts + small elongated acorn tips.
+> **v2.3.9:** Knob drag ~1.5–2× faster (tiers 0.5/0.85/1.0 at |dy|≤2/≤6,
+> sens 220, shift 1200); value editor opens with the exact value at 4
+> decimals (display keeps 1 — scQ/notchQ stringFromValue now 1 dec).
+> HintBar: registers a Desktop global mouse listener; while any control
+> is held/dragged the hint locks to the PRESSED component
+> (SafePointer `pressed`, e.eventComponent), and hover hints only show
+> when the editor's peer isFocused() and the pointer is inside the
+> window. Drumsticks thickened (grip 2.1·lw, shaft 1.4·lw, bead
+> 0.26×0.15·L) so the tips survive small sizes.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
