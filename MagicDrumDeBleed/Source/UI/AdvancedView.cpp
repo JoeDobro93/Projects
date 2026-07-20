@@ -50,7 +50,7 @@ void AdvancedView::resized()
     presetBrowser.setBounds (header.removeFromRight (sc (330)));
 
     hintBar.setBounds (r.removeFromBottom (sc (34)));
-    rail.setBounds (r.removeFromRight (sc (150)));
+    rail.setBounds (r.removeFromRight (sc (190)));
 
     r.reduce (sc (9), sc (9));
     const int gap = sc (9);

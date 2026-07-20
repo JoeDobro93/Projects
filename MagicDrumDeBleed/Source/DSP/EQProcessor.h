@@ -4,8 +4,8 @@
     EQProcessor — the 7-band double-precision IIR EQ on the parallel path.
 
     Band indices:
-        0        HPF  (6 or 12 dB/oct)
-        1        LPF  (6 or 12 dB/oct)
+        0        HPF  (6/12/24/36/48 dB/oct)
+        1        LPF  (6/12/24/36/48 dB/oct)
         2 .. 6   Notch bands 1..5 (bell / flat-bottom, negative gain only)
 
     Frequencies notched OUT of the parallel signal are the frequencies that
@@ -25,6 +25,10 @@
 namespace mdd
 {
 
+// Ring level UI unit (0 = no ring, 20 = max) → internal parallel-path cut.
+inline double ringToGainDb (double units) noexcept   { return -2.4 * units; }
+inline double gainDbToRing (double gainDb) noexcept  { return -gainDb / 2.4; }
+
 struct BandParams
 {
     bool   enabled = false;
@@ -32,7 +36,7 @@ struct BandParams
     double q       = 1.0;      // keep bands only
     double gainDb  = -24.0;    // keep bands only
     int    shape   = 0;        // keep bands: 0 bell, 1 proportional-Q, 2 band shelf
-    int    slope   = 1;        // HPF/LPF: 0 = 6 dB/oct, 1 = 12 dB/oct
+    int    slope   = 1;        // HPF/LPF: index into {6,12,24,36,48} dB/oct
 
     bool operator== (const BandParams& o) const noexcept
     {
@@ -50,6 +54,7 @@ public:
     static constexpr int kBandLPF    = 1;
     static constexpr int kFirstNotch = 2;
     static constexpr int kMaxChannels = 2;
+    static constexpr int kMaxStages  = 4;               // 48 dB/oct = 4 biquads
 
     void prepare (double sampleRate, int numChannels);
     void reset();
@@ -63,7 +68,7 @@ public:
     // is always computed from the same maths as the audio path.
     // bandKind: 0 = HPF, 1 = LPF, 2 = notch. Returns the number of stages.
     static int computeCoefficients (const BandParams& params, int bandKind,
-                                    double sampleRate, BiquadFilter::Coeffs (&out)[2]);
+                                    double sampleRate, BiquadFilter::Coeffs (&out)[kMaxStages]);
 
 private:
     void updateBandCoefficients (int bandIndex);
@@ -71,8 +76,8 @@ private:
     struct Band
     {
         BandParams params;
-        int numStages = 1;                                  // 1 or 2 cascaded biquads
-        BiquadFilter filters[2][kMaxChannels];              // [stage][channel]
+        int numStages = 1;                                  // 1..kMaxStages cascaded biquads
+        BiquadFilter filters[kMaxStages][kMaxChannels];     // [stage][channel]
     };
 
     Band bands[kNumBands];

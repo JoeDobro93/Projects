@@ -1,4 +1,5 @@
 #include "PresetBrowser.h"
+#include "BandIds.h"
 
 //==============================================================================
 namespace
@@ -169,28 +170,7 @@ void PresetBrowser::resetAllParametersExceptThreshold()
 
 void PresetBrowser::applyFactoryPreset (const presets::FactoryPreset& preset)
 {
-    // Everything unspecified falls back to parameter defaults; threshold is untouched.
-    resetAllParametersExceptThreshold();
-
-    setParameterValue (ParamIDs::scFreq,    preset.scFreqHz);
-    setParameterValue (ParamIDs::scQ,       preset.scQ);
-    setParameterValue (ParamIDs::scEnable,  preset.scEnabled ? 1.0f : 0.0f);
-    setParameterValue (ParamIDs::rmsWindow, preset.rmsWindowMs);
-    setParameterValue (ParamIDs::hold,      preset.holdMs);
-    setParameterValue (ParamIDs::release,   preset.releaseMs);
-    setParameterValue (ParamIDs::reduction, preset.reductionDb);
-    setParameterValue (ParamIDs::lookahead, (float) preset.lookaheadMs);
-    setParameterValue (ParamIDs::hpfOn,     preset.hpfEnabled ? 1.0f : 0.0f);
-    setParameterValue (ParamIDs::hpfFreq,   preset.hpfFreqHz);
-    setParameterValue (ParamIDs::intensity, preset.intensityPercent);
-
-    setParameterValue (ParamIDs::notchOn (0),   preset.notch1.enabled ? 1.0f : 0.0f);
-    if (preset.notch1.enabled)
-    {
-        setParameterValue (ParamIDs::notchFreq (0), preset.notch1.freqHz);
-        setParameterValue (ParamIDs::notchQ (0),    preset.notch1.q);
-        setParameterValue (ParamIDs::notchGain (0), preset.notch1.gainDb);
-    }
+    eqids::applyFactoryPreset (processor, preset);
 }
 
 //==============================================================================

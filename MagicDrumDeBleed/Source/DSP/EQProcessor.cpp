@@ -44,20 +44,28 @@ void EQProcessor::setBandParameters (int bandIndex, const BandParams& params)
 }
 
 int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
-                                      double sampleRate, BiquadFilter::Coeffs (&out)[2])
+                                      double sampleRate, BiquadFilter::Coeffs (&out)[kMaxStages])
 {
-    if (bandKind == 0)
+    if (bandKind == 0 || bandKind == 1)
     {
-        out[0] = (p.slope == 0) ? BiquadFilter::makeFirstOrderHighpass (sampleRate, p.freqHz)
-                                : BiquadFilter::makeHighpass (sampleRate, p.freqHz, 0.70710678118654752);
-        return 1;
-    }
+        // Butterworth cascades: slope index 0..4 = 6/12/24/36/48 dB/oct.
+        static const double kQ2[] = { 0.70710678 };
+        static const double kQ4[] = { 0.54119610, 1.30656296 };
+        static const double kQ6[] = { 0.51763809, 0.70710678, 1.93185165 };
+        static const double kQ8[] = { 0.50979558, 0.60134489, 0.89997622, 2.56291545 };
+        static const double* kQs[] = { nullptr, kQ2, kQ4, kQ6, kQ8 };
 
-    if (bandKind == 1)
-    {
-        out[0] = (p.slope == 0) ? BiquadFilter::makeFirstOrderLowpass (sampleRate, p.freqHz)
-                                : BiquadFilter::makeLowpass (sampleRate, p.freqHz, 0.70710678118654752);
-        return 1;
+        const int idx = juce::jlimit (0, 4, p.slope);
+        if (idx == 0)
+        {
+            out[0] = bandKind == 0 ? BiquadFilter::makeFirstOrderHighpass (sampleRate, p.freqHz)
+                                   : BiquadFilter::makeFirstOrderLowpass  (sampleRate, p.freqHz);
+            return 1;
+        }
+        for (int s = 0; s < idx; ++s)
+            out[s] = bandKind == 0 ? BiquadFilter::makeHighpass (sampleRate, p.freqHz, kQs[idx][s])
+                                   : BiquadFilter::makeLowpass  (sampleRate, p.freqHz, kQs[idx][s]);
+        return idx;
     }
 
     // ---- Keep bands: Ozone-style cut shapes ----
@@ -87,7 +95,7 @@ void EQProcessor::updateBandCoefficients (int bandIndex)
     auto& band = bands[bandIndex];
     const int kind = bandIndex == kBandHPF ? 0 : (bandIndex == kBandLPF ? 1 : 2);
 
-    BiquadFilter::Coeffs coeffs[2];
+    BiquadFilter::Coeffs coeffs[kMaxStages];
     band.numStages = computeCoefficients (band.params, kind, sr, coeffs);
 
     for (int stage = 0; stage < band.numStages; ++stage)

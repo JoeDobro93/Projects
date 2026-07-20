@@ -7,62 +7,45 @@
     IMPORTANT: Threshold is deliberately NOT part of any preset. Applying a
     preset never touches the user's threshold setting.
 
-    Anything a preset does not specify falls back to the parameter defaults:
-      - Notch bands 2–5: off (freq/Q/gain at their parameter defaults)
-      - LPF: 20 kHz, off
-      - Sidechain filter: enabled
-      - All notch shapes: Bell
-      - HPF slope / LPF slope: 12 dB/oct
-      - Monitoring: Normal, bypasses off
+    Anything a preset does not specify falls back to the parameter defaults
+    (Bandpass trigger filter, Link to K1 on, K2–K5 / LOWS / HIGHS off,
+    Amount 100 %, bypasses off).
 */
 
 namespace presets
 {
 
-struct NotchSetting
-{
-    bool  enabled;
-    float freqHz;
-    float q;
-    float gainDb;
-};
-
 struct FactoryPreset
 {
-    const char*  name;
+    const char* name;
 
-    // Sidechain detector
-    float scFreqHz;      // bandpass centre
-    float scQ;
-    bool  scEnabled;
+    // Trigger filter
+    float scFreqHz;
+    float scQ;           // width: q = 1 / (2·sinh(ln2·bwOct/2))
 
-    // Compressor (fixed-reduction gate)
-    float rmsWindowMs;
+    // Gate
+    int   lookaheadMs;
     float holdMs;
     float releaseMs;
-    float reductionDb;   // fixed gain reduction applied when engaged
-    int   lookaheadMs;
 
-    // EQ (parallel path)
-    bool  hpfEnabled;
-    float hpfFreqHz;
-    NotchSetting notch1; // factory presets only ever use notch band 1
+    // K1 keep band (the only band factory presets use)
+    bool  k1On;
+    float k1FreqHz;
+    float k1Q;
+    float k1Ring;        // ring level units 0..20
 
-    // Output
-    float intensityPercent;
+    // Tail gate
+    float tailHoldMs;
+    float tailFadeMs;
 };
 
-//  Reduction is intentionally -96 dB (near-silent) in every preset: full
-//  cancellation of everything the gate lets through. Dial it back per taste.
-//                            name         scFreq  scQ  scOn   rms   hold  rel   reduct  look  hpfOn hpfFreq  { n1On, n1Freq, n1Q, n1Gain }  intensity
-static constexpr FactoryPreset kDefault   { "Default",   200.0f, 1.5f, true, 10.0f, 20.0f, 100.0f, -96.0f, 5,  true, 800.0f, { false, 200.0f, 4.0f, -24.0f },  100.0f };
-static constexpr FactoryPreset kKick      { "Kick",       65.0f, 1.0f, true, 10.0f, 40.0f, 200.0f, -96.0f, 5,  true, 120.0f, { false, 200.0f, 4.0f, -24.0f },  100.0f };
-static constexpr FactoryPreset kSnare     { "Snare",     200.0f, 1.5f, true,  5.0f, 20.0f, 100.0f, -96.0f, 5,  true, 800.0f, { true,  200.0f, 6.0f, -18.0f },   85.0f };
-static constexpr FactoryPreset kHiTom     { "Hi Tom",    350.0f, 1.5f, true,  8.0f, 25.0f, 120.0f, -96.0f, 5,  true, 600.0f, { false, 200.0f, 4.0f, -24.0f },   90.0f };
-static constexpr FactoryPreset kMidTom    { "Mid Tom",   220.0f, 1.5f, true, 15.0f, 30.0f, 150.0f, -96.0f, 5,  true, 400.0f, { false, 200.0f, 4.0f, -24.0f },   90.0f };
-static constexpr FactoryPreset kFloorTom  { "Floor Tom", 100.0f, 1.2f, true, 25.0f, 40.0f, 200.0f, -96.0f, 5,  true, 250.0f, { false, 200.0f, 4.0f, -24.0f },   95.0f };
+//                          name       scFreq  scQ    look hold  rel   k1On  k1Freq k1Q   ring  tHold tFade
+static constexpr FactoryPreset kDefault { "Default", 200.0f, 2.871f, 5,  7.0f,  5.0f, true,  200.0f,  1.0f,  9.8f, 120.0f,  100.0f };
+static constexpr FactoryPreset kKick    { "Kick",     70.0f, 2.871f, 5, 40.0f, 50.0f, true,   70.0f, 10.0f, 10.0f, 120.0f,  100.0f };
+static constexpr FactoryPreset kSnare   { "Snare",   220.0f, 2.871f, 5,  7.0f, 15.0f, true,  220.0f, 20.0f, 20.0f, 200.0f, 1000.0f };
+static constexpr FactoryPreset kToms    { "Toms",    150.0f, 0.667f, 5,  7.0f,  5.0f, true,  150.0f,  1.0f, 10.0f, 300.0f,  100.0f };   // 2.0 oct focus
 
-static constexpr FactoryPreset kFactoryPresets[] = { kDefault, kKick, kSnare, kHiTom, kMidTom, kFloorTom };
+static constexpr FactoryPreset kFactoryPresets[] = { kDefault, kKick, kSnare, kToms };
 static constexpr int kNumFactoryPresets = (int) (sizeof (kFactoryPresets) / sizeof (kFactoryPresets[0]));
 
 } // namespace presets

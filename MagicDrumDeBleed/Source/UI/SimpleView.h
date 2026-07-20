@@ -1,16 +1,18 @@
 #pragma once
 /*  SimpleView — stripped-back: TRIGGER meter (draggable threshold), GATE,
-    AMOUNT fader, OUT meter, plus Focus / Tail hold knobs and a Learn button,
+    AMOUNT fader, OUT meter; Resonance (= Focus) with Learn under it,
+    Reso Amt (= K1 ring level) and Tail hold; Kick/Snare/Toms preset row,
     and an Advanced View button. */
 #include <JuceHeader.h>
 #include "../PluginProcessor.h"
 #include "Widgets.h"
+#include "BandIds.h"
 
 class SimpleView : public juce::Component
 {
 public:
-    static constexpr int kDefaultW = 380, kDefaultH = 520;
-    static constexpr int kMinW = 330,  kMinH = 450;
+    static constexpr int kDefaultW = 380, kDefaultH = 620;
+    static constexpr int kMinW = 330,  kMinH = 540;
 
     SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void()> onAdvancedView);
 
@@ -24,8 +26,10 @@ private:
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
-    ui::Knob focus { "Focus" }, tailHold { "Tail hold", ui::Knob::tailClr };
-    juce::TextButton learnBtn { "Learn" };
+    ui::Knob resonance { "Resonance" }, resoAmt { "Reso Amt", ui::Knob::tailClr },
+             tailHold { "Tail hold", ui::Knob::tailClr };
+    eqids::LearnButton learnBtn { processor };
+    juce::TextButton presetBtns[3];
     juce::TextButton advancedBtn { "Advanced View" };
     std::unique_ptr<juce::ParameterAttachment> amtAtt;
     int amountX = 0;

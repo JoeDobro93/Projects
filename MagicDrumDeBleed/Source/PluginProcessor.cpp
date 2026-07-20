@@ -53,7 +53,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 
     // ---- Compressor ----
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
-                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -20.0f, dB));
+                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -40.0f, dB));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::reduction, 1 }, "Reduction Target",
                     juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -96.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
@@ -96,12 +96,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::hpfFreq, 1 }, "HPF Freq",
                     logHzRange (20.0f, 15000.0f), 800.0f, hz));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::hpfSlope, 1 }, "HPF Slope",
-                    juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
+                    juce::StringArray { "6 dB/oct", "12 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, 1));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::lpfOn, 1 }, "LPF On", false));
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::lpfFreq, 1 }, "LPF Freq",
                     logHzRange (50.0f, 20000.0f), 20000.0f, hz));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::lpfSlope, 1 }, "LPF Slope",
-                    juce::StringArray { "6 dB/oct", "12 dB/oct" }, 1));
+                    juce::StringArray { "6 dB/oct", "12 dB/oct", "24 dB/oct", "36 dB/oct", "48 dB/oct" }, 1));
 
     // ---- EQ: notch bands 1..5 ----
     for (int i = 0; i < 5; ++i)
@@ -117,7 +117,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                             "Notch " + num + " Q", r, 1.0f));
         }
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
-                        "Notch " + num + " Gain", juce::NormalisableRange<float> (-48.0f, 0.0f, 0.1f), -23.5f, dB));   // ring -0.6 dB
+                        "Notch " + num + " Ring", juce::NormalisableRange<float> (0.0f, 20.0f, 0.1f), 9.8f,
+                        juce::AudioParameterFloatAttributes()
+                            .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1); })));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },
                         "Notch " + num + " Shape", juce::StringArray { "Bell", "Proportional Q", "Band Shelf" }, 1));
     }
@@ -273,8 +275,9 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
     spectrumFifo.reset();
 
-    for (auto& f : soloFilters)
-        f.reset();
+    for (auto& st : soloStages)
+        for (auto& f : st)
+            f.reset();
     soloCachedBand = -2;
 
     currentLookaheadSamples = -1;   // force latency + delay refresh
@@ -323,7 +326,7 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
         nb.enabled = pNotchOn[i]->load() > 0.5f;
         nb.freqHz  = pNotchFreq[i]->load();
         nb.q       = pNotchQ[i]->load();
-        nb.gainDb  = pNotchGain[i]->load();
+        nb.gainDb  = mdd::ringToGainDb (pNotchGain[i]->load());
         nb.shape   = (int) pNotchShape[i]->load();
         nb.slope   = 0;
         eq.setBandParameters (mdd::EQProcessor::kFirstNotch + i, nb);
@@ -336,46 +339,39 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     eqBypassCached    = pEqBypass->load() > 0.5f;
     spectrumPostEqCached = spectrumPostEq.load();
 
-    // ---- Band-solo listen filter ----
+    // ---- Band-solo: the band's own filter (kept ring = dry − band(dry)) ----
     soloBandCached = soloBand.load();
     if (soloBandCached >= 0)
     {
-        double freq = 1000.0, q = 4.0;
-        int slope = 1;
-        if (soloBandCached == 0)      { freq = pHpfFreq->load(); slope = (int) pHpfSlope->load(); }
-        else if (soloBandCached == 1) { freq = pLpfFreq->load(); slope = (int) pLpfSlope->load(); }
+        mdd::BandParams sp;
+        sp.enabled = true;
+        if (soloBandCached == 0)      { sp.freqHz = pHpfFreq->load(); sp.slope = (int) pHpfSlope->load(); }
+        else if (soloBandCached == 1) { sp.freqHz = pLpfFreq->load(); sp.slope = (int) pLpfSlope->load(); }
         else
         {
-            const int n = soloBandCached - 2;
-            freq = pNotchFreq[n]->load();
-            q    = pNotchQ[n]->load();
+            const int nb = soloBandCached - 2;
+            sp.freqHz = pNotchFreq[nb]->load();
+            sp.q      = pNotchQ[nb]->load();
+            sp.gainDb = mdd::ringToGainDb (pNotchGain[nb]->load());
+            sp.shape  = (int) pNotchShape[nb]->load();
         }
 
-        if (soloBandCached != soloCachedBand || ! mdd::exactlyEqual (freq, soloCachedFreq)
-            || ! mdd::exactlyEqual (q, soloCachedQ) || slope != soloCachedSlope)
+        if (soloBandCached != soloCachedBand || sp != soloCachedParams)
         {
             const bool bandChanged = soloBandCached != soloCachedBand;
             soloCachedBand  = soloBandCached;
-            soloCachedFreq  = freq;
-            soloCachedQ     = q;
-            soloCachedSlope = slope;
+            soloCachedParams = sp;
 
-            mdd::BiquadFilter::Coeffs c;
-            if (soloBandCached == 0)
-                c = slope == 0 ? mdd::BiquadFilter::makeFirstOrderHighpass (sampleRateCached, freq)
-                               : mdd::BiquadFilter::makeHighpass (sampleRateCached, freq, 0.70710678118654752);
-            else if (soloBandCached == 1)
-                c = slope == 0 ? mdd::BiquadFilter::makeFirstOrderLowpass (sampleRateCached, freq)
-                               : mdd::BiquadFilter::makeLowpass (sampleRateCached, freq, 0.70710678118654752);
-            else
-                c = mdd::BiquadFilter::makeBandpass (sampleRateCached, freq, q);
-
-            for (auto& f : soloFilters)
-            {
-                f.setCoefficients (c);
-                if (bandChanged)
-                    f.reset();
-            }
+            const int kind = soloBandCached == 0 ? 0 : (soloBandCached == 1 ? 1 : 2);
+            mdd::BiquadFilter::Coeffs cs[mdd::EQProcessor::kMaxStages];
+            soloNumStages = mdd::EQProcessor::computeCoefficients (sp, kind, sampleRateCached, cs);
+            for (int st = 0; st < soloNumStages; ++st)
+                for (auto& f : soloStages[st])
+                {
+                    f.setCoefficients (cs[st]);
+                    if (bandChanged)
+                        f.reset();
+                }
         }
     }
     else
@@ -496,18 +492,24 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     // ---- Spectrum feed: the DRY input (blue layer; "kept" is derived in UI) ----
     pushSpectrumSamples (detectorRaw.data(), n);
 
-    // ---- Band solo audition: bandpass the processed signal, mute the dry ----
+    // ---- Band solo audition: only this band's kept ring — the dry signal
+    // minus the band's own filter output (no gate, no tail gate, no Amount).
     if (soloBandCached >= 0)
     {
         intensitySmoothed.skip (n);
 
         for (int ch = 0; ch < nCh; ++ch)
         {
-            const double* par = parallelBuffer.getReadPointer (ch);
+            const double* dry = dryBuffer.getReadPointer (ch);
             double* out = buffer.getWritePointer (ch);
-            auto& filter = soloFilters[juce::jmin (ch, 1)];
+            const int chIdx = juce::jmin (ch, 1);
             for (int i = 0; i < n; ++i)
-                out[i] = filter.processSample (par[i]);
+            {
+                double f = dry[i];
+                for (int st = 0; st < soloNumStages; ++st)
+                    f = soloStages[st][chIdx].processSample (f);
+                out[i] = dry[i] - f;
+            }
         }
         updateOutputPeak (buffer, nCh, n);
         return;

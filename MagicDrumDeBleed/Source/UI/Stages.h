@@ -7,6 +7,7 @@
 #include "../PluginProcessor.h"
 #include "Widgets.h"
 #include "TailCanvas.h"
+#include "BandIds.h"
 
 //==============================================================================
 class StageHeader : public juce::Component
@@ -27,7 +28,6 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 private:
-    void rebuildTypeButtons();
     void updateWidthKnob();
 
     MagicDrumDeBleedAudioProcessor& processor;
@@ -35,8 +35,11 @@ private:
     juce::TextButton bypassBtn { "Bypass" };
     ui::LevelMeter trigMeter;
     ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" }, focus { "Focus" }, width { "Width" };
-    juce::TextButton typeBtns[3];
-    juce::TextButton enableBtn { "Enabled" }, learnBtn { "Learn" }, linkBtn { "Link to K1" };
+    ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
+                                  { "Low Pass",  ui::LightSelector::iconLP },
+                                  { "Bandpass",  ui::LightSelector::iconBP } } };
+    juce::TextButton enableBtn { "Enabled" }, linkBtn { "Link to K1" };
+    eqids::LearnButton learnBtn { processor };
     std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt;
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
 };
@@ -55,6 +58,7 @@ private:
     StageHeader header { 2, "GATE", 1 };
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
              release { "Release", ui::Knob::openClr };
+    ui::MiniSlider speedSlider { 0.5f };                // history scroll speed
 
     struct Sample { float det; int state; };            // state 0 closed 1 tail 2 open
     static constexpr int kHist = 460;
@@ -82,24 +86,30 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 3, "TAIL", 2 };
     ui::CheckToggle tailGateTg { "Tail gate", true };
+    juce::TextButton bypassBtn { "Bypass" };
     juce::TextButton internalsBtn { "Show internals" }, accumBtn { "Accumulate" }, freezeBtn { "Freeze" };
+    ui::LightSelector scaleSel { { { "Fine", ui::LightSelector::iconNone },
+                                   { "Med",  ui::LightSelector::iconNone },
+                                   { "Wide", ui::LightSelector::iconNone } }, ui::Knob::tailClr };
     ui::MonitorFader mon;
     TailCanvas canvas;
 
     juce::TextButton bandBtns[7], soloBtns[7];
-    juce::TextButton dotBtns[7];                        // enable dots
+    ui::MiniSwitch bandSw[7];                           // enable switches
     std::unique_ptr<juce::ParameterAttachment> onAtts[7];
     juce::Label bandLabel;
     ui::Knob freq { "Frequency", ui::Knob::tailClr }, widthK { "Q", ui::Knob::tailClr },
              ring { "Ring level", ui::Knob::tailClr },
              slopeK { "Slope", ui::Knob::tailClr };     // LOWS/HIGHS only
-    juce::TextButton shapeBtns[3];
+    ui::LightSelector shapeSel { { { "Bell",   ui::LightSelector::iconBell },
+                                   { "Prop Q", ui::LightSelector::iconPropQ },
+                                   { "Shelf",  ui::LightSelector::iconShelf } }, ui::Knob::tailClr };
     bool selIsKeep = true;
-    std::unique_ptr<juce::ParameterAttachment> shapeAtt, tailGateAtt;
+    std::unique_ptr<juce::ParameterAttachment> shapeAtt, tailGateAtt, bypassAtt;
     ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
     int sel = 0;
-    int bandLabelsY = 0, shapeX = 0;
+    int bandLabelsY = 0, shapeX = 0, scaleLabelY = 0;
 };
 
 //==============================================================================

@@ -1,6 +1,5 @@
 #include "SimpleView.h"
 #include "TailCanvas.h"
-#include "BandIds.h"
 
 using namespace ui;
 
@@ -26,15 +25,33 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     setHint (outMeter, "OUT", "Plugin output level.");
     addAndMakeVisible (outMeter);
 
-    addAndMakeVisible (focus);
-    focus.attach (proc.apvts.getParameter (ParamIDs::scFreq));
-    setHint (focus, "Focus", "The frequency the detector listens to.");
+    addAndMakeVisible (resonance);
+    resonance.attach (proc.apvts.getParameter (ParamIDs::scFreq));
+    setHint (resonance, "Resonance", "The drum's ringing frequency — what the detector listens for, and (with Link) what K1 keeps ringing.");
+    addAndMakeVisible (resoAmt);
+    resoAmt.setFormat ([] (float u) { return juce::String (u, 1); });
+    resoAmt.attach (proc.apvts.getParameter (ParamIDs::notchGain (0)));
+    setHint (resoAmt, "Reso Amt", "How much of the resonance rings through the tail. 0 = nothing, 20 = maximum.");
     addAndMakeVisible (tailHold);
     tailHold.attach (proc.apvts.getParameter (ParamIDs::eqGateHold));
-    setHint (tailHold, "Tail hold", "How long the kept bands ring at full level before fading.");
-    setHint (learnBtn, "Learn", "Analyse the incoming audio and park the trigger filter on this drum's dominant frequency.");
-    learnBtn.onClick = [this] { eqids::handleLearnClick (processor, learnBtn); };
+    setHint (tailHold, "Tail hold", "How long the kept resonance rings at full level before fading.");
+    setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the plugin on this drum's dominant frequency.");
     addAndMakeVisible (learnBtn);
+
+    static const char* presetNames[3] = { "Kick", "Snare", "Toms" };
+    for (int i = 0; i < 3; ++i)
+    {
+        presetBtns[i].setButtonText (presetNames[i]);
+        setHint (presetBtns[i], presetNames[i],
+                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold is kept.");
+        presetBtns[i].onClick = [this, i]
+        {
+            for (auto& fp : presets::kFactoryPresets)
+                if (juce::String (fp.name) == presetBtns[i].getButtonText())
+                    eqids::applyFactoryPreset (processor, fp);
+        };
+        addAndMakeVisible (presetBtns[i]);
+    }
 
     setHint (advancedBtn, "Advanced View", "Back to the full view: trigger filter, gate timing and tail shaping.");
     advancedBtn.onClick = [cb = std::move (onAdvancedView)] { if (cb) cb(); };
@@ -57,19 +74,32 @@ void SimpleView::resized()
     auto r = getLocalBounds().reduced (sc (12));
     r.removeFromTop (sc (22));                                // title
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));
-    r.removeFromBottom (sc (10));
+    r.removeFromBottom (sc (8));
 
-    // knob row under the meters: Focus · Tail hold · Learn
-    auto knobs = r.removeFromBottom (sc (80));
+    // preset row: Kick · Snare · Toms
+    auto prow = r.removeFromBottom (sc (26));
+    r.removeFromBottom (sc (10));
+    const int pw = (prow.getWidth() - sc (12)) / 3;
+    for (int i = 0; i < 3; ++i)
+    {
+        presetBtns[i].setBounds (prow.removeFromLeft (pw));
+        prow.removeFromLeft (sc (6));
+    }
+
+    // knob row: Resonance (Learn under it) · Reso Amt · Tail hold
+    auto knobs = r.removeFromBottom (sc (108));
     r.removeFromBottom (sc (6));
-    const int kw = sc (70), lw = sc (86);
-    auto krow = knobs.withSizeKeepingCentre (juce::jmin (kw * 2 + lw + sc (20), knobs.getWidth()),
+    const int kw = sc (70);
+    auto krow = knobs.withSizeKeepingCentre (juce::jmin (kw * 3 + sc (20), knobs.getWidth()),
                                              knobs.getHeight());
-    focus.setBounds (krow.removeFromLeft (kw));
+    auto rcol = krow.removeFromLeft (kw);
+    learnBtn.setBounds (rcol.removeFromBottom (sc (24)));
+    rcol.removeFromBottom (sc (4));
+    resonance.setBounds (rcol);
     krow.removeFromLeft (sc (10));
-    tailHold.setBounds (krow.removeFromLeft (kw));
+    resoAmt.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
     krow.removeFromLeft (sc (10));
-    learnBtn.setBounds (krow.withSizeKeepingCentre (juce::jmin (lw, krow.getWidth()), sc (26)));
+    tailHold.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
 
     // centred row: TRIGGER · GATE · AMOUNT · OUT
     const int mw = sc (46), fw = sc (62), gap = sc (14);

@@ -1,6 +1,9 @@
 #pragma once
-/*  Band → parameter-ID mapping. Index 0=LOWS(hpf) 1=HIGHS(lpf) 2..6=K1..K5. */
+/*  Band → parameter-ID mapping. Index 0=LOWS(hpf) 1=HIGHS(lpf) 2..6=K1..K5.
+    Also hosts the shared Learn-click handler and factory-preset applier. */
 #include "../PluginProcessor.h"
+#include "../PresetDefaults.h"
+#include "Widgets.h"
 
 namespace eqids
 {
@@ -10,44 +13,93 @@ inline juce::String qId (int b)     { return b >= 2 ? ParamIDs::notchQ (b - 2)  
 inline juce::String gainId (int b)  { return b >= 2 ? ParamIDs::notchGain (b - 2) : juce::String(); }
 inline juce::String shapeId (int b) { return b == 0 ? ParamIDs::hpfSlope : b == 1 ? ParamIDs::lpfSlope : ParamIDs::notchShape (b - 2); }
 
-/*  Two-phase Learn click, shared by the Trigger stage and the Simple view.
-    First click starts capture; second click analyses, sets Focus, and — when
-    Link to K1 is on — updates K1 (enabling it at ring level −3 dB if it was
-    off; −3 dB ring ⇒ internal cut of 20·log10(1 − 10^(−3/20)) ≈ −10.69 dB). */
-inline void handleLearnClick (MagicDrumDeBleedAudioProcessor& proc, juce::TextButton& btn)
+inline void setRealValue (MagicDrumDeBleedAudioProcessor& proc, const juce::String& id, float real)
 {
-    if (! proc.isLearning())
+    if (auto* p = proc.apvts.getParameter (id))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->convertTo0to1 (real));
+        p->endChangeGesture();
+    }
+}
+
+/*  Learn button, shared by the Trigger stage and the Simple view. First click
+    starts capture (green, auto-finishes after 3 s); the second click — or the
+    timeout — analyses, sets Focus, and with Link to K1 on updates K1
+    (enabling it at ring 4.5 ≈ −3 dB ring level if it was off). */
+class LearnButton : public juce::TextButton, private juce::Timer
+{
+public:
+    explicit LearnButton (MagicDrumDeBleedAudioProcessor& p) : juce::TextButton ("Learn"), proc (p)
+    {
+        onClick = [this] { proc.isLearning() ? finish() : begin(); };
+        applyColours (false);
+    }
+
+private:
+    void begin()
     {
         proc.startLearn();
-        btn.setButtonText (juce::String::fromUTF8 ("listening\xe2\x80\xa6"));
-        return;
+        setButtonText (juce::String::fromUTF8 ("listening\xe2\x80\xa6"));
+        applyColours (true);
+        startTimer (3000);                        // auto-stop
     }
-    const double f = proc.finishLearnAndAnalyse();
-    btn.setButtonText ("Learn");
-    if (f <= 0.0) return;
 
-    auto set = [&proc] (const juce::String& id, float real)
+    void finish()
     {
-        if (auto* p = proc.apvts.getParameter (id))
-        {
-            p->beginChangeGesture();
-            p->setValueNotifyingHost (p->convertTo0to1 (real));
-            p->endChangeGesture();
-        }
-    };
-    set (ParamIDs::scFreq, (float) f);
+        stopTimer();
+        const double f = proc.finishLearnAndAnalyse();
+        setButtonText ("Learn");
+        applyColours (false);
+        if (f <= 0.0) return;
 
-    auto* link = proc.apvts.getParameter (ParamIDs::linkK1);
-    if (link != nullptr && link->getValue() > 0.5f)
-    {
-        auto* on = proc.apvts.getParameter (ParamIDs::notchOn (0));
-        const bool wasOn = on != nullptr && on->getValue() > 0.5f;
-        set (ParamIDs::notchFreq (0), (float) f);
-        if (! wasOn)
+        setRealValue (proc, ParamIDs::scFreq, (float) f);
+        auto* link = proc.apvts.getParameter (ParamIDs::linkK1);
+        if (link != nullptr && link->getValue() > 0.5f)
         {
-            set (ParamIDs::notchOn (0), 1.0f);
-            set (ParamIDs::notchGain (0), -10.69f);
+            auto* on = proc.apvts.getParameter (ParamIDs::notchOn (0));
+            const bool wasOn = on != nullptr && on->getValue() > 0.5f;
+            setRealValue (proc, ParamIDs::notchFreq (0), (float) f);
+            if (! wasOn)
+            {
+                setRealValue (proc, ParamIDs::notchOn (0), 1.0f);
+                setRealValue (proc, ParamIDs::notchGain (0), 4.5f);   // ring ≈ −3 dB
+            }
         }
     }
+
+    void timerCallback() override   { if (proc.isLearning()) finish(); else stopTimer(); }
+
+    void applyColours (bool listening)
+    {
+        const auto c = listening ? ui::pal->open : ui::pal->accent.brighter (0.15f);
+        setColour (juce::TextButton::buttonColourId, c);
+        setColour (juce::TextButton::textColourOffId, ui::pal->bg);
+        repaint();
+    }
+
+    MagicDrumDeBleedAudioProcessor& proc;
+};
+
+/*  Apply a factory preset: reset everything except Threshold, then set the
+    preset's values. Shared by the PresetBrowser and the Simple view. */
+inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
+{
+    for (auto* p : proc.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+            if (ranged->paramID != ParamIDs::threshold)
+                ranged->setValueNotifyingHost (ranged->getDefaultValue());
+
+    setRealValue (proc, ParamIDs::scFreq,        pr.scFreqHz);
+    setRealValue (proc, ParamIDs::scQ,           pr.scQ);
+    setRealValue (proc, ParamIDs::lookahead,     (float) pr.lookaheadMs);
+    setRealValue (proc, ParamIDs::hold,          pr.holdMs);
+    setRealValue (proc, ParamIDs::release,       pr.releaseMs);
+    setRealValue (proc, ParamIDs::notchOn (0),   pr.k1On ? 1.0f : 0.0f);
+    setRealValue (proc, ParamIDs::notchFreq (0), pr.k1FreqHz);
+    setRealValue (proc, ParamIDs::notchQ (0),    pr.k1Q);
+    setRealValue (proc, ParamIDs::notchGain (0), pr.k1Ring);
+    setRealValue (proc, ParamIDs::eqGateHold,    pr.tailHoldMs);
+    setRealValue (proc, ParamIDs::eqGateRelease, pr.tailFadeMs);
 }
 }

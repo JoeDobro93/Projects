@@ -135,8 +135,8 @@ public:
     bool isSpectrumPostEq() const          { return spectrumPostEq.load(); }
 
     // Band solo audition (UI-only, not saved): -1 = off, 0..6 = band index.
-    // Solos a bandpass at the band's frequency/Q on the processed signal
-    // (band gain intentionally NOT applied), muting the dry path.
+    // Plays exactly what that band KEEPS — dry minus the band's own filter
+    // (|1−H| of just this band) — bypassing the gate, tail gate and Amount.
     void setSoloBand (int band)            { soloBand.store (band); }
     int  getSoloBand() const               { return soloBand.load(); }
 
@@ -191,12 +191,12 @@ private:
     std::atomic<float> removedPeakDb { -120.0f };
     std::atomic<bool>  spectrumPostEq { true };
 
-    // Band-solo audition state + its listen filter (one biquad per channel)
+    // Band-solo audition state + the band's own filter stages per channel
     std::atomic<int> soloBand { -1 };
-    mdd::BiquadFilter soloFilters[2];
-    int    soloCachedBand = -2;
-    double soloCachedFreq = -1.0, soloCachedQ = -1.0;
-    int    soloCachedSlope = -1;
+    mdd::BiquadFilter soloStages[mdd::EQProcessor::kMaxStages][2];
+    int soloNumStages = 1;
+    int soloCachedBand = -2;
+    mdd::BandParams soloCachedParams;
 
     // Cached raw parameter pointers
     std::atomic<float> *pThreshold, *pReduction, *pLookahead, *pRmsWindow, *pHold, *pRelease;

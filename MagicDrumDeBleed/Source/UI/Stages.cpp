@@ -73,25 +73,12 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     setHint (width, "Width", "Bandpass: how wide a band the detector hears. High/Low Pass: how steeply it rolls off.");
     updateWidthKnob();
 
-    static const char* typeNames[3] = { "High Pass", "Low Pass", "Bandpass" };
-    static const char* typeHints[3] = {
-        "Detector ignores everything below the cutoff. Good for stopping the kick from opening the gate.",
-        "Detector ignores everything above the cutoff. Good for stopping cymbals and hats.",
-        "Detector listens to one band only. Rejects both the kick and the cymbals at once." };
-    for (int i = 0; i < 3; ++i)
-    {
-        typeBtns[i].setButtonText (typeNames[i]);
-        setHint (typeBtns[i], typeNames[i], typeHints[i]);
-        typeBtns[i].onClick = [this, i]
-        {
-            auto* p = processor.apvts.getParameter (ParamIDs::scType);
-            typeAtt->setValueAsCompleteGesture ((float) i);
-            juce::ignoreUnused (p);
-        };
-        addAndMakeVisible (typeBtns[i]);
-    }
+    addAndMakeVisible (typeSel);
+    setHint (typeSel, "Trigger Filter Type",
+             "High Pass ignores everything below the cutoff (kick-proof). Low Pass ignores everything above (cymbal-proof). Bandpass listens to one band only.");
+    typeSel.onChange = [this] (int i) { typeAtt->setValueAsCompleteGesture ((float) i); };
     typeAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::scType),
-        [this] (float) { rebuildTypeButtons(); updateWidthKnob(); });
+        [this] (float v) { typeSel.setSelected (juce::roundToInt (v), false); updateWidthKnob(); });
     typeAtt->sendInitialUpdate();
 
     addAndMakeVisible (enableBtn);
@@ -106,8 +93,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     scEnableAtt->sendInitialUpdate();
 
     addAndMakeVisible (learnBtn);
-    setHint (learnBtn, "Learn", "Analyse the incoming audio and park the filter on this drum's dominant frequency. With Link to K1 on, K1 follows it too.");
-    learnBtn.onClick = [this] { eqids::handleLearnClick (processor, learnBtn); };
+    setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the filter on this drum's dominant frequency. With Link to K1 on, K1 follows it too.");
 
     addAndMakeVisible (linkBtn);
     setHint (linkBtn, "Link to K1", "Locks the K1 keep band's frequency to the Focus frequency: turning either knob moves both, and Learn updates them together.");
@@ -119,15 +105,6 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     linkAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::linkK1),
         [this] (float v) { styleSeg (linkBtn, v > 0.5f); });
     linkAtt->sendInitialUpdate();
-}
-
-void TriggerStage::rebuildTypeButtons()
-{
-    auto* p = processor.apvts.getParameter (ParamIDs::scType);
-    const int cur = (int) std::lround (p->convertFrom0to1 (p->getValue()));
-    for (int i = 0; i < 3; ++i)
-        styleSeg (typeBtns[i], i == cur);
-    repaint();
 }
 
 void TriggerStage::updateWidthKnob()
@@ -187,18 +164,16 @@ void TriggerStage::resized()
     filtLabelX = r.getX();
     r.removeFromTop (sc (14));
 
-    // button stack (Enabled / Learn / Link to K1) left, knobs middle, type right
+    // button stack (Enabled / Link to K1 / Learn) left, knobs middle, type right
     auto stack = r.removeFromLeft (sc (96));
     enableBtn.setBounds (stack.getX(), stack.getY(),           stack.getWidth(), sc (24));
-    learnBtn.setBounds  (stack.getX(), stack.getY() + sc (27), stack.getWidth(), sc (24));
-    linkBtn.setBounds   (stack.getX(), stack.getY() + sc (54), stack.getWidth(), sc (24));
+    linkBtn.setBounds   (stack.getX(), stack.getY() + sc (27), stack.getWidth(), sc (24));
+    learnBtn.setBounds  (stack.getX(), stack.getY() + sc (54), stack.getWidth(), sc (24));
     r.removeFromLeft (sc (11));
     focus.setBounds (r.removeFromLeft (sc (70)));
     width.setBounds (r.removeFromLeft (sc (70)));
     r.removeFromLeft (sc (11));
-    auto seg = r.removeFromLeft (sc (96));
-    for (int i = 0; i < 3; ++i)
-        typeBtns[i].setBounds (seg.getX(), seg.getY() + i * sc (27), seg.getWidth(), sc (24));
+    typeSel.setBounds (r.removeFromLeft (sc (110)).withHeight (sc (78)));
 }
 
 //==============================================================================
@@ -217,6 +192,11 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     setHint (release, "Release", juce::String::fromUTF8 ("How quickly the gate closes after Hold. Too short chops the drum \xe2\x80\x94 the TAIL stage then takes over."));
 
     setHint (*this, "History", "Live history. Blue = detector level, red dashes = threshold. The background colour is the gate state at that moment.");
+
+    addAndMakeVisible (speedSlider);
+    setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
+    speedSlider.onChange = [this] (float v) { startTimerHz (juce::roundToInt (10.0f * std::pow (3.0f, 2.0f * v))); };
+
     hist.reserve (kHist);
     startTimerHz (30);
 }
@@ -336,6 +316,7 @@ void GateStage::resized()
     stateArea = r.removeFromRight (sc (124));
     r.removeFromRight (sc (13));
     canvasArea = r;
+    speedSlider.setBounds (canvasArea.getRight() - sc (96), sc (6), sc (90), sc (16));
 }
 
 //==============================================================================
@@ -346,6 +327,30 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
 {
     addAndMakeVisible (header);
     auto& ap = processor.apvts;
+
+    addAndMakeVisible (bypassBtn);
+    setHint (bypassBtn, "Bypass", "Bypass the tail EQ: no keep bands, so the gate cuts every frequency equally and nothing rings through.");
+    bypassBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::eqBypass);
+        bypassAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    bypassAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::eqBypass),
+        [this] (float v) { styleSeg (bypassBtn, v > 0.5f); });
+    bypassAtt->sendInitialUpdate();
+
+    addAndMakeVisible (scaleSel);
+    setHint (scaleSel, "Scale", "Vertical zoom of the gold band curves: Fine = 12 dB, Med = 18 dB, Wide = 24 dB of cut. Deep tips may go offscreen; dragging above the display still works.");
+    scaleSel.onChange = [this] (int i)
+    {
+        canvas.setDisplayScale (i == 0 ? 12.0f : i == 1 ? 18.0f : 24.0f);
+        processor.apvts.state.setProperty ("tailScale", i, nullptr);
+    };
+    {
+        const int i = (int) processor.apvts.state.getProperty ("tailScale", 2);
+        scaleSel.setSelected (i, false);
+        canvas.setDisplayScale (i == 0 ? 12.0f : i == 1 ? 18.0f : 24.0f);
+    }
 
     addAndMakeVisible (tailGateTg);
     setHint (tailGateTg, "Tail gate", juce::String::fromUTF8 ("When off, the kept bands ring continuously \xe2\x80\x94 including between hits, where they will rumble. Normally leave this on."));
@@ -392,24 +397,19 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
         bandBtns[b].onClick = [this, b] { selectBand (b); };
         addAndMakeVisible (bandBtns[b]);
 
-        dotBtns[b].setButtonText ({});
-        setHint (dotBtns[b], labs[b], "Enable / disable this keep band.");
-        dotBtns[b].onClick = [this, b]
+        bandSw[b].setOnColour (pal->band[b]);
+        setHint (bandSw[b], labs[b], "Enable / disable this keep band.");
+        bandSw[b].onChange = [this, b] (bool on)
         {
-            auto* p = processor.apvts.getParameter (eqids::onId (b));
-            onAtts[b]->setValueAsCompleteGesture (p->convertFrom0to1 (p->getValue()) > 0.5f ? 0.0f : 1.0f);
+            onAtts[b]->setValueAsCompleteGesture (on ? 1.0f : 0.0f);
         };
-        addAndMakeVisible (dotBtns[b]);
+        addAndMakeVisible (bandSw[b]);
         onAtts[b] = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (eqids::onId (b)),
-            [this, b] (float v)
-            {
-                dotBtns[b].setColour (juce::TextButton::buttonColourId, v > 0.5f ? pal->band[b] : pal->panel2);
-                dotBtns[b].repaint();
-            });
+            [this, b] (float v) { bandSw[b].setState (v > 0.5f, false); });
         onAtts[b]->sendInitialUpdate();
 
-        soloBtns[b].setButtonText ("S");
-        setHint (soloBtns[b], "Solo", juce::String::fromUTF8 ("Solo \xe2\x80\x94 audition just this band to hear what you're keeping."));
+        soloBtns[b].setButtonText ("SOLO");
+        setHint (soloBtns[b], "Solo", juce::String::fromUTF8 ("Audition ONLY this band's kept ring \xe2\x80\x94 no gate, no tail gate, no Amount \xe2\x80\x94 to find the right frequency."));
         soloBtns[b].onClick = [this, b]
         {
             processor.setSoloBand (processor.getSoloBand() == b ? -1 : b);
@@ -428,19 +428,27 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     widthK.setFormat ([] (float q) { return juce::String (q, q < 10.0f ? 2 : 1); });
     setHint (widthK, "Q", "Band width. Low Q = broad, keeps general body. High Q = narrow, rings just one note.");
     addAndMakeVisible (slopeK);
-    slopeK.setFormat ([] (float v) { return juce::String (v < 0.5f ? 6 : 12) + " dB/oct"; });
+    slopeK.setFormat ([] (float v)
+    {
+        static const int s[5] = { 6, 12, 24, 36, 48 };
+        return juce::String (s[juce::jlimit (0, 4, (int) std::lround (v))]) + " dB/oct";
+    });
     setHint (slopeK, "Slope", "How steeply frequencies beyond the cutoff stop ringing through.");
     addAndMakeVisible (ring);
-    ring.setReversed (true);
-    ring.setFormat ([] (float gdb)
-    {
-        const double k = 1.0 - std::pow (10.0, gdb / 20.0);
-        return k <= 0.002 ? juce::String::fromUTF8 ("\xe2\x80\x94")
-                          : juce::String (20.0 * std::log10 (k), 1) + " dB";
-    });
-    setHint (ring, "Ring level", "How loudly this band rings through during the tail, in dB relative to the original. Up = louder.");
+    ring.setFormat ([] (float u) { return juce::String (u, 1); });
+    setHint (ring, "Ring level", "How much this band rings through during the tail. 0 = nothing, 20 = maximum ring.");
 
-    for (auto& s : shapeBtns) addChildComponent (s);
+    addChildComponent (shapeSel);
+    setHint (shapeSel, "Shape", "Bell = classic smooth cut. Prop Q = tightens as it deepens. Shelf = flat-topped range at an even level.");
+    shapeSel.onChange = [this] (int i)
+    {
+        if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) i));
+            p->endChangeGesture();
+        }
+    };
 
     addAndMakeVisible (tailHold);
     tailHold.attach (ap.getParameter (ParamIDs::eqGateHold));
@@ -494,40 +502,13 @@ void TailStage::rebuildShapeSeg()
 {
     shapeAtt.reset();
     const bool isKeep = sel >= 2;
-    static const char* shapeNames[3] = { "Bell", "Prop Q", "Shelf" };
-    static const char* shapeHints[3] = {
-        "Bell \xe2\x80\x94 a classic smooth cut. High Q rings one note, low Q keeps broad body.",
-        "Proportional Q \xe2\x80\x94 a bell that tightens as the cut deepens: gentle when shallow, surgical when deep.",
-        "Band Shelf \xe2\x80\x94 a flat-topped range between two edges, kept at an even level." };
-
-    for (int i = 0; i < 3; ++i)
-    {
-        auto& b = shapeBtns[i];
-        b.setVisible (isKeep);          // LOWS/HIGHS use the Slope knob instead
-        if (isKeep)
-        {
-            b.setButtonText (shapeNames[i]);
-            setHint (b, shapeNames[i], juce::String::fromUTF8 (shapeHints[i]));
-            b.onClick = [this, i]
-            {
-                if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
-                {
-                    p->beginChangeGesture();
-                    p->setValueNotifyingHost (p->convertTo0to1 ((float) i));
-                    p->endChangeGesture();
-                }
-            };
-        }
-    }
+    shapeSel.setVisible (isKeep);       // LOWS/HIGHS use the Slope knob instead
     if (isKeep)
         if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
         {
-            shapeAtt = std::make_unique<juce::ParameterAttachment> (*p, [this] (float)
+            shapeAtt = std::make_unique<juce::ParameterAttachment> (*p, [this] (float v)
             {
-                auto* sp = processor.apvts.getParameter (eqids::shapeId (sel));
-                const int cur = (int) std::lround (sp->convertFrom0to1 (sp->getValue()));
-                for (int i = 0; i < 3; ++i)
-                    styleSeg (shapeBtns[i], i == cur);
+                shapeSel.setSelected (juce::roundToInt (v), false);
             });
             shapeAtt->sendInitialUpdate();
         }
@@ -555,6 +536,7 @@ void TailStage::paint (juce::Graphics& g)
     g.drawText ("KEEP BANDS", sc (11), bandLabelsY, sc (120), sc (12), juce::Justification::centredLeft);
     if (selIsKeep)
         g.drawText ("SHAPE", shapeX, bandLabelsY, sc (80), sc (12), juce::Justification::centredLeft);
+    g.drawText ("SCALE", sc (11), scaleLabelY, sc (52), sc (12), juce::Justification::centredLeft);
 }
 
 void TailStage::resized()
@@ -566,35 +548,61 @@ void TailStage::resized()
     freezeBtn.setBounds (head.removeFromRight (sc (62)));
     head.removeFromRight (sc (4));
     accumBtn.setBounds (head.removeFromRight (sc (88)));
+    head.removeFromRight (sc (7));
+    bypassBtn.setBounds (head.removeFromRight (sc (64)));
     header.setBounds (head);
     r.removeFromTop (sc (4));
 
     auto controls = r.removeFromBottom (sc (104));
     r.removeFromBottom (sc (8));
-    mon.setBounds (r.removeFromLeft (sc (26)));
+
+    // left column beside the canvas: SCALE selector on top, MON fader below
+    auto leftCol = r.removeFromLeft (sc (56));
+    scaleLabelY = leftCol.getY();
+    leftCol.removeFromTop (sc (14));
+    scaleSel.setBounds (leftCol.removeFromTop (sc (54)));
+    leftCol.removeFromTop (sc (6));
+    mon.setBounds (leftCol.withSizeKeepingCentre (sc (26), leftCol.getHeight()));
     r.removeFromLeft (sc (5));
     canvas.setBounds (r);
 
-    // Column widths shrink proportionally when the stage is narrower than the
-    // design width, so the TAIL meter always fits.
-    const float design = scf (244 + 13 + 212 + 6 + 86 + 13 + 142 + 6 + 36);
-    const float shrink = juce::jmin (1.0f, (float) controls.getWidth() / design);
+    // Three anchored groups: keep bands left, band settings centred, tail
+    // gate + meter right. Widths shrink proportionally when space is tight.
+    const float leftW = scf (244), centreW = scf (212 + 6 + 96), rightW = scf (142 + 6 + 36);
+    const float gap = scf (10);
+    const float shrink = juce::jmin (1.0f, (float) controls.getWidth() / (leftW + centreW + rightW + gap * 2));
     auto col = [&] (float px) { return (int) (scf (px) * shrink); };
 
     bandLabelsY = controls.getY();
-    auto strip = controls.removeFromLeft (col (244));
+    auto strip = juce::Rectangle<int> (controls.getX(), controls.getY(), (int) (leftW * shrink), controls.getHeight());
     strip.removeFromTop (sc (14));
     const int colW = strip.getWidth() / 7;
     for (int b = 0; b < 7; ++b)
     {
         const int x = strip.getX() + b * colW;
-        bandBtns[b].setBounds (x, strip.getY(), colW - sc (3), sc (22));
-        dotBtns[b].setBounds (x + sc (2), strip.getY() + sc (27), sc (13), sc (13));
-        soloBtns[b].setBounds (x + sc (17), strip.getY() + sc (26), sc (16), sc (14));
+        bandSw[b].setBounds (x + (colW - sc (20)) / 2, strip.getY(), sc (20), sc (10));
+        bandBtns[b].setBounds (x, strip.getY() + sc (13), colW - sc (3), sc (22));
+        soloBtns[b].setBounds (x, strip.getY() + sc (38), colW - sc (3), sc (13));
     }
-    controls.removeFromLeft (col (13));
 
-    auto bandGrp = controls.removeFromLeft (col (212));
+    auto right = juce::Rectangle<int> (controls.getRight() - (int) (rightW * shrink), controls.getY(),
+                                       (int) (rightW * shrink), controls.getHeight());
+    auto tailGrp = right.removeFromLeft (col (142));
+    tailGateTg.setBounds (tailGrp.removeFromTop (sc (14)));   // acts as the group header
+    const int tw = tailGrp.getWidth() / 2;
+    tailHold.setBounds (tailGrp.removeFromLeft (tw));
+    tailFade.setBounds (tailGrp.removeFromLeft (tw));
+    right.removeFromLeft (col (6));
+    tailMeter.setBounds (right.removeFromLeft (col (36)));
+
+    const int cw = (int) (centreW * shrink);
+    const int cx = juce::jlimit (strip.getRight() + (int) (gap * shrink),
+                                 juce::jmax (strip.getRight() + (int) (gap * shrink),
+                                             controls.getRight() - (int) (rightW * shrink) - (int) (gap * shrink) - cw),
+                                 controls.getX() + (controls.getWidth() - cw) / 2);
+    auto centre = juce::Rectangle<int> (cx, controls.getY(), cw, controls.getHeight());
+
+    auto bandGrp = centre.removeFromLeft (col (212));
     bandLabel.setFont (font (9.5f, true));
     bandLabel.setColour (juce::Label::textColourId, pal->faint);
     bandLabel.setBounds (bandGrp.removeFromTop (sc (14)));
@@ -605,22 +613,11 @@ void TailStage::resized()
     slopeK.setBounds (wkCell);                          // shares the Q knob's cell
     ring.setBounds (bandGrp.removeFromLeft (kw));
 
-    controls.removeFromLeft (col (6));
-    shapeX = controls.getX();
-    auto shapes = controls.removeFromLeft (col (86));
+    centre.removeFromLeft (col (6));
+    shapeX = centre.getX();
+    auto shapes = centre.removeFromLeft (col (96));
     shapes.removeFromTop (sc (14));
-    for (int i = 0; i < 3; ++i)
-        shapeBtns[i].setBounds (shapes.getX(), shapes.getY() + i * sc (26), shapes.getWidth(), sc (23));
-
-    controls.removeFromLeft (col (13));
-    auto tailGrp = controls.removeFromLeft (col (142));
-    tailGateTg.setBounds (tailGrp.removeFromTop (sc (14)));   // acts as the group header
-    const int tw = tailGrp.getWidth() / 2;
-    tailHold.setBounds (tailGrp.removeFromLeft (tw));
-    tailFade.setBounds (tailGrp.removeFromLeft (tw));
-
-    controls.removeFromLeft (col (6));
-    tailMeter.setBounds (controls.removeFromLeft (col (36)));
+    shapeSel.setBounds (shapes.withHeight (sc (78)));
 }
 
 //==============================================================================
@@ -701,18 +698,19 @@ void RightRail::resized()
     }
     r.removeFromBottom (sc (6));
 
-    auto meters = r.removeFromBottom (sc (126));
-    const int mw = sc (34);                             // OUT and GATE share one width
-    auto mrow = meters.withSizeKeepingCentre (mw * 2 + sc (7), meters.getHeight());
-    outMeter.setBounds (mrow.removeFromLeft (mw));
-    mrow.removeFromLeft (sc (7));
-    gateMeter.setBounds (mrow);
-    r.removeFromBottom (sc (6));
-
     amountVal.setFont (font (15.0f, true));
     amountVal.setColour (juce::Label::textColourId, pal->txt);
     amountVal.setBounds (r.removeFromBottom (sc (20)));
-    fader.setBounds (r.withSizeKeepingCentre (sc (52), r.getHeight()));
+    r.removeFromBottom (sc (4));
+
+    // fader and the OUT / GATE meters side by side, same height
+    const int mw = sc (34), rowW = sc (52) + sc (8) + mw * 2 + sc (7);
+    auto row = r.withSizeKeepingCentre (juce::jmin (rowW, r.getWidth()), r.getHeight());
+    fader.setBounds (row.removeFromLeft (sc (52)));
+    row.removeFromLeft (sc (8));
+    outMeter.setBounds (row.removeFromLeft (mw));
+    row.removeFromLeft (sc (7));
+    gateMeter.setBounds (row.removeFromLeft (mw));
 }
 
 //==============================================================================

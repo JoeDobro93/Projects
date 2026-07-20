@@ -1,5 +1,31 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v2.3 UI/QoL round (2026-07):** threshold default −40. **Ring level is now
+> 0–20 units** (param `notch*Gain` range 0..20, default 9.8; internal cut =
+> `mdd::ringToGainDb(u) = −2.4·u` — converted at every BandParams build site,
+> incl. TailCanvas::chainH and the solo path). Canvas gold curve/handles use a
+> **cut-depth axis: 0 at the bottom line → dispMax at top** with a SCALE
+> LightSelector (Fine/Med/Wide = 12/18/24 dB, persisted in state prop
+> "tailScale"); spectra keep the ±9/−54 axis; drag above the canvas reaches
+> ring max; internals mirror from the top. HPF/LPF slopes now
+> {6,12,24,36,48} dB/oct (EQProcessor::kMaxStages=4, Butterworth Q tables).
+> **Solo = kept ring**: out = dry − band(dry) via the band's real stages
+> (soloStages[4][2]), bypassing gate/tail/Amount. New widgets:
+> `ui::LightSelector` (LED + icon radio; filter/shape icons), `ui::MiniSwitch`
+> (band enables, above the band buttons; SOLO full-width below),
+> `ui::MiniSlider` (Gate history speed, 10–90 Hz timer). Knob drags are
+> velocity-sensitive (slow = 0.3×, base 300 px, shift 1600). Tail stage:
+> eqBypass Bypass button in header; bottom controls in three anchored groups
+> (bands left / band settings centred / tail gate+meter right, proportional
+> shrink fallback). Trigger: LightSelector for HP/LP/BP; stack order
+> Enabled/Link/**Learn** (bottom, `eqids::LearnButton` — accent when idle,
+> green while listening, 3 s auto-stop). Rail 190 wide: fader + OUT/GATE side
+> by side (AdvancedView 1200×830 min 940×700). Simple view 380×620 (min
+> 330×540): Resonance (=Focus) with Learn beneath, Reso Amt (=K1 ring),
+> Tail hold, and Kick/Snare/Toms factory-preset buttons. Factory presets
+> rebuilt (Default/Kick/Snare/Toms, PresetDefaults.h; applied via
+> `eqids::applyFactoryPreset`, threshold never touched).
+>
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
 > UI. (1) OPEN on fast RMS (one-pole, τ=clamp(rmsWindow/6, 0.5–3 ms)) OR slow

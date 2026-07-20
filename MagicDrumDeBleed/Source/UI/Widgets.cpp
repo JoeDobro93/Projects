@@ -174,19 +174,25 @@ void Knob::mouseDown (const juce::MouseEvent& e)
     if (valueBounds().contains (e.getPosition()))   // click the value → type it
         return;
     draggingKnob = true;
-    dragStartNorm = param->getValue();
-    dragStartY = e.getScreenY();
+    dragNorm = param->getValue();
+    lastDragY = e.getScreenY();
     att->beginGesture();
 }
 
 void Knob::mouseDrag (const juce::MouseEvent& e)
 {
     if (param == nullptr || ! draggingKnob) return;
-    const float sens = e.mods.isShiftDown() ? 900.0f : 190.0f;
-    float delta = (float) (dragStartY - e.getScreenY()) / sens;
+    const int dy = lastDragY - e.getScreenY();
+    if (dy == 0) return;
+    lastDragY = e.getScreenY();
+
+    // Velocity-sensitive: slow mouse movement gets much finer resolution.
+    const float speed = std::abs (dy) <= 2 ? 0.3f : std::abs (dy) <= 6 ? 0.65f : 1.0f;
+    const float sens = e.mods.isShiftDown() ? 1600.0f : 300.0f;
+    float delta = (float) dy * speed / sens;
     if (reversed) delta = -delta;
-    const float n = juce::jlimit (0.0f, 1.0f, dragStartNorm + delta);
-    att->setValueAsPartOfGesture (param->convertFrom0to1 (n));
+    dragNorm = juce::jlimit (0.0f, 1.0f, dragNorm + delta);
+    att->setValueAsPartOfGesture (param->convertFrom0to1 (dragNorm));
 }
 
 void Knob::mouseUp (const juce::MouseEvent& e)
@@ -448,6 +454,197 @@ void AmountFader::mouseUp (const juce::MouseEvent&)      { if (dragging) { att->
 void AmountFader::mouseDoubleClick (const juce::MouseEvent&)
 {
     att->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+}
+
+//==============================================================================
+static juce::Colour selColour (Knob::ColourId c)
+{
+    return c == Knob::tailClr ? pal->tail : c == Knob::openClr ? pal->open : pal->accent;
+}
+
+static void drawSelectorIcon (juce::Graphics& g, LightSelector::Icon ic,
+                              juce::Rectangle<float> b, juce::Colour col)
+{
+    const float w = b.getWidth(), h = b.getHeight(), x = b.getX(), y = b.getY();
+    juce::Path p;
+    switch (ic)
+    {
+        case LightSelector::iconHP:
+            p.startNewSubPath (x, y + h);
+            p.quadraticTo (x + w * 0.30f, y + h, x + w * 0.45f, y);
+            p.lineTo (x + w, y);
+            break;
+        case LightSelector::iconLP:
+            p.startNewSubPath (x, y);
+            p.lineTo (x + w * 0.55f, y);
+            p.quadraticTo (x + w * 0.70f, y + h, x + w, y + h);
+            break;
+        case LightSelector::iconBP:
+            p.startNewSubPath (x, y + h);
+            p.quadraticTo (x + w * 0.38f, y + h, x + w * 0.5f, y);
+            p.quadraticTo (x + w * 0.62f, y + h, x + w, y + h);
+            break;
+        case LightSelector::iconBell:
+            p.startNewSubPath (x, y + h);
+            p.cubicTo (x + w * 0.32f, y + h, x + w * 0.28f, y, x + w * 0.5f, y);
+            p.cubicTo (x + w * 0.72f, y, x + w * 0.68f, y + h, x + w, y + h);
+            break;
+        case LightSelector::iconPropQ:
+            p.startNewSubPath (x, y + h);
+            p.lineTo (x + w * 0.36f, y + h);
+            p.cubicTo (x + w * 0.46f, y + h, x + w * 0.44f, y, x + w * 0.5f, y);
+            p.cubicTo (x + w * 0.56f, y, x + w * 0.54f, y + h, x + w * 0.64f, y + h);
+            p.lineTo (x + w, y + h);
+            break;
+        case LightSelector::iconShelf:
+            p.startNewSubPath (x, y + h);
+            p.lineTo (x + w * 0.28f, y);
+            p.lineTo (x + w * 0.72f, y);
+            p.lineTo (x + w, y + h);
+            break;
+        case LightSelector::iconNone:
+        default: return;
+    }
+    g.setColour (col);
+    g.strokePath (p, juce::PathStrokeType (1.4f * scale, juce::PathStrokeType::curved,
+                                           juce::PathStrokeType::rounded));
+}
+
+LightSelector::LightSelector (std::vector<Option> o, Knob::ColourId c, bool horiz)
+    : opts (std::move (o)), clr (c), horizontal (horiz) {}
+
+juce::Rectangle<float> LightSelector::cell (int i) const
+{
+    auto r = getLocalBounds().toFloat();
+    const float n = (float) juce::jmax (1, (int) opts.size());
+    return horizontal ? r.withWidth (r.getWidth() / n).translated (r.getWidth() / n * (float) i, 0)
+                      : r.withHeight (r.getHeight() / n).translated (0, r.getHeight() / n * (float) i);
+}
+
+void LightSelector::setSelected (int i, bool notify)
+{
+    i = juce::jlimit (0, (int) opts.size() - 1, i);
+    if (sel != i)
+    {
+        sel = i;
+        repaint();
+    }
+    if (notify && onChange) onChange (sel);
+}
+
+void LightSelector::paint (juce::Graphics& g)
+{
+    const auto on = selColour (clr);
+    for (int i = 0; i < (int) opts.size(); ++i)
+    {
+        auto r = cell (i).reduced (scf (1.0f));
+        const bool isSel = i == sel;
+        const float led = scf (7.0f);
+        auto lr = juce::Rectangle<float> (led, led).withCentre ({ r.getX() + led * 0.5f + scf (2.0f), r.getCentreY() });
+        if (isSel)
+        {
+            g.setColour (on.withAlpha (0.35f));
+            g.fillEllipse (lr.expanded (scf (2.5f)));
+            g.setColour (on);
+            g.fillEllipse (lr);
+        }
+        else
+        {
+            g.setColour (pal->panel2); g.fillEllipse (lr);
+            g.setColour (pal->knobEdge); g.drawEllipse (lr, 1.0f);
+        }
+        float tx = lr.getRight() + scf (5.0f);
+        if (opts[(size_t) i].icon != iconNone)
+        {
+            auto ib = juce::Rectangle<float> (tx, r.getCentreY() - scf (4.5f), scf (17.0f), scf (9.0f));
+            drawSelectorIcon (g, opts[(size_t) i].icon, ib, isSel ? on : pal->dim);
+            tx = ib.getRight() + scf (5.0f);
+        }
+        g.setColour (isSel ? pal->txt : pal->dim);
+        g.setFont (font (10.5f));
+        g.drawText (opts[(size_t) i].label, (int) tx, (int) r.getY(),
+                    (int) (r.getRight() - tx), (int) r.getHeight(), juce::Justification::centredLeft);
+    }
+}
+
+void LightSelector::mouseUp (const juce::MouseEvent& e)
+{
+    for (int i = 0; i < (int) opts.size(); ++i)
+        if (cell (i).contains (e.position))
+        {
+            setSelected (i, true);
+            return;
+        }
+}
+
+//==============================================================================
+void MiniSwitch::setState (bool on, bool notify)
+{
+    if (state != on)
+    {
+        state = on;
+        repaint();
+    }
+    if (notify && onChange) onChange (state);
+}
+
+void MiniSwitch::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    const auto on = onColour.isTransparent() ? pal->accent : onColour;
+    g.setColour (state ? on.withAlpha (0.35f) : pal->panel2);
+    g.fillRoundedRectangle (r, r.getHeight() * 0.5f);
+    g.setColour (state ? on : pal->knobEdge);
+    g.drawRoundedRectangle (r, r.getHeight() * 0.5f, 1.0f);
+    const float d = r.getHeight() - scf (3.0f);
+    const float cx = state ? r.getRight() - d * 0.5f - scf (1.5f) : r.getX() + d * 0.5f + scf (1.5f);
+    g.setColour (state ? on : pal->knob);
+    g.fillEllipse (cx - d * 0.5f, r.getCentreY() - d * 0.5f, d, d);
+}
+
+void MiniSwitch::mouseUp (const juce::MouseEvent& e)
+{
+    if (getLocalBounds().contains (e.getPosition()))
+        setState (! state, true);
+}
+
+//==============================================================================
+MiniSlider::MiniSlider (float defaultValue) : value (defaultValue), def (defaultValue)
+{
+    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+}
+
+void MiniSlider::setFromX (float x)
+{
+    const float inset = scf (5.0f);
+    value = juce::jlimit (0.0f, 1.0f, (x - inset) / juce::jmax (1.0f, (float) getWidth() - inset * 2));
+    if (onChange) onChange (value);
+    repaint();
+}
+
+void MiniSlider::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    const float inset = scf (5.0f);
+    auto track = juce::Rectangle<float> (r.getX() + inset, r.getCentreY() - scf (2.0f),
+                                         r.getWidth() - inset * 2, scf (4.0f));
+    g.setColour (pal->panel2); g.fillRoundedRectangle (track, 2.0f);
+    g.setColour (pal->line);   g.drawRoundedRectangle (track, 2.0f, 1.0f);
+    g.setColour (pal->accent.withAlpha (0.8f));
+    g.fillRoundedRectangle (track.withWidth (track.getWidth() * value), 2.0f);
+    const float cx = track.getX() + track.getWidth() * value;
+    auto thumb = juce::Rectangle<float> (scf (7.0f), scf (11.0f)).withCentre ({ cx, r.getCentreY() });
+    g.setColour (pal->knob);     g.fillRoundedRectangle (thumb, 2.0f);
+    g.setColour (pal->knobEdge); g.drawRoundedRectangle (thumb, 2.0f, 1.0f);
+}
+
+void MiniSlider::mouseDown (const juce::MouseEvent& e)        { setFromX (e.position.x); }
+void MiniSlider::mouseDrag (const juce::MouseEvent& e)        { setFromX (e.position.x); }
+void MiniSlider::mouseDoubleClick (const juce::MouseEvent&)
+{
+    value = def;
+    if (onChange) onChange (value);
+    repaint();
 }
 
 //==============================================================================

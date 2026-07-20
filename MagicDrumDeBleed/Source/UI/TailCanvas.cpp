@@ -21,11 +21,11 @@ namespace
             bp.enabled = true;
             bp.freqHz  = val (freqP[b]);
             bp.q       = b >= 2 ? val (qP[b]) : 0.707;
-            bp.gainDb  = b >= 2 ? val (gainP[b]) : 0.0;
+            bp.gainDb  = b >= 2 ? mdd::ringToGainDb (val (gainP[b])) : 0.0;
             bp.shape   = (int) val (shapeP[b]);
             bp.slope   = bp.shape;
 
-            mdd::BiquadFilter::Coeffs cs[2];
+            mdd::BiquadFilter::Coeffs cs[mdd::EQProcessor::kMaxStages];
             const int kind = b == 0 ? 0 : (b == 1 ? 1 : 2);
             const int n = mdd::EQProcessor::computeCoefficients (bp, kind, sr, cs);
             for (int s = 0; s < n; ++s)
@@ -197,8 +197,8 @@ void TailCanvas::paint (juce::Graphics& g)
         }
     }
     g.setColour (pal->line.withAlpha (0.3f));
-    for (int d = 0; d >= -48; d -= 12)
-        g.drawHorizontalLine ((int) dyy ((float) d, h), 0.0f, w);
+    for (int q = 1; q <= 3; ++q)
+        g.drawHorizontalLine ((int) (h * (float) q / 4.0f), 0.0f, w);
 
     // keep the spectral layers inside the plot (out of the label strip)
     g.reduceClipRegion (0, 0, (int) w, (int) h);
@@ -232,14 +232,15 @@ void TailCanvas::paint (juce::Graphics& g)
     if (showDry)  layer (false, juce::Colour (0x574aa8e0), juce::Colour (0x124aa8e0), juce::Colour (0x8c4aa8e0));
     if (showKept) layer (true,  juce::Colour (0x9ee07e2a), juce::Colour (0x29e07e2a), juce::Colour (0xe6f0963c));
 
-    // gold band curve: the internal cancellation curve mirrored vertically —
-    // identical shape to "Show internals", peaking up where the filter cuts
-    auto flipY = [&] (double db) { return h - dyy ((float) db, h); };
+    // gold band curve: cut depth v = −hDb on a 0..dispMax axis, 0 at the
+    // bottom line. Identical shape to "Show internals", mirrored. Deep tips
+    // clip offscreen (normal EQ behaviour).
+    auto goldY = [&] (double db) { return h * (1.0f - (float) (-db) / dispMax); };
     {
         juce::Path p;
         for (int i = 0; i < kN; ++i)
         {
-            const float x = fx (freqs[i], w), y = (float) flipY (hDb[i]);
+            const float x = fx (freqs[i], w), y = (float) goldY (hDb[i]);
             i == 0 ? p.startNewSubPath (x, y) : p.lineTo (x, y);
         }
         g.setColour (pal->gold);
@@ -250,7 +251,7 @@ void TailCanvas::paint (juce::Graphics& g)
         juce::Path p;
         for (int i = 0; i < kN; ++i)
         {
-            const float x = fx (freqs[i], w), y = dyy ((float) hDb[i], h);
+            const float x = fx (freqs[i], w), y = h * (float) (-hDb[i]) / dispMax;
             i == 0 ? p.startNewSubPath (x, y) : p.lineTo (x, y);
         }
         const float dash[2] = { 4.0f, 3.0f };
@@ -272,10 +273,10 @@ void TailCanvas::paint (juce::Graphics& g)
         if (val (onP[b]) < 0.5) { handleX[b] = -999; continue; }
         anyOn = true;
         const double f = juce::jlimit (20.0, 20000.0, val (freqP[b]));
-        // every handle rides the flipped gold curve at its own frequency
+        // every handle rides the gold curve at its own frequency
         const int idx = (int) juce::jlimit (0.0, (double) (kN - 1),
                                             std::log (f / 20.0) / std::log (1000.0) * (kN - 1));
-        const float y = juce::jlimit (0.0f, h, (float) flipY (hDb[idx]));
+        const float y = juce::jlimit (0.0f, h, (float) goldY (hDb[idx]));
         const float x = fx (f, w);
         handleX[b] = x; handleY[b] = y;
 
@@ -370,11 +371,12 @@ void TailCanvas::mouseDrag (const juce::MouseEvent& e)
 
     if (auto* gp = gainP[drag])
     {
-        // The gold curve is the internal curve flipped, so the cursor height
-        // maps straight onto the internal cut depth at the peak.
-        const float yr = juce::jlimit (0.0f, area.getHeight(), e.position.y - area.getY());
-        const float depth = kTopDb - (area.getHeight() - yr) / area.getHeight() * (kTopDb - kBotDb);
-        gp->setValueNotifyingHost (gp->convertTo0to1 (juce::jlimit (-48.0f, -0.5f, depth)));
+        // Cursor height maps onto the display's cut-depth axis; above the
+        // canvas keeps increasing the ring up to the knob's maximum.
+        const float yr = e.position.y - area.getY();          // may be negative
+        const float depth = (1.0f - yr / area.getHeight()) * dispMax;
+        const float ring = (float) mdd::gainDbToRing (-juce::jmax (0.0f, depth));
+        gp->setValueNotifyingHost (gp->convertTo0to1 (juce::jlimit (0.0f, 20.0f, ring)));
     }
 }
 

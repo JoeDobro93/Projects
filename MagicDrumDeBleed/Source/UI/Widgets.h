@@ -59,10 +59,68 @@ private:
     juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::ParameterAttachment> att;
     std::unique_ptr<juce::TextEditor> edit;               // lazily created, reused
-    float dragStartNorm = 0.0f;
-    int dragStartY = 0;
+    float dragNorm = 0.0f;
+    int lastDragY = 0;
     bool draggingKnob = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Knob)
+};
+
+//==============================================================================
+/*  Radio selector with LED lights: one row (or column) per option, each with
+    a light + optional filter/shape icon + label. */
+class LightSelector : public juce::Component
+{
+public:
+    enum Icon { iconNone = 0, iconHP, iconLP, iconBP, iconBell, iconPropQ, iconShelf };
+    struct Option { juce::String label; Icon icon; };
+
+    LightSelector (std::vector<Option> options, Knob::ColourId clr = Knob::accentClr,
+                   bool horizontal = false);
+    std::function<void (int)> onChange;
+    void setSelected (int i, bool notify);
+    int  getSelected() const                  { return sel; }
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    juce::Rectangle<float> cell (int i) const;
+    std::vector<Option> opts;
+    Knob::ColourId clr;
+    bool horizontal;
+    int sel = 0;
+};
+
+//==============================================================================
+/*  Tiny pill switch: dark knob left = off, highlighted knob right = on. */
+class MiniSwitch : public juce::Component
+{
+public:
+    std::function<void (bool)> onChange;
+    void setOnColour (juce::Colour c)          { onColour = c; repaint(); }
+    void setState (bool on, bool notify);
+    bool getState() const                      { return state; }
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    juce::Colour onColour;
+    bool state = false;
+};
+
+//==============================================================================
+/*  Small horizontal 0..1 slider (display/update-rate style controls).
+    Double-click resets to the default value. */
+class MiniSlider : public juce::Component
+{
+public:
+    explicit MiniSlider (float defaultValue = 0.5f);
+    std::function<void (float)> onChange;
+    float getValue() const                     { return value; }
+    void paint (juce::Graphics& g) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+private:
+    void setFromX (float x);
+    float value, def;
 };
 
 //==============================================================================
