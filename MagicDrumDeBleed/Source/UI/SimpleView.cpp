@@ -7,7 +7,7 @@ using namespace ui;
 class SimpleView::DrumButton : public juce::Button
 {
 public:
-    enum Kind { kick = 0, snare, toms };
+    enum Kind { def = 0, kick, snare, toms };
     DrumButton (Kind k, const juce::String& name) : juce::Button (name), kind (k) {}
 
     static constexpr float kIconAspect = 1.15f;
@@ -41,7 +41,23 @@ private:
         const auto line = pal->dim;
         const auto strong = pal->txt.withAlpha (0.85f);
 
-        if (kind == kick)
+        if (kind == def)
+        {
+            // crossed drumsticks — the neutral "any drum" starting point
+            auto c = b.getCentre().translated (0.0f, b.getHeight() * 0.04f);
+            const float L = juce::jmin (b.getWidth() * 0.87f, b.getHeight()) * 0.5f;
+            const float tipR = L * 0.13f;
+            g.setColour (strong);
+            for (int side = 0; side < 2; ++side)
+            {
+                const float dir = side == 0 ? -1.0f : 1.0f;
+                const juce::Point<float> tip  (c.x + dir * L * 0.78f, c.y - L * 0.80f);
+                const juce::Point<float> butt (c.x - dir * L * 0.56f, c.y + L * 0.94f);
+                g.drawLine ({ butt, tip }, lw * 1.1f);
+                g.fillEllipse (tip.x - tipR, tip.y - tipR, tipR * 2, tipR * 2);
+            }
+        }
+        else if (kind == kick)
         {
             // front view: shell circle, head hoop, radial lugs, beater + pedal
             auto c = b.getCentre().translated (0.0f, -b.getHeight() * 0.04f);
@@ -151,8 +167,8 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the plugin on this drum's dominant frequency.");
     addAndMakeVisible (learnBtn);
 
-    static const char* presetNames[3] = { "Kick", "Snare", "Toms" };
-    for (int i = 0; i < 3; ++i)
+    static const char* presetNames[4] = { "Default", "Kick", "Snare", "Toms" };
+    for (int i = 0; i < 4; ++i)
     {
         presetBtns[i] = std::make_unique<DrumButton> ((DrumButton::Kind) i, presetNames[i]);
         presetBtns[i]->setButtonText (presetNames[i]);
@@ -222,10 +238,10 @@ void SimpleView::resized()
             ga.addLineOfText (f, b->getButtonText(), 0.0f, 0.0f);
             widest = juce::jmax (widest, ga.getBoundingBox (0, -1, true).getWidth());
         }
-        const int bw = juce::jmin ((int) widest + sc (20), (contentW - sc (12)) / 3);
-        presetBtns[0]->setBounds (cx0, prow.getY(), bw, prow.getHeight());
-        presetBtns[1]->setBounds (cx0 + (contentW - bw) / 2, prow.getY(), bw, prow.getHeight());
-        presetBtns[2]->setBounds (cx0 + contentW - bw, prow.getY(), bw, prow.getHeight());
+        const int bw = juce::jmin ((int) widest + sc (20), (contentW - sc (18)) / 4);
+        for (int i = 0; i < 4; ++i)
+            presetBtns[i]->setBounds (cx0 + juce::roundToInt ((contentW - bw) * (float) i / 3.0f),
+                                      prow.getY(), bw, prow.getHeight());
     }
 
     advancedBtn.setBounds (r.removeFromBottom (sc (26)));

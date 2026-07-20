@@ -120,19 +120,17 @@ int EQProcessor::computeCoefficients (const BandParams& p, int bandKind,
             double ctr = 0.0, cg = 0.0;
             for (int it = 0; it < 14; ++it)
             {
-                // Corner Q sizes each shelf's corner lobe to cancel its own
-                // slow S=1 tail, so the response returns to 0 dB within about
-                // an octave of the edges instead of drifting for several:
-                // 0.80 is the wide-band optimum; narrow bands and hard-driven
-                // shelves cancel best slightly higher (any leftover there is
-                // a sub-0.4 dB boost, which the cut-depth canvas clips at the
-                // zero line, rather than a visible spurious cut).
-                const double sq = std::min (0.90, 0.80 + 0.08 * std::max (0.0, 1.0 - bw)
-                                                + 0.02 * std::max (0.0, -gp - 6.0));
-                out[0] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp, sq);
-                out[1] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp, sq);
-                out[2] = out[0];
-                out[3] = out[1];
+                // Each corner is a 4th-order maximally-flat (Butterworth-
+                // aligned) shelf: two biquads at the same corner, Qs 0.5412
+                // and 1.3066, each carrying half the corner's drive. Monotone
+                // by construction — no resonant corner lobes pushing the far
+                // side of the flanks the wrong way — and the higher-order
+                // knee settles to 0 dB within about an octave instead of the
+                // multi-octave tail a plain S=1 shelf leaves.
+                out[0] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp, 0.54119610);
+                out[1] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp, 0.54119610);
+                out[2] = BiquadFilter::makeHighShelf (sampleRate, fLo,  gp, 1.30656296);
+                out[3] = BiquadFilter::makeHighShelf (sampleRate, fHi, -gp, 1.30656296);
                 ctr = pairDbAt (p.freqHz);
                 const double sag = ctr - 0.5 * (pairDbAt (p.freqHz * fSh) + pairDbAt (p.freqHz / fSh));
                 cg = std::clamp (-sag * flatGain, -6.5, 6.5);

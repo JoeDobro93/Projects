@@ -31,7 +31,7 @@ private:
              tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     eqids::LearnButton learnBtn { processor };
     class DrumButton;
-    std::unique_ptr<juce::Button> presetBtns[3];
+    std::unique_ptr<juce::Button> presetBtns[4];
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
     std::unique_ptr<juce::ParameterAttachment> amtAtt;
     int amountX = 0, amountY = 0;

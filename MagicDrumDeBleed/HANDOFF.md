@@ -83,6 +83,24 @@
 > under the preset row (member `divider`, spans the content rect), gap
 > 10→22; 380×**666** min 330×**582** (snapshot size-check + render sizes
 > now read the SimpleView constants).
+> **v2.3.7 (Butterworth corners + Default preset):** the user-visible
+> corner ripple ("middle pushed down, sides pushed the other way") was the
+> v2.3.6 resonant corner Q — its tail-cancel lobes reach +0.85 dB just
+> past the flanks at deep/wide settings, in a zone no metric covered
+> (plugcheck now has a "boost" column, edge−0.2..edge+1.2 oct). Fix per
+> the higher-order-shelving literature (Holters/Zölzer): each corner is a
+> **4th-order maximally-flat shelf** — two biquads at the same corner
+> freq, Qs 0.54119610/1.30656296, half the drive each (out[0..3] all
+> distinct now); the corner-Q formula is deleted. Monotone flanks: boost
+> ≤0.13 dB worst-case (0.00 for q≤0.5), far residue ≤0.03 at −8 dB and
+> ≤0.16 through −20 dB, plateaus wider still (1.16/1.04/0.92 oct at Q1
+> −2/−3/−5). Remaining deep-setting (−24 and below) far residue
+> ~0.3–0.7 dB is the *monotone* skirt of the band-Q remainder notch —
+> narrowing it (q·1.4..1.8) contains it but shrinks the max-depth cut
+> width, so band-Q is deliberately kept (small Q must still reach real
+> notches). Simple view: 4th preset button **Default** (crossed
+> drumsticks icon, leftmost; presetBtns[4], DrumButton::def; row is
+> equal-width buttons justified at cx0 + i·(contentW−bw)/3).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
