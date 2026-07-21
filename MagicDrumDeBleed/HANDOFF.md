@@ -259,6 +259,19 @@
 > HIGHS→"HP" — deliberately INVERTED from the internal parallel-path
 > filter kinds (band 0 = HPF on the cancellation copy = keeps lows =
 > LP of the KEPT signal); canvas empty-state text updated.
+> **v2.5.2 (history polish):** gate knob column 212→140 (history stretches
+> into the old MIDI-toggle space). Trace LED toggles above the chart:
+> Trigger (bright fast) / Smoothed (blue) / Off-band (orange) —
+> showTrig/showSmooth/showOff, not persisted. New `ui::SnowButton`
+> (icon-only snowflake toggle, panel2 backing): freezes the history
+> (skips hist.push) and REPLACES the TAIL header Freeze text button,
+> overlaying each display's top-right corner (TailCanvas legend kx
+> 110→136 to clear it). History speed top half now 90·4^(2v−1) → max
+> 360 Hz (bottom/middle unchanged 30/90). Gate/tail backgrounds use the
+> REAL envelopes: Sample gained o01/t01; tail drawn under at alpha
+> 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
+> fades the green to uncover the tail. LevelMeter value text shows the
+> PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

@@ -246,6 +246,37 @@ void Knob::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+SnowButton::SnowButton() : juce::Button ("Freeze")
+{
+    setClickingTogglesState (true);
+}
+
+void SnowButton::paintButton (juce::Graphics& g, bool over, bool)
+{
+    auto b = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (pal->panel2.withAlpha (getToggleState() || over ? 0.95f : 0.55f));
+    g.fillRoundedRectangle (b, 4.0f);
+    if (getToggleState())
+    {
+        g.setColour (pal->accent.withAlpha (0.9f));
+        g.drawRoundedRectangle (b, 4.0f, 1.0f);
+    }
+    g.setColour (getToggleState() ? pal->accent : over ? pal->txt : pal->dim);
+    const auto c = b.getCentre();
+    const float R = b.getWidth() * 0.30f, lw = juce::jmax (1.0f, scf (1.1f));
+    for (int i = 0; i < 6; ++i)
+    {
+        const float a = juce::MathConstants<float>::pi / 3.0f * (float) i;
+        const juce::Point<float> dir (std::cos (a), std::sin (a));
+        g.drawLine ({ c, c + dir * R }, lw);
+        const auto mid = c + dir * (R * 0.55f);          // side branches
+        for (const float ba : { a + 0.9f, a - 0.9f })
+            g.drawLine (mid.x, mid.y,
+                        mid.x + std::cos (ba) * R * 0.32f, mid.y + std::sin (ba) * R * 0.32f, lw * 0.9f);
+    }
+}
+
+//==============================================================================
 LevelMeter::LevelMeter (juce::String cap, std::function<float()> get,
                         juce::RangedAudioParameter* thr, bool sCap, bool sVal)
     : caption (std::move (cap)), getDb (std::move (get)), threshold (thr),
@@ -258,7 +289,7 @@ void LevelMeter::timerCallback()
 {
     const float v = juce::jlimit (-90.0f, 6.0f, getDb());
     shown = v > shown ? v : shown + 0.12f * (v - shown);
-    if (v >= pk) { pk = v; pkT = 1.0f; }
+    if (v >= pk) { pk = v; pkT = 1.6f; }
     else if ((pkT -= 1.0f / 30.0f) <= 0.0f) pk = juce::jmax (v, pk - 0.9f);
     repaint();
 }
@@ -282,7 +313,8 @@ void LevelMeter::paint (juce::Graphics& g)
         g.drawSingleLineText (caption, (int) cr.getCentreX(), (int) cr.getBottom() - sc (3),
                               juce::Justification::horizontallyCentred);
     }
-    juce::String valTxt = shown <= -59.5f ? juce::String::fromUTF8 ("-\xe2\x88\x9e") : juce::String (shown, 1);
+    const float shownVal = pk > -59.5f ? pk : shown;   // the peak line's value
+    juce::String valTxt = shownVal <= -59.5f ? juce::String::fromUTF8 ("-\xe2\x88\x9e") : juce::String (shownVal, 1);
     if (showValue)
     {
         g.setFont (font (9.5f));

@@ -148,6 +148,15 @@ private:
 };
 
 //==============================================================================
+/*  Icon-only freeze toggle: a snowflake meant to overlay a display corner. */
+class SnowButton : public juce::Button
+{
+public:
+    SnowButton();
+    void paintButton (juce::Graphics& g, bool over, bool down) override;
+};
+
+//==============================================================================
 /*  Vertical level meter, −60..0 dB, fill from bottom, peak-hold line, optional
     draggable threshold line (dashed, warn colour). */
 class LevelMeter : public juce::Component, private juce::Timer

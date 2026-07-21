@@ -381,7 +381,7 @@ void TailCanvas::paint (juce::Graphics& g)
                 juce::Justification::centredLeft);
     // key (top-right) — the chips are click-toggles for their layers
     g.setFont (font (10.0f));
-    const int kx = getWidth() - sc (110);
+    const int kx = getWidth() - sc (136);   // leaves room for the freeze overlay
     dryLegend  = { kx, sc (3), sc (44), sc (16) };
     keptLegend = { kx + sc (48), sc (3), sc (50), sc (16) };
     g.setColour (juce::Colour (0x8c4aa8e0).withMultipliedAlpha (showDry ? 1.0f : 0.28f));

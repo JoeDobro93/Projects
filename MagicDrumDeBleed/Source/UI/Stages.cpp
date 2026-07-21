@@ -240,7 +240,28 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
     speedSlider.onChange = [this] (float v)
-        { startTimerHz (juce::roundToInt (30.0f * std::pow (9.0f, v))); };
+    {
+        const float hz = v < 0.5f ? 30.0f * std::pow (9.0f, v)
+                                  : 90.0f * std::pow (4.0f, 2.0f * v - 1.0f);
+        startTimerHz (juce::roundToInt (hz));
+    };
+
+    auto traceToggle = [this] (ui::LightToggle& t, bool& flag, const char* title, const char* hint)
+    {
+        t.setState (true);
+        setHint (t, title, hint);
+        t.onClick = [this, &t, &flag] { flag = ! flag; t.setState (flag); repaint(); };
+        addAndMakeVisible (t);
+    };
+    traceToggle (trigTg, showTrig, "Trigger",
+                 "The fast opening detector (bright trace) - the level that actually fires the gate.");
+    traceToggle (smoothTg, showSmooth, "Smoothed",
+                 "The smoothed detector (blue) - Smoothing's averaged level; it closes the gate and is compared to the Threshold.");
+    traceToggle (offTg, showOff, "Off-band",
+                 "Everything OUTSIDE the trigger filter's band (orange) - what Selectivity compares against.");
+
+    addAndMakeVisible (histFreeze);
+    setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
 
     dimAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
         [this] (float v)
@@ -261,10 +282,13 @@ void GateStage::timerCallback()
 {
     state = TailCanvas::gateState (processor, open01, tail01);
 
-    hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
-                      processor.getOffbandDb(), state, processor.getMidiForced() });
-    if ((int) hist.size() > kHist)
-        hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
+    if (! histFreeze.getToggleState())
+    {
+        hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
+                          processor.getOffbandDb(), open01, tail01, state, processor.getMidiForced() });
+        if ((int) hist.size() > kHist)
+            hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
+    }
 
     auto* p = processor.apvts.getParameter (ParamIDs::lookahead);
     latencyText = "adds " + juce::String ((int) p->convertFrom0to1 (p->getValue())) + " ms latency";
@@ -299,12 +323,18 @@ void GateStage::paint (juce::Graphics& g)
         const float cw = cv.getWidth() / (float) kHist;
         for (int i = 0; i < n; ++i)
         {
-            if (hist[(size_t) i].state == 0) continue;
-            g.setColour (hist[(size_t) i].state == 2
-                             ? (hist[(size_t) i].forced ? pal->accent.withAlpha (0.26f)
-                                                        : pal->open.withAlpha (0.20f))
-                             : pal->tail.withAlpha (0.14f));
-            g.fillRect (cv.getRight() - (float) (n - i) * cw, cv.getY(), cw + 0.6f, cv.getHeight());
+            const auto& s = hist[(size_t) i];
+            const float x = cv.getRight() - (float) (n - i) * cw;
+            if (s.t01 > 0.004f)                          // tail envelope underneath
+            {
+                g.setColour (pal->tail.withAlpha (0.16f * s.t01));
+                g.fillRect (x, cv.getY(), cw + 0.6f, cv.getHeight());
+            }
+            if (s.o01 > 0.004f)                          // gate on top, fading with release
+            {
+                g.setColour ((s.forced ? pal->accent : pal->open).withAlpha (0.24f * s.o01));
+                g.fillRect (x, cv.getY(), cw + 0.6f, cv.getHeight());
+            }
         }
         auto yFor = [&] (float db) { return cv.getBottom() - juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f) * cv.getHeight(); };
         // threshold dashes + the close level (threshold - hysteresis) beneath
@@ -337,15 +367,24 @@ void GateStage::paint (juce::Graphics& g)
         }
         fill.lineTo (cv.getRight(), cv.getBottom());
         fill.closeSubPath();
-        g.setColour (pal->accent.withAlpha (0.22f)); g.fillPath (fill);
-        g.setColour (pal->accent);                   g.strokePath (line, juce::PathStrokeType (1.4f));
+        if (showSmooth)
+        {
+            g.setColour (pal->accent.withAlpha (0.22f)); g.fillPath (fill);
+            g.setColour (pal->accent);                   g.strokePath (line, juce::PathStrokeType (1.4f));
+        }
         // off-band level — the Selectivity reference (tune it by eye: your
         // drum lifts the bright trace above this, other drums the reverse)
-        g.setColour (pal->tail.withAlpha (0.6f));
-        g.strokePath (offLine, juce::PathStrokeType (0.9f));
+        if (showOff)
+        {
+            g.setColour (pal->tail.withAlpha (0.6f));
+            g.strokePath (offLine, juce::PathStrokeType (0.9f));
+        }
         // the fast opening detector: what actually fires the gate
-        g.setColour (pal->accent.interpolatedWith (pal->txt, 0.65f).withAlpha (0.85f));
-        g.strokePath (fastLine, juce::PathStrokeType (0.9f));
+        if (showTrig)
+        {
+            g.setColour (pal->accent.interpolatedWith (pal->txt, 0.65f).withAlpha (0.85f));
+            g.strokePath (fastLine, juce::PathStrokeType (0.9f));
+        }
     }
     g.setColour (pal->line); g.drawRoundedRectangle (cv, 4.0f, 1.0f);
     g.setColour (pal->faint); g.setFont (font (10.5f));
@@ -395,7 +434,7 @@ void GateStage::resized()
     header.setBounds (head);
     r.removeFromTop (sc (7));
 
-    auto knobs = r.removeFromLeft (sc (212));
+    auto knobs = r.removeFromLeft (sc (140));
     knobs.removeFromTop (sc (2));
     auto krow1 = knobs.removeFromTop (sc (84));
     lookahead.setBounds (krow1.removeFromLeft (sc (70)));
@@ -407,11 +446,16 @@ void GateStage::resized()
     r.removeFromLeft (sc (13));
     stateArea = r.removeFromRight (sc (124));
     r.removeFromRight (sc (8));
+    auto ctop = r.removeFromTop (sc (18));              // trace toggles above the chart
+    trigTg.setBounds (ctop.removeFromLeft (sc (66)));
+    smoothTg.setBounds (ctop.removeFromLeft (sc (80)));
+    offTg.setBounds (ctop.removeFromLeft (sc (76)));
     auto scol = r.removeFromRight (sc (16));
     speedLabelArea = r.removeFromRight (sc (12));
     r.removeFromRight (sc (2));
     canvasArea = r;
     speedSlider.setBounds (scol.reduced (0, sc (2)));
+    histFreeze.setBounds (canvasArea.getRight() - sc (24), canvasArea.getY() + sc (5), sc (19), sc (19));
 }
 
 //==============================================================================
@@ -467,8 +511,7 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
 
     addAndMakeVisible (freezeBtn);
     setHint (freezeBtn, "Freeze", "Freeze the spectrum display while you adjust bands.");
-    freezeBtn.setClickingTogglesState (true);
-    freezeBtn.onClick = [this] { canvas.setFrozen (freezeBtn.getToggleState()); styleSeg (freezeBtn, freezeBtn.getToggleState()); };
+    freezeBtn.onClick = [this] { canvas.setFrozen (freezeBtn.getToggleState()); };
 
     addAndMakeVisible (mon);
     setHint (mon, "Monitor gain", juce::String::fromUTF8 ("Boosts or cuts the dry/kept spectrum displays only \xe2\x80\x94 never the audio. Handy for quiet sources. Double-click resets."));
@@ -666,8 +709,6 @@ void TailStage::resized()
     auto head = r.removeFromTop (sc (20));
     internalsBtn.setBounds (head.removeFromRight (sc (104)));
     head.removeFromRight (sc (7));
-    freezeBtn.setBounds (head.removeFromRight (sc (62)));
-    head.removeFromRight (sc (4));
     accumBtn.setBounds (head.removeFromRight (sc (88)));
     head.removeFromRight (sc (7));
     bypassBtn.setBounds (head.removeFromRight (sc (64)));
@@ -687,6 +728,8 @@ void TailStage::resized()
     mon.setBounds (r.removeFromRight (sc (26)));
     r.removeFromRight (sc (4));
     canvas.setBounds (r);
+    freezeBtn.setBounds (r.getRight() - sc (24), r.getY() + sc (5), sc (19), sc (19));
+    freezeBtn.toFront (false);
 
     // Three anchored groups: keep bands left, band settings centred, tail
     // gate + meter right. Widths shrink proportionally when space is tight.

@@ -61,9 +61,12 @@ private:
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
              release { "Release", ui::Knob::openClr }, hystK { "Hysteresis", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
+    ui::LightToggle trigTg { "Trigger" }, smoothTg { "Smoothed" }, offTg { "Off-band", ui::Knob::tailClr };
+    ui::SnowButton histFreeze;
+    bool showTrig = true, showSmooth = true, showOff = true;
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
-    struct Sample { float det, fast, off; int state; bool forced; };  // state 0 closed 1 tail 2 open
+    struct Sample { float det, fast, off, o01, t01; int state; bool forced; };
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
     juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;
@@ -90,7 +93,8 @@ private:
     StageHeader header { 3, "TAIL", 2 };
     ui::MiniSwitch tailGateSw { "Tail gate" };
     juce::TextButton bypassBtn { "Bypass" };
-    juce::TextButton internalsBtn { "Show internals" }, accumBtn { "Accumulate" }, freezeBtn { "Freeze" };
+    juce::TextButton internalsBtn { "Show internals" }, accumBtn { "Accumulate" };
+    ui::SnowButton freezeBtn;
     ui::LightSelector scaleSel { { { "Fine", ui::LightSelector::iconNone },
                                    { "Med",  ui::LightSelector::iconNone },
                                    { "Wide", ui::LightSelector::iconNone } }, ui::Knob::tailClr };
