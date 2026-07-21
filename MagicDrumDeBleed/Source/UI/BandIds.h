@@ -1,5 +1,5 @@
 #pragma once
-/*  Band → parameter-ID mapping. Index 0=LOWS(hpf) 1=HIGHS(lpf) 2..6=K1..K5.
+/*  Band → parameter-ID mapping. Index 0=LP(hpf) 1=HP(lpf) 2..6=K1..K5.
     Also hosts the shared Learn-click handler and factory-preset applier. */
 #include "../PluginProcessor.h"
 #include "../PresetDefaults.h"
@@ -81,13 +81,17 @@ private:
     MagicDrumDeBleedAudioProcessor& proc;
 };
 
-/*  Apply a factory preset: reset everything except Threshold, then set the
-    preset's values. Shared by the PresetBrowser and the Simple view. */
+/*  Apply a factory preset: reset everything except the per-mic calibration
+    (Threshold, Selectivity, Hysteresis, MIDI trigger — those depend on the
+    track, not the drum), then set the preset's values. Shared by the
+    PresetBrowser and the Simple view. */
 inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
 {
+    static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::contrast,
+                                               ParamIDs::hysteresis, ParamIDs::midiTrigger };
     for (auto* p : proc.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
-            if (ranged->paramID != ParamIDs::threshold)
+            if (! preserved.contains (ranged->paramID))
                 ranged->setValueNotifyingHost (ranged->getDefaultValue());
 
     setRealValue (proc, ParamIDs::scFreq,        pr.scFreqHz);

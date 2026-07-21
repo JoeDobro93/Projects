@@ -58,7 +58,7 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     std::function<void (int)> onBandSelected;
 
-    // band params, index 0=LOWS(hpf) 1=HIGHS(lpf) 2..6=K1..5
+    // band params, index 0=LP(hpf) 1=HP(lpf) 2..6=K1..5
     juce::RangedAudioParameter *onP[7] {}, *freqP[7] {}, *qP[7] {}, *gainP[7] {}, *shapeP[7] {};
 
     static constexpr int kFftOrder = 11, kFftSize = 1 << kFftOrder, kBins = kFftSize / 2;

@@ -191,7 +191,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
         presetBtns[i] = std::make_unique<DrumButton> ((DrumButton::Kind) i, presetNames[i]);
         presetBtns[i]->setButtonText (presetNames[i]);
         setHint (*presetBtns[i], presetNames[i],
-                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold is kept.");
+                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold, Selectivity, Hysteresis and MIDI settings are kept.");
         presetBtns[i]->onClick = [this, i]
         {
             for (auto& fp : presets::kFactoryPresets)

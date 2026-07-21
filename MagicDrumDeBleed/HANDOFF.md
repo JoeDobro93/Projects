@@ -272,6 +272,21 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
+> **v2.5.3 (audit round):** (1) applyFactoryPreset now PRESERVES the
+> per-mic calibration params — threshold, contrast (Selectivity),
+> hysteresis, midiTrigger — via a `preserved` StringArray; preset hints
+> updated to say so. (2) **`reduction` parameter REMOVED entirely**
+> (pre-1.0 last chance): the gate always ducks the parallel copy by
+> kReductionDb = −96 (anon-namespace constant in PluginProcessor.cpp);
+> this also makes the /−96 open01 normalisation in gateState/history
+> exact by construction. Old sessions carrying the param load fine
+> (unknown XML params are ignored). (3) Dead code removed:
+> spectrumPostEq atomic/setter/cached (never read) and
+> removedPeakDb/getRemovedPeakDb (per-block magnitude scan feeding a
+> meter deleted in v2.3). (4) LOWS/HIGHS→LP/HP comment rot fixed in
+> BandIds.h, TailCanvas.h, ThemeColors.h, PresetDefaults.h.
+> test_host: burst-passthrough expectation ~0.47→~0.50 and GR ~−24→~−96
+> (reduction is fixed now); text-format test re-pointed to threshold.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

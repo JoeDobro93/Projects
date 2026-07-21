@@ -1,6 +1,6 @@
 #pragma once
 /*  ThemeColors.h — single source of colour truth, values from the UI mockup
-    (index.html :root / .light). Band order: 0=LOWS(HPF) 1=HIGHS(LPF) 2..6=K1..K5. */
+    (index.html :root / .light). Band order: 0=LP(HPF) 1=HP(LPF) 2..6=K1..K5. */
 #include <JuceHeader.h>
 
 namespace theme

@@ -8,7 +8,7 @@
     preset never touches the user's threshold setting.
 
     Anything a preset does not specify falls back to the parameter defaults
-    (Bandpass trigger filter, Link to K1 on, K2–K5 / LOWS / HIGHS off,
+    (Bandpass trigger filter, Link to K1 on, K2–K5 / LP / HP off,
     Amount 100 %, bypasses off).
 */
 

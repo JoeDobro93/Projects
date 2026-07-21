@@ -32,7 +32,6 @@
 namespace ParamIDs
 {
     inline constexpr const char* threshold    = "threshold";
-    inline constexpr const char* reduction    = "reduction";
     inline constexpr const char* lookahead    = "lookahead";
     inline constexpr const char* rmsWindow    = "rmsWindow";
     inline constexpr const char* hold         = "hold";
@@ -132,13 +131,10 @@ public:
     bool  getMidiForced() const         { return midiForcedFlag.load() > 0.5f; } // MIDI note holding the gate open
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
-    float getRemovedPeakDb() const      { return removedPeakDb.load(); }   // level being subtracted
     float getIntensity01() const        { return pIntensity->load() * 0.01f; }
     int   readSpectrumSamples (float* dest, int maxSamples);   // mono parallel-path samples
 
     // Spectrum tap point: true = after the EQ (default), false = before it.
-    void setSpectrumPostEq (bool postEq)   { spectrumPostEq.store (postEq); }
-    bool isSpectrumPostEq() const          { return spectrumPostEq.load(); }
 
     // Band solo audition (UI-only, not saved): -1 = off, 0..6 = band index.
     // Plays exactly what that band KEEPS — dry minus the band's own filter
@@ -197,8 +193,6 @@ private:
     std::atomic<float> midiForcedFlag { 0.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
-    std::atomic<float> removedPeakDb { -120.0f };
-    std::atomic<bool>  spectrumPostEq { true };
 
     // Band-solo audition state + the band's own filter stages per channel
     std::atomic<int> soloBand { -1 };
@@ -208,7 +202,7 @@ private:
     mdd::BandParams soloCachedParams;
 
     // Cached raw parameter pointers
-    std::atomic<float> *pThreshold, *pReduction, *pLookahead, *pRmsWindow, *pHold, *pRelease;
+    std::atomic<float> *pThreshold, *pLookahead, *pRmsWindow, *pHold, *pRelease;
     std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pLearnCeiling;
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
@@ -229,7 +223,7 @@ private:
     int    monitorModeCached = monitorNormal;
     int    soloBandCached = -1;
     bool   compBypassCached = false, eqBypassCached = false, scEnabledCached = true;
-    bool   spectrumPostEqCached = true, eqGateOnCached = true;
+    bool   eqGateOnCached = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MagicDrumDeBleedAudioProcessor)
 };

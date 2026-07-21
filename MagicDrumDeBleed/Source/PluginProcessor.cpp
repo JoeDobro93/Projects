@@ -36,6 +36,10 @@ namespace
     }
 
     constexpr float kNotchDefaultFreqs[5] = { 200.0f, 200.0f, 400.0f, 800.0f, 1600.0f };   // K1 matches Focus
+
+    // The gate always ducks the parallel copy to silence when open; a
+    // shallower duck would leave bleed-removal partially active during hits.
+    constexpr double kReductionDb = -96.0;
 }
 
 //==============================================================================
@@ -86,8 +90,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     // ---- Compressor ----
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
                     juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -40.0f, dB));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::reduction, 1 }, "Reduction Target",
-                    juce::NormalisableRange<float> (-96.0f, 0.0f, 0.1f), -96.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
                     1, 20, 5, juce::AudioParameterIntAttributes()
                                 .withLabel ("ms")
@@ -200,7 +202,6 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     auto raw = [this] (const juce::String& id) { return apvts.getRawParameterValue (id); };
 
     pThreshold    = raw (ParamIDs::threshold);
-    pReduction    = raw (ParamIDs::reduction);
     pLookahead    = raw (ParamIDs::lookahead);
     pRmsWindow    = raw (ParamIDs::rmsWindow);
     pHold         = raw (ParamIDs::hold);
@@ -349,7 +350,7 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     }
 
     // ---- Compressor / sidechain ----
-    compressor.setParameters (pThreshold->load(), pReduction->load(), lookahead,
+    compressor.setParameters (pThreshold->load(), kReductionDb, lookahead,
                               pRmsWindow->load(), pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
@@ -388,7 +389,6 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     monitorModeCached = (int) pMonitorMode->load();
     compBypassCached  = pCompBypass->load() > 0.5f;
     eqBypassCached    = pEqBypass->load() > 0.5f;
-    spectrumPostEqCached = spectrumPostEq.load();
 
     // ---- Band-solo: the band's own filter (kept ring = dry − band(dry)) ----
     soloBandCached = soloBand.load();
@@ -673,15 +673,6 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     else
     {
         eqGateDb.store (0.0f);
-    }
-
-    // Level of the signal being subtracted (REDUCTION meter feed).
-    {
-        double peak = 0.0;
-        for (int ch = 0; ch < nCh; ++ch)
-            peak = juce::jmax (peak, parallelBuffer.getMagnitude (ch, 0, n));
-        peak *= (double) pIntensity->load() * 0.01;
-        removedPeakDb.store ((float) (20.0 * std::log10 (juce::jmax (1.0e-6, peak))));
     }
 
     // ---- 5. Compose the output ----
