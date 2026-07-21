@@ -218,9 +218,16 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, orange trace = off-band level (what Selectivity compares against: your drum puts the bright trace ON TOP of the orange, other drums the reverse). Red dashes = Threshold, dimmer dashes = the close level. Background = gate state.");
 
-    addAndMakeVisible (attackK);
-    attackK.attach (ap.getParameter (ParamIDs::attack));
-    setHint (attackK, "Attack", "Reaction time of the opening detector (the bright trace). Faster catches soft attacks earlier; slower ignores clicks and spikes.");
+    addAndMakeVisible (midiBtn);
+    setHint (midiBtn, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note (hold and release then run as normal) - the manual repair path for hits the detector misses. Any note, any channel.");
+    midiBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::midiTrigger);
+        midiAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    midiAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::midiTrigger),
+        [this] (float v) { midiBtn.setState (v > 0.5f); });
+    midiAtt->sendInitialUpdate();
     addAndMakeVisible (hystK);
     hystK.attach (ap.getParameter (ParamIDs::hysteresis));
     setHint (hystK, "Hysteresis", "The gate only closes once the detector has fallen this far below the Threshold (second dashed line) while still falling. Bigger = marginal hits ring out longer.");
@@ -228,7 +235,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
     speedSlider.onChange = [this] (float v)
-        { startTimerHz (juce::jmax (1, juce::roundToInt (10.0f * std::pow (9.0f, 2.0f * v - 1.0f)))); };
+        { startTimerHz (juce::roundToInt (30.0f * std::pow (9.0f, v))); };
 
     dimAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
         [this] (float v)
@@ -237,13 +244,13 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
             lookahead.setAlpha (a);
             hold.setAlpha (a);
             release.setAlpha (a);
-            attackK.setAlpha (a);
             hystK.setAlpha (a);
+            midiBtn.setAlpha (a);
         });
     dimAtt->sendInitialUpdate();
 
     hist.reserve (kHist);
-    startTimerHz (10);
+    startTimerHz (90);
 }
 
 void GateStage::timerCallback()
@@ -251,7 +258,7 @@ void GateStage::timerCallback()
     state = TailCanvas::gateState (processor, open01, tail01);
 
     hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
-                      processor.getOffbandDb(), state });
+                      processor.getOffbandDb(), state, processor.getMidiForced() });
     if ((int) hist.size() > kHist)
         hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
 
@@ -289,7 +296,10 @@ void GateStage::paint (juce::Graphics& g)
         for (int i = 0; i < n; ++i)
         {
             if (hist[(size_t) i].state == 0) continue;
-            g.setColour (hist[(size_t) i].state == 2 ? pal->open.withAlpha (0.20f) : pal->tail.withAlpha (0.14f));
+            g.setColour (hist[(size_t) i].state == 2
+                             ? (hist[(size_t) i].forced ? pal->accent.withAlpha (0.26f)
+                                                        : pal->open.withAlpha (0.20f))
+                             : pal->tail.withAlpha (0.14f));
             g.fillRect (cv.getRight() - (float) (n - i) * cw, cv.getY(), cw + 0.6f, cv.getHeight());
         }
         auto yFor = [&] (float db) { return cv.getBottom() - juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f) * cv.getHeight(); };
@@ -385,11 +395,11 @@ void GateStage::resized()
     knobs.removeFromTop (sc (2));
     auto krow1 = knobs.removeFromTop (sc (84));
     lookahead.setBounds (krow1.removeFromLeft (sc (70)));
-    hold.setBounds (krow1.removeFromLeft (sc (70)));
-    release.setBounds (krow1.removeFromLeft (sc (70)));
-    auto krow2 = knobs.withTrimmedLeft (sc (36)).withWidth (sc (140));   // centred pair
-    attackK.setBounds (krow2.removeFromLeft (sc (70)));
-    hystK.setBounds (krow2);
+    hystK.setBounds (krow1.removeFromLeft (sc (70)));
+    midiBtn.setBounds (krow1.withSizeKeepingCentre (juce::jmin (krow1.getWidth(), sc (64)), sc (24)));
+    auto krow2 = knobs;
+    hold.setBounds (krow2.removeFromLeft (sc (70)));
+    release.setBounds (krow2.removeFromLeft (sc (70)));
 
     r.removeFromLeft (sc (13));
     stateArea = r.removeFromRight (sc (124));

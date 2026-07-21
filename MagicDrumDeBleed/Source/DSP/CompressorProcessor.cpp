@@ -107,7 +107,7 @@ void CompressorProcessor::rebuildRmsSum()
 void CompressorProcessor::setParameters (double newThresholdDb, double newReductionDb,
                                          int newLookaheadSamples, double rmsWindowMs,
                                          double holdMs, double releaseMs,
-                                         double attackMs, double newHysteresisDb, double newContrastDb)
+                                         double newHysteresisDb, double newContrastDb)
 {
     thresholdDb = newThresholdDb;
     reductionDb = newReductionDb;
@@ -120,8 +120,9 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 
     setRmsWindow (rmsWindowMs);
 
-    // Fast opening detector — the Attack knob sets its time constant.
-    const double fastTauSamples = juce::jmax (1.0, juce::jlimit (0.1, 20.0, attackMs) * 0.001 * sr);
+    // Fast opening detector tracks the Smoothing knob so raising Smoothing
+    // still steadies the open decision, but never slower than a few ms.
+    const double fastTauSamples = juce::jmax (1.0, juce::jlimit (0.5, 3.0, rmsWindowMs / 6.0) * 0.001 * sr);
     fastCoeff = 1.0 - std::exp (-1.0 / fastTauSamples);
 
     holdSamples = (int) std::lround (holdMs * 0.001 * sr);
@@ -137,7 +138,8 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 
 void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const double* detector,
                                    const double* detectorBroad,
-                                   int numSamples, bool applyGain, double* eqGateEnvOut)
+                                   int numSamples, bool applyGain, double* eqGateEnvOut,
+                                   const unsigned char* forceOpen)
 {
     const int numChannels = juce::jmin (audio.getNumChannels(), (int) delays.size());
     if (detectorBroad == nullptr)
@@ -208,8 +210,10 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         else
             vetoLatch = false;
 
-        // ---- Gate state: open fast, close slow with hysteresis ----
-        if (contrastOk && juce::jmax (fastDb, rmsDb) > thresholdDb)
+        // ---- Gate state: open fast, close slow with hysteresis. A MIDI
+        // note (forceOpen) is authoritative: no threshold, no veto. ----
+        const bool forced = forceOpen != nullptr && forceOpen[i] != 0;
+        if (forced || (contrastOk && juce::jmax (fastDb, rmsDb) > thresholdDb))
         {
             gateOpen = true;
             holdCounter = holdSamples;

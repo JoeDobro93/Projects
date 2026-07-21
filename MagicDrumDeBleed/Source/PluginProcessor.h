@@ -37,9 +37,9 @@ namespace ParamIDs
     inline constexpr const char* rmsWindow    = "rmsWindow";
     inline constexpr const char* hold         = "hold";
     inline constexpr const char* release      = "release";
-    inline constexpr const char* attack       = "attack";      // fast opening detector (ms)
     inline constexpr const char* hysteresis   = "hysteresis";  // close this far below threshold (dB)
-    inline constexpr const char* contrast     = "contrast";    // selectivity: max broadband excess (dB)
+    inline constexpr const char* contrast     = "contrast";    // selectivity: max off-band excess (dB)
+    inline constexpr const char* midiTrigger  = "midiTrigger"; // notes force the gate open
 
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
@@ -101,7 +101,7 @@ public:
     bool hasEditor() const override                            { return true; }
 
     const juce::String getName() const override                { return JucePlugin_Name; }
-    bool acceptsMidi() const override                          { return false; }
+    bool acceptsMidi() const override                          { return true; }
     bool producesMidi() const override                         { return false; }
     bool isMidiEffect() const override                         { return false; }
     double getTailLengthSeconds() const override               { return 0.0; }
@@ -129,6 +129,7 @@ public:
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
     float getFastDetectorDb() const     { return fastDetectorDb.load(); }  // opening detector (fast follower)
     float getOffbandDb() const          { return offbandDb.load(); }         // Selectivity's off-band reference
+    bool  getMidiForced() const         { return midiForcedFlag.load() > 0.5f; } // MIDI note holding the gate open
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
     float getRemovedPeakDb() const      { return removedPeakDb.load(); }   // level being subtracted
@@ -193,6 +194,7 @@ private:
     std::atomic<float> detectorRmsDb { -120.0f };
     std::atomic<float> fastDetectorDb { -120.0f };
     std::atomic<float> offbandDb { -120.0f };
+    std::atomic<float> midiForcedFlag { 0.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
     std::atomic<float> removedPeakDb { -120.0f };
@@ -212,7 +214,10 @@ private:
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
-    std::atomic<float> *pAttack, *pHysteresis, *pContrast;
+    std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
+    void buildForceMask (const juce::MidiBuffer& midi, int numSamples);
+    std::vector<unsigned char> forceMask;
+    int heldNotes = 0;
 
     // Per-block cached control state
     double sampleRateCached = 44100.0;

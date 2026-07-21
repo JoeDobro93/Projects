@@ -228,6 +228,24 @@
 > target drum lifts the bright trace above orange, other drums the
 > reverse; set Selectivity between. 22 tests (+hard-tom-late-buzz stays
 > vetoed, ghost-after-tom opens).
+> **v2.5 (MIDI trigger + gate cleanup, 2026-07):** the manual-repair path.
+> (1) `attack` param and knob REMOVED (user: confusing vs gate-attack, and
+> marginal) — fast detector τ back to clamp(rmsWindow/6, 0.5–3 ms). The
+> bright fast trace in the history stays. (2) **MIDI input enabled**
+> (CMake NEEDS_MIDI_INPUT, acceptsMidi true): `midiTrigger` bool param
+> (default on, LightToggle "MIDI" in the gate grid). buildForceMask()
+> turns the block's notes into a per-sample mask (note counting; CC123/
+> all-sound-off clears; both float+double processBlock paths);
+> CompressorProcessor::process gained `forceOpen` — a forced sample sets
+> gateOpen+hold exactly like a detector crossing, bypassing threshold AND
+> the Selectivity veto; note length sustains, then normal hold/release.
+> History chips tint accent-blue while MIDI-forced (Sample.forced,
+> getMidiForced). Workflow: draw notes in a MIDI item on the same track
+> at missed hits — the DAW is the tempo-aware editor. (3) Gate knob grid:
+> row1 Lookahead+Hysteresis+MIDI toggle, row2 Hold+Release beneath.
+> (4) History speed: rate = 30·9^v Hz (bottom 30 = old middle, default 90
+> = old top, top 270 for per-hit detail). 24 tests (+MIDI opens,
+> closes after note-off).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

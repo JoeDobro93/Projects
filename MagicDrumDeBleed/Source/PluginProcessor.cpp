@@ -104,12 +104,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release",
                         logRange (5.0f, 60.0f, 200.0f, true), 5.0f, msInt));
     }
-    {
-        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::attack, 1 }, "Attack Detect",
-                        logRange (0.2f, 1.7f, 10.0f), 1.7f, ms));
-    }
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hysteresis, 1 }, "Hysteresis",
                     juce::NormalisableRange<float> (0.0f, 24.0f), 8.0f, dB));
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::midiTrigger, 1 }, "MIDI Trigger", true));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::contrast, 1 }, "Selectivity",
                     juce::NormalisableRange<float> (0.0f, 24.0f), 24.0f,
                     juce::AudioParameterFloatAttributes()
@@ -208,9 +205,9 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pRmsWindow    = raw (ParamIDs::rmsWindow);
     pHold         = raw (ParamIDs::hold);
     pRelease      = raw (ParamIDs::release);
-    pAttack       = raw (ParamIDs::attack);
     pHysteresis   = raw (ParamIDs::hysteresis);
     pContrast     = raw (ParamIDs::contrast);
+    pMidiTrigger  = raw (ParamIDs::midiTrigger);
     pScEnable     = raw (ParamIDs::scEnable);
     pScFreq       = raw (ParamIDs::scFreq);
     pScQ          = raw (ParamIDs::scQ);
@@ -318,6 +315,8 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
     preEqBuffer.setSize (numCh, block);
     detectorRaw.assign ((size_t) block, 0.0);
     detectorFiltered.assign ((size_t) block, 0.0);
+    forceMask.assign ((size_t) block, 0);
+    heldNotes = 0;
     eqGateEnvBuffer.assign ((size_t) block, 0.0);
 
     intensitySmoothed.reset (sampleRate, 0.05);
@@ -351,7 +350,7 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     // ---- Compressor / sidechain ----
     compressor.setParameters (pThreshold->load(), pReduction->load(), lookahead,
                               pRmsWindow->load(), pHold->load(), pRelease->load(),
-                              pAttack->load(), pHysteresis->load(), pContrast->load());
+                              pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
     eqGateOnCached = pEqGateOn->load() > 0.5f;
     scFilter.setParameters ((int) pScType->load(), pScFreq->load(), pScQ->load(), pScSlope->load());
@@ -432,7 +431,46 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 }
 
 //==============================================================================
-void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void MagicDrumDeBleedAudioProcessor::buildForceMask (const juce::MidiBuffer& midi, int n)
+{
+    // Per-sample mask of "a MIDI note is holding the gate open". Notes are
+    // counted so overlaps behave; all-notes-off / all-sound-off clears.
+    if ((int) forceMask.size() < n)
+        forceMask.resize ((size_t) n, 0);
+
+    if (pMidiTrigger->load() < 0.5f)
+    {
+        heldNotes = 0;
+        std::fill (forceMask.begin(), forceMask.begin() + n, (unsigned char) 0);
+        midiForcedFlag.store (0.0f);
+        return;
+    }
+
+    int idx = 0, held = heldNotes;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        const bool on  = msg.isNoteOn();
+        const bool off = msg.isNoteOff() || msg.isAllNotesOff() || msg.isAllSoundOff();
+        if (! on && ! off)
+            continue;
+        const int pos = juce::jlimit (idx, n, (int) meta.samplePosition);
+        std::fill (forceMask.begin() + idx, forceMask.begin() + pos, (unsigned char) (held > 0 ? 1 : 0));
+        idx = pos;
+        if (on)                     ++held;
+        else if (msg.isNoteOff())   held = juce::jmax (0, held - 1);
+        else                        held = 0;
+    }
+    std::fill (forceMask.begin() + idx, forceMask.begin() + n, (unsigned char) (held > 0 ? 1 : 0));
+    heldNotes = held;
+
+    bool any = false;
+    for (int i = 0; i < n && ! any; ++i)
+        any = forceMask[(size_t) i] != 0;
+    midiForcedFlag.store (any ? 1.0f : 0.0f);
+}
+
+void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -456,6 +494,7 @@ void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
             dst[i] = (double) src[i];
     }
 
+    buildForceMask (midi, n);
     juce::AudioBuffer<double> view (conversionBuffer.getArrayOfWritePointers(), nCh, n);
     processInternal (view);
 
@@ -468,7 +507,7 @@ void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     }
 }
 
-void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer&)
+void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -479,6 +518,7 @@ void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<double>& bu
     if (n == 0)
         return;
 
+    buildForceMask (midi, n);
     processInternal (buffer);
 }
 
@@ -526,7 +566,7 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
         parallelBuffer.copyFrom (ch, 0, buffer, ch, 0, n);
 
     compressor.process (parallelBuffer, detectorFiltered.data(), detectorRaw.data(), n, ! compBypassCached,
-                        eqGateEnvBuffer.data());
+                        eqGateEnvBuffer.data(), forceMask.data());
     grDb.store (compressor.getCurrentGainReductionDb());
     detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
     fastDetectorDb.store (compressor.getCurrentFastDetectorDb());

@@ -41,7 +41,7 @@ juce_add_plugin(MagicDrumDeBleed
     VST3_CATEGORIES             Fx Dynamics
     AU_MAIN_TYPE                kAudioUnitType_Effect
     IS_SYNTH                    FALSE
-    NEEDS_MIDI_INPUT            FALSE
+    NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE

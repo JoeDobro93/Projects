@@ -11,7 +11,7 @@
 
     Detection (v2.2) uses a fast/slow split so marginal hits neither click
     nor cut short:
-      - OPEN on a fast RMS (the Attack knob's time constant) OR the slow RMS
+      - OPEN on a fast RMS (~rmsWindow/6, 0.5-3 ms) OR the slow RMS
         crossing the threshold — ghost notes and low-frequency kicks are
         caught near their true onset, preserving the lookahead margin.
         Opening can additionally require the band to dominate the unfiltered
@@ -87,7 +87,7 @@ public:
 
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
                         double rmsWindowMs, double holdMs, double releaseMs,
-                        double attackMs, double hysteresisDb, double contrastDb);
+                        double hysteresisDb, double contrastDb);
 
     // EQ-gate envelope timing (shares the detector/threshold/lookahead).
     void setEqGateParameters (double holdMs, double releaseMs);
@@ -108,10 +108,16 @@ public:
     /*  detectorBroad: the same sidechain BEFORE the trigger filter — the
         contrast (Selectivity) veto compares the filtered band against it, so
         off-frequency bleed that happens to poke over the threshold cannot
-        open the gate. Pass the filtered signal again when unavailable. */
+        open the gate. Pass the filtered signal again when unavailable.
+
+        forceOpen (optional): per-sample non-zero = a MIDI note is holding the
+        gate open. Treated exactly like a detector crossing (same hold and
+        release once it clears) and overrides threshold AND the contrast
+        veto — manual events are authoritative. */
     void process (juce::AudioBuffer<double>& audio, const double* detector,
                   const double* detectorBroad,
-                  int numSamples, bool applyGain, double* eqGateEnv = nullptr);
+                  int numSamples, bool applyGain, double* eqGateEnv = nullptr,
+                  const unsigned char* forceOpen = nullptr);
 
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.
     float getCurrentGainReductionDb() const noexcept   { return lastBlockGrDb; }
