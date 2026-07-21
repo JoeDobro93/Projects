@@ -6,10 +6,6 @@ namespace mdd
 
 namespace
 {
-    // Close the gate only once the slow detector falls this far below the
-    // threshold — equalises open time between marginal and loud hits.
-    constexpr double kHysteresisDb = 8.0;
-
     // The hysteresis zone only sustains a level that is still FALLING (a hit
     // decaying through it). Bleed parked steadily inside the zone stops
     // falling, so it releases normally instead of holding the gate open.
@@ -41,6 +37,7 @@ void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxLo
     currentRmsWindowMs = -1.0;
     setRmsWindow (10.0);
     hystLagCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, kHystLagSeconds * sr));
+    broadPkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
 
     reset();
 }
@@ -56,6 +53,8 @@ void CompressorProcessor::reset()
     rmsRefreshCounter = 0;
 
     fastMeanSq = 0.0;
+    broadMeanSq = 0.0;
+    broadPkSq = 0.0;
     slowDbLag = -120.0;
     currentGainDb = 0.0;
     holdCounter = 0;
@@ -106,10 +105,13 @@ void CompressorProcessor::rebuildRmsSum()
 
 void CompressorProcessor::setParameters (double newThresholdDb, double newReductionDb,
                                          int newLookaheadSamples, double rmsWindowMs,
-                                         double holdMs, double releaseMs)
+                                         double holdMs, double releaseMs,
+                                         double attackMs, double newHysteresisDb, double newContrastDb)
 {
     thresholdDb = newThresholdDb;
     reductionDb = newReductionDb;
+    hysteresisDb = newHysteresisDb;
+    contrastDb = newContrastDb;
 
     lookaheadSamples = juce::jmax (0, newLookaheadSamples);
     for (auto& d : delays)
@@ -117,9 +119,8 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 
     setRmsWindow (rmsWindowMs);
 
-    // Fast opening detector tracks the Smoothing knob so raising Smoothing
-    // still steadies the open decision, but never slower than a few ms.
-    const double fastTauSamples = juce::jmax (1.0, juce::jlimit (0.5, 3.0, rmsWindowMs / 6.0) * 0.001 * sr);
+    // Fast opening detector — the Attack knob sets its time constant.
+    const double fastTauSamples = juce::jmax (1.0, juce::jlimit (0.1, 20.0, attackMs) * 0.001 * sr);
     fastCoeff = 1.0 - std::exp (-1.0 / fastTauSamples);
 
     holdSamples = (int) std::lround (holdMs * 0.001 * sr);
@@ -134,11 +135,15 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 }
 
 void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const double* detector,
+                                   const double* detectorBroad,
                                    int numSamples, bool applyGain, double* eqGateEnvOut)
 {
     const int numChannels = juce::jmin (audio.getNumChannels(), (int) delays.size());
+    if (detectorBroad == nullptr)
+        detectorBroad = detector;
     float minGainDb = 0.0f;
     float maxRmsDb = -120.0f;
+    float maxFastDb = -120.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -160,18 +165,37 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
         fastMeanSq += fastCoeff * (det * det - fastMeanSq);
         const double fastDb = 10.0 * std::log10 (fastMeanSq + 1.0e-30);
+        maxFastDb = juce::jmax (maxFastDb, (float) fastDb);
         const bool falling = slowDbLag - rmsDb > kHystFallEpsDb;
         slowDbLag += hystLagCoeff * (rmsDb - slowDbLag);
 
+        // ---- Contrast (Selectivity) veto: a hit may only OPEN the gate if
+        // the focused band holds enough of the whole mic's energy. Bleed
+        // from another drum is loud at ITS frequency, so the unfiltered
+        // level towers over the band and the veto blocks it — regardless of
+        // absolute level. A soft on-target hit is quiet everywhere BUT the
+        // band, so it passes. At the knob's maximum the veto is off.
+        // The broadband reference is peak-held (instant attack, ~12 ms
+        // release): fast followers ripple several dB on low-frequency
+        // content, and a momentary downward ripple of the reference must
+        // not blink the veto off mid-bleed.
+        const double broad = detectorBroad[i];
+        broadMeanSq += fastCoeff * (broad * broad - broadMeanSq);
+        broadPkSq = broadMeanSq > broadPkSq
+                        ? broadMeanSq
+                        : broadPkSq + broadPkRelCoeff * (broadMeanSq - broadPkSq);
+        const bool contrastOk = contrastDb >= 23.75
+            || 10.0 * std::log10 (broadPkSq + 1.0e-30) - fastDb <= contrastDb;
+
         // ---- Gate state: open fast, close slow with hysteresis ----
-        if (juce::jmax (fastDb, rmsDb) > thresholdDb)
+        if (contrastOk && juce::jmax (fastDb, rmsDb) > thresholdDb)
         {
             gateOpen = true;
             holdCounter = holdSamples;
         }
         else if (gateOpen)
         {
-            if (rmsDb > thresholdDb - kHysteresisDb && falling)
+            if (rmsDb > thresholdDb - hysteresisDb && falling)
                 holdCounter = holdSamples;  // sustain through the hit's decay
             else if (holdCounter > 0)
                 --holdCounter;
@@ -183,7 +207,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         // Uses the fast detector's lead over the slow one, so it ramps the
         // gate open during an attack's rise but is zero for steady bleed.
         double open01 = gateOpen ? 1.0 : 0.0;
-        if (! gateOpen && fastDb > thresholdDb - kKneeDb && fastDb > rmsDb + kKneeLeadDb)
+        if (! gateOpen && contrastOk && fastDb > thresholdDb - kKneeDb && fastDb > rmsDb + kKneeLeadDb)
         {
             auto knee01 = [this] (double db)
             { return juce::jlimit (0.0, 1.0, (db - (thresholdDb - kKneeDb)) / kKneeDb); };
@@ -244,6 +268,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
     lastBlockGrDb = minGainDb;
     lastBlockRmsDb = maxRmsDb;
+    lastBlockFastDb = maxFastDb;
 }
 
 } // namespace mdd

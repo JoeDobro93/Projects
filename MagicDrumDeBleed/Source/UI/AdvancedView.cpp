@@ -56,7 +56,7 @@ void AdvancedView::resized()
     const int gap = sc (9);
     trigger.setBounds (r.removeFromTop (sc (164)));
     r.removeFromTop (gap);
-    gate.setBounds (r.removeFromTop (sc (172)));
+    gate.setBounds (r.removeFromTop (sc (208)));
     r.removeFromTop (gap);
     tail.setBounds (r);                                 // stretches
 }

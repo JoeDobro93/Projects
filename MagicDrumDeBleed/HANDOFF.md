@@ -182,6 +182,32 @@
 > 10·9^(2v−1) Hz → default position (0.5) = 10 Hz (the old slowest),
 > range 1.1–90 Hz; ctor timer starts at 10 Hz.
 >
+> **v2.4 (contrast gate + detector controls, 2026-07):** three new params.
+> (1) **Selectivity** (`contrast`, 0–24 dB, default 24 = Off, knob
+> REVERSED so stricter = fuller arc, in the TRIGGER FILTER group, dims
+> with scEnable): opening additionally requires
+> `broadPkDb − fastBandDb ≤ contrast` where broadPk is a fast follower on
+> the UNFILTERED sidechain (detectorRaw — same τ as the band's fast
+> follower) run through a peak-hold (instant attack, 12 ms release,
+> broadPkRelCoeff). The peak-hold is load-bearing: fast followers ripple
+> several dB on low-frequency content and a downward ripple of the
+> reference must not blink the veto off mid-bleed (first attempt without
+> it leaked — caught by the new tests). Veto gates ALL opening paths
+> (fast, slow, knee) and never closes an open gate. Off-frequency bleed
+> is rejected by ratio regardless of absolute level; on-band ghosts pass
+> untouched. (2) **Attack** (`attack`, logRange 0.2|1.7|10 ms, default
+> 1.7 ≈ the old derived value): the fast opening detector's τ, no longer
+> derived from Smoothing. (3) **Hysteresis** (`hysteresis`, 0–24 dB,
+> default 8 = the old constant, replaces kHysteresisDb): close-below
+> depth. CompressorProcessor::process gained a detectorBroad arg
+> (nullptr → falls back to detector); getCurrentFastDetectorDb/
+> getFastDetectorDb exposed. UI: Attack+Hysteresis knobs in a second
+> centred row under the gate knobs (GateStage 172→208 tall, adv kMinH
+> 750→786, snapshot check reads AdvancedView constants); history plots
+> the fast detector as a bright thin trace (Sample gained `fast`) plus a
+> dimmer short-dash line at threshold−hysteresis (the close level);
+> test_host now has 20 tests (contrast off/vetoed/ghost-passes).
+>
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
 > UI. (1) OPEN on fast RMS (one-pole, τ=clamp(rmsWindow/6, 0.5–3 ms)) OR slow

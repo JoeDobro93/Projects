@@ -34,7 +34,8 @@ private:
     StageHeader header { 1, "TRIGGER", 0 };
     juce::TextButton bypassBtn { "Bypass" };
     ui::LevelMeter trigMeter;
-    ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" }, focus { "Focus" }, width { "Width" };
+    ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" }, focus { "Focus" }, width { "Width" },
+             contrastK { "Selectivity" };
     ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
@@ -58,11 +59,12 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 2, "GATE", 1 };
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
-             release { "Release", ui::Knob::openClr };
+             release { "Release", ui::Knob::openClr },
+             attackK { "Attack", ui::Knob::openClr }, hystK { "Hysteresis", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
-    struct Sample { float det; int state; };            // state 0 closed 1 tail 2 open
+    struct Sample { float det, fast; int state; };      // state 0 closed 1 tail 2 open
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
     juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;

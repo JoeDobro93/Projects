@@ -79,6 +79,12 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     setHint (width, "Width", "Bandpass: how wide a band the detector hears. High/Low Pass: how steeply it rolls off.");
     updateWidthKnob();
 
+    addAndMakeVisible (contrastK);
+    contrastK.attach (ap.getParameter (ParamIDs::contrast));
+    contrastK.setReversed (true);          // Off (24) = empty arc; stricter = fuller
+    setHint (contrastK, "Selectivity",
+             juce::String::fromUTF8 ("Tom-proofing: a hit may only open the gate if the focused band holds enough of the whole mic's energy. Dial DOWN from Off until other drums stop triggering \xe2\x80\x94 soft on-frequency ghost notes still pass, because their energy sits in the band."));
+
     addAndMakeVisible (typeSel);
     setHint (typeSel, "Trigger Filter Type",
              "High Pass ignores everything below the cutoff (kick-proof). Low Pass ignores everything above (cymbal-proof). Bandpass listens to one band only.");
@@ -102,6 +108,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
             const float a = filterOn ? 1.0f : 0.45f;
             focus.setAlpha (a);
             width.setAlpha (a);
+            contrastK.setAlpha (a);
             typeSel.setAlpha (a);
             repaint();
         });
@@ -189,6 +196,7 @@ void TriggerStage::resized()
     r.removeFromLeft (sc (11));
     focus.setBounds (r.removeFromLeft (sc (70)));
     width.setBounds (r.removeFromLeft (sc (70)));
+    contrastK.setBounds (r.removeFromLeft (sc (70)));
     r.removeFromLeft (sc (11));
     typeSel.setBounds (r.removeFromLeft (sc (110)).withHeight (sc (78)));
 }
@@ -208,7 +216,14 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     release.attach (ap.getParameter (ParamIDs::release));
     setHint (release, "Release", juce::String::fromUTF8 ("How quickly the gate closes after Hold. Too short chops the drum \xe2\x80\x94 the TAIL stage then takes over."));
 
-    setHint (*this, "History", "Live history. Blue = detector level, red dashes = threshold. The background colour is the gate state at that moment.");
+    setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, red dashes = Threshold, dimmer dashes = the close level (Threshold minus Hysteresis). Background colour = gate state.");
+
+    addAndMakeVisible (attackK);
+    attackK.attach (ap.getParameter (ParamIDs::attack));
+    setHint (attackK, "Attack", "Reaction time of the opening detector (the bright trace). Faster catches soft attacks earlier; slower ignores clicks and spikes.");
+    addAndMakeVisible (hystK);
+    hystK.attach (ap.getParameter (ParamIDs::hysteresis));
+    setHint (hystK, "Hysteresis", "The gate only closes once the detector has fallen this far below the Threshold (second dashed line) while still falling. Bigger = marginal hits ring out longer.");
 
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
@@ -222,6 +237,8 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
             lookahead.setAlpha (a);
             hold.setAlpha (a);
             release.setAlpha (a);
+            attackK.setAlpha (a);
+            hystK.setAlpha (a);
         });
     dimAtt->sendInitialUpdate();
 
@@ -233,7 +250,7 @@ void GateStage::timerCallback()
 {
     state = TailCanvas::gateState (processor, open01, tail01);
 
-    hist.push_back ({ processor.getDetectorRmsDb(), state });
+    hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(), state });
     if ((int) hist.size() > kHist)
         hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
 
@@ -275,26 +292,39 @@ void GateStage::paint (juce::Graphics& g)
             g.fillRect (cv.getRight() - (float) (n - i) * cw, cv.getY(), cw + 0.6f, cv.getHeight());
         }
         auto yFor = [&] (float db) { return cv.getBottom() - juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f) * cv.getHeight(); };
-        // threshold dashes
+        // threshold dashes + the close level (threshold - hysteresis) beneath
         if (auto* tp = processor.apvts.getParameter (ParamIDs::threshold))
         {
-            const float ty = yFor (tp->convertFrom0to1 (tp->getValue()));
-            g.setColour (pal->warn);
+            const float thr = tp->convertFrom0to1 (tp->getValue());
             const float dash[2] = { 5.0f, 4.0f };
+            if (auto* hp = processor.apvts.getParameter (ParamIDs::hysteresis))
+            {
+                const float cy2 = yFor (thr - hp->convertFrom0to1 (hp->getValue()));
+                g.setColour (pal->warn.withAlpha (0.45f));
+                const float dash2[2] = { 2.0f, 4.0f };
+                g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
+            }
+            const float ty = yFor (thr);
+            g.setColour (pal->warn);
             g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
         }
-        juce::Path line, fill;
+        juce::Path line, fill, fastLine;
         fill.startNewSubPath (cv.getRight() - (float) n * cw, cv.getBottom());
         for (int i = 0; i < n; ++i)
         {
             const float x = cv.getRight() - (float) (n - i) * cw, y = yFor (hist[(size_t) i].det);
             i == 0 ? line.startNewSubPath (x, y) : line.lineTo (x, y);
             fill.lineTo (x, y);
+            const float fy = yFor (hist[(size_t) i].fast);
+            i == 0 ? fastLine.startNewSubPath (x, fy) : fastLine.lineTo (x, fy);
         }
         fill.lineTo (cv.getRight(), cv.getBottom());
         fill.closeSubPath();
         g.setColour (pal->accent.withAlpha (0.22f)); g.fillPath (fill);
         g.setColour (pal->accent);                   g.strokePath (line, juce::PathStrokeType (1.4f));
+        // the fast opening detector: what actually fires the gate
+        g.setColour (pal->accent.interpolatedWith (pal->txt, 0.65f).withAlpha (0.85f));
+        g.strokePath (fastLine, juce::PathStrokeType (0.9f));
     }
     g.setColour (pal->line); g.drawRoundedRectangle (cv, 4.0f, 1.0f);
     g.setColour (pal->faint); g.setFont (font (10.5f));
@@ -346,9 +376,13 @@ void GateStage::resized()
 
     auto knobs = r.removeFromLeft (sc (212));
     knobs.removeFromTop (sc (2));
-    lookahead.setBounds (knobs.removeFromLeft (sc (70)));
-    hold.setBounds (knobs.removeFromLeft (sc (70)));
-    release.setBounds (knobs.removeFromLeft (sc (70)));
+    auto krow1 = knobs.removeFromTop (sc (84));
+    lookahead.setBounds (krow1.removeFromLeft (sc (70)));
+    hold.setBounds (krow1.removeFromLeft (sc (70)));
+    release.setBounds (krow1.removeFromLeft (sc (70)));
+    auto krow2 = knobs.withTrimmedLeft (sc (36)).withWidth (sc (140));   // centred pair
+    attackK.setBounds (krow2.removeFromLeft (sc (70)));
+    hystK.setBounds (krow2);
 
     r.removeFromLeft (sc (13));
     stateArea = r.removeFromRight (sc (124));

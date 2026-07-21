@@ -37,6 +37,9 @@ namespace ParamIDs
     inline constexpr const char* rmsWindow    = "rmsWindow";
     inline constexpr const char* hold         = "hold";
     inline constexpr const char* release      = "release";
+    inline constexpr const char* attack       = "attack";      // fast opening detector (ms)
+    inline constexpr const char* hysteresis   = "hysteresis";  // close this far below threshold (dB)
+    inline constexpr const char* contrast     = "contrast";    // selectivity: max broadband excess (dB)
 
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
@@ -124,6 +127,7 @@ public:
     // ---- Metering / analysis feeds for the UI ----
     float getGainReductionDb() const    { return grDb.load(); }
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
+    float getFastDetectorDb() const     { return fastDetectorDb.load(); }  // opening detector (fast follower)
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
     float getRemovedPeakDb() const      { return removedPeakDb.load(); }   // level being subtracted
@@ -186,6 +190,7 @@ private:
 
     std::atomic<float> grDb { 0.0f };
     std::atomic<float> detectorRmsDb { -120.0f };
+    std::atomic<float> fastDetectorDb { -120.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
     std::atomic<float> removedPeakDb { -120.0f };
@@ -205,6 +210,7 @@ private:
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
+    std::atomic<float> *pAttack, *pHysteresis, *pContrast;
 
     // Per-block cached control state
     double sampleRateCached = 44100.0;

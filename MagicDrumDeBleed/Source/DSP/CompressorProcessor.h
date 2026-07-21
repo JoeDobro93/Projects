@@ -11,14 +11,17 @@
 
     Detection (v2.2) uses a fast/slow split so marginal hits neither click
     nor cut short:
-      - OPEN on a fast RMS (~rmsWindow/6, 0.5–3 ms) OR the slow RMS crossing
-        the threshold — ghost notes and low-frequency kicks are caught near
-        their true onset, preserving the lookahead margin.
-      - CLOSE on the slow RMS only, with 8 dB of hysteresis: once open, the
-        gate sustains while the level is still falling through the 8 dB
-        below the threshold, so a barely-over hit rings out through its own
-        decay like a loud one. The sustain requires a falling level, so
-        bleed parked steadily inside the zone releases normally.
+      - OPEN on a fast RMS (the Attack knob's time constant) OR the slow RMS
+        crossing the threshold — ghost notes and low-frequency kicks are
+        caught near their true onset, preserving the lookahead margin.
+        Opening can additionally require the band to dominate the unfiltered
+        sidechain (the Selectivity contrast veto) so off-frequency bleed
+        can't trigger it.
+      - CLOSE on the slow RMS only, with hysteresis (the Hysteresis knob):
+        once open, the gate sustains while the level is still falling through
+        the zone below the threshold, so a barely-over hit rings out through
+        its own decay like a loud one. The sustain requires a falling level,
+        so bleed parked steadily inside the zone releases normally.
       - SOFT KNEE: within 6 dB below the threshold, the amount by which the
         fast detector leads the slow one pre-opens the gate proportionally.
         This spreads the opening over the attack's rise instead of a step
@@ -83,7 +86,8 @@ public:
     void reset();
 
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
-                        double rmsWindowMs, double holdMs, double releaseMs);
+                        double rmsWindowMs, double holdMs, double releaseMs,
+                        double attackMs, double hysteresisDb, double contrastDb);
 
     // EQ-gate envelope timing (shares the detector/threshold/lookahead).
     void setEqGateParameters (double holdMs, double releaseMs);
@@ -101,7 +105,12 @@ public:
         lookahead window), then holds and releases towards 0. Driven by the
         exact same RMS detector as the main gate.
     */
+    /*  detectorBroad: the same sidechain BEFORE the trigger filter — the
+        contrast (Selectivity) veto compares the filtered band against it, so
+        off-frequency bleed that happens to poke over the threshold cannot
+        open the gate. Pass the filtered signal again when unavailable. */
     void process (juce::AudioBuffer<double>& audio, const double* detector,
+                  const double* detectorBroad,
                   int numSamples, bool applyGain, double* eqGateEnv = nullptr);
 
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.
@@ -110,6 +119,10 @@ public:
     // Highest detector RMS (dB) seen during the last process() call — for the
     // input meter, directly comparable to the threshold.
     float getCurrentDetectorRmsDb() const noexcept     { return lastBlockRmsDb; }
+
+    // Highest fast (opening) detector level of the last block — what actually
+    // fires the gate; the history view overlays it on the smoothed trace.
+    float getCurrentFastDetectorDb() const noexcept    { return lastBlockFastDb; }
 
 private:
     void setRmsWindow (double windowMs);
@@ -126,8 +139,11 @@ private:
     int rmsLength = 1, rmsIndex = 0, rmsRefreshCounter = 0;
     double currentRmsWindowMs = -1.0;
 
-    // Fast RMS detector (single-pole mean-square) — opening only.
+    // Fast RMS detector (single-pole mean-square) — opening only. The broad
+    // twin runs on the unfiltered sidechain for the contrast veto.
     double fastMeanSq = 0.0, fastCoeff = 1.0;
+    double broadMeanSq = 0.0, broadPkSq = 0.0;   // peak-held: veto reference
+    double broadPkRelCoeff = 1.0;
 
     // Lagged copy of the slow level (dB) — the hysteresis falling test.
     double slowDbLag = -120.0, hystLagCoeff = 1.0;
@@ -146,9 +162,11 @@ private:
     double thresholdDb = -20.0, reductionDb = -24.0;
     int lookaheadSamples = 0, holdSamples = 0;
     double attackCoeff = 1.0, releaseCoeff = 1.0;
+    double hysteresisDb = 8.0, contrastDb = 24.0;
 
     float lastBlockGrDb = 0.0f;
     float lastBlockRmsDb = -120.0f;
+    float lastBlockFastDb = -120.0f;
 };
 
 } // namespace mdd
