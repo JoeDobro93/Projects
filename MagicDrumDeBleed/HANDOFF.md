@@ -272,6 +272,17 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
+> **v2.5.4 (preset tuning):** Kick/Snare/Toms factory values retuned per
+> drum ADSR, assuming Learn re-centres scFreq/K1 (PresetDefaults.h has
+> the full rationale block). Kick {Width Q 1.9, hold 50, rel 60, K1 Q 2.5
+> ring 12, tail 180/250} — wide K1 for the downward pitch glide, wider
+> trigger because a 60 Hz narrow BP rings ~15 ms. Snare {Q 3.5, hold 10,
+> rel 20, K1 Q 8 ring 16, tail 200/600} — narrower trigger vs toms, K1
+> survives detune, fade matches wire decay. Toms {Q 2.4, hold 25, rel 50,
+> K1 Q 2.0 ring 14, tail 400/1000} — old 2-oct focus reached into kick +
+> snare fundamentals; 100 ms tail fade was chopping the ring. Default
+> unchanged. Header-only change; 25/25 tests.
+>
 > **v2.5.3 (audit round):** (1) applyFactoryPreset now PRESERVES the
 > per-mic calibration params — threshold, contrast (Selectivity),
 > hysteresis, midiTrigger — via a `preserved` StringArray; preset hints
