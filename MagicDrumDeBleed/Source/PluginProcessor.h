@@ -128,6 +128,7 @@ public:
     float getGainReductionDb() const    { return grDb.load(); }
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
     float getFastDetectorDb() const     { return fastDetectorDb.load(); }  // opening detector (fast follower)
+    float getOffbandDb() const          { return offbandDb.load(); }         // Selectivity's off-band reference
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
     float getRemovedPeakDb() const      { return removedPeakDb.load(); }   // level being subtracted
@@ -191,6 +192,7 @@ private:
     std::atomic<float> grDb { 0.0f };
     std::atomic<float> detectorRmsDb { -120.0f };
     std::atomic<float> fastDetectorDb { -120.0f };
+    std::atomic<float> offbandDb { -120.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
     std::atomic<float> removedPeakDb { -120.0f };

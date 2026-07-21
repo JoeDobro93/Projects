@@ -64,7 +64,7 @@ private:
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
-    struct Sample { float det, fast; int state; };      // state 0 closed 1 tail 2 open
+    struct Sample { float det, fast, off; int state; }; // state 0 closed 1 tail 2 open
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
     juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;

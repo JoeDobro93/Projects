@@ -207,6 +207,27 @@
 > the fast detector as a bright thin trace (Sample gained `fast`) plus a
 > dimmer short-dash line at threshold−hysteresis (the close level);
 > test_host now has 20 tests (contrast off/vetoed/ghost-passes).
+> **v2.4.1 (off-band reference + onset latch):** hard off-drum hits leaked
+> through the veto late in the hit (sympathetic snare buzz + 2nd
+> harmonics grow IN-band nonlinearly with hit strength, collapsing the
+> ratio 10-20 ms after onset). Two changes: (1) the reference is now
+> OFF-BAND-ONLY energy by subtraction (`offSq = max(broadSq − bandSq,
+> broadSq·0.001)`, same-τ followers, no extra filters; floor = −30 dB
+> "purity" cap) — the target's own energy no longer inflates the
+> reference, so on-band ratios sit ~−30 instead of ~0 and the usable
+> margin widens hugely; (2) the veto decision LATCHES per event
+> (`vetoLatch`): latch on when excess > contrast while offDb >
+> threshold−6 (events are classified AT ONSET, where toms are maximally
+> distinguishable — fundamental instant, buzz late), release when the
+> band convincingly takes over (excess < contrast−6, so a real hit
+> landing on top of a ringing tom still opens) or the event fades
+> (offDb < threshold−12). On-band onsets briefly false-latch while the
+> band filter builds up, then the release condition clears within ~1 ms
+> — no added latency beyond the filter's own. History gains the ORANGE
+> off-band trace (Sample.off, getOffbandDb) — the by-eye tuning tool:
+> target drum lifts the bright trace above orange, other drums the
+> reverse; set Selectivity between. 22 tests (+hard-tom-late-buzz stays
+> vetoed, ghost-after-tom opens).
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

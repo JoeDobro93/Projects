@@ -124,6 +124,10 @@ public:
     // fires the gate; the history view overlays it on the smoothed trace.
     float getCurrentFastDetectorDb() const noexcept    { return lastBlockFastDb; }
 
+    // Highest off-band (veto reference) level of the last block — the level
+    // the Selectivity comparison runs against, for the history view.
+    float getCurrentOffbandDb() const noexcept         { return lastBlockOffDb; }
+
 private:
     void setRmsWindow (double windowMs);
     void rebuildRmsSum();
@@ -142,8 +146,10 @@ private:
     // Fast RMS detector (single-pole mean-square) — opening only. The broad
     // twin runs on the unfiltered sidechain for the contrast veto.
     double fastMeanSq = 0.0, fastCoeff = 1.0;
-    double broadMeanSq = 0.0, broadPkSq = 0.0;   // peak-held: veto reference
-    double broadPkRelCoeff = 1.0;
+    double broadMeanSq = 0.0;
+    double offPkSq = 0.0;                        // peak-held OFF-BAND energy: veto reference
+    double offPkRelCoeff = 1.0;
+    bool vetoLatch = false;                      // event classified off-band at onset
 
     // Lagged copy of the slow level (dB) — the hysteresis falling test.
     double slowDbLag = -120.0, hystLagCoeff = 1.0;
@@ -167,6 +173,7 @@ private:
     float lastBlockGrDb = 0.0f;
     float lastBlockRmsDb = -120.0f;
     float lastBlockFastDb = -120.0f;
+    float lastBlockOffDb = -120.0f;
 };
 
 } // namespace mdd

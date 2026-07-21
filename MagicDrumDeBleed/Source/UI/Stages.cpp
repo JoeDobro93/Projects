@@ -83,7 +83,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     contrastK.attach (ap.getParameter (ParamIDs::contrast));
     contrastK.setReversed (true);          // Off (24) = empty arc; stricter = fuller
     setHint (contrastK, "Selectivity",
-             juce::String::fromUTF8 ("Tom-proofing: a hit may only open the gate if the focused band holds enough of the whole mic's energy. Dial DOWN from Off until other drums stop triggering \xe2\x80\x94 soft on-frequency ghost notes still pass, because their energy sits in the band."));
+             juce::String::fromUTF8 ("Tom-proofing: a hit only opens the gate if the focused band beats the OFF-BAND rest of the mic (orange trace in the history) by at least this margin at its onset \xe2\x80\x94 and a hit that starts as another drum stays vetoed even when its buzz later leaks into the band. Dial DOWN from Off until other drums stop triggering; on-frequency ghost notes still pass."));
 
     addAndMakeVisible (typeSel);
     setHint (typeSel, "Trigger Filter Type",
@@ -216,7 +216,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     release.attach (ap.getParameter (ParamIDs::release));
     setHint (release, "Release", juce::String::fromUTF8 ("How quickly the gate closes after Hold. Too short chops the drum \xe2\x80\x94 the TAIL stage then takes over."));
 
-    setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, red dashes = Threshold, dimmer dashes = the close level (Threshold minus Hysteresis). Background colour = gate state.");
+    setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, orange trace = off-band level (what Selectivity compares against: your drum puts the bright trace ON TOP of the orange, other drums the reverse). Red dashes = Threshold, dimmer dashes = the close level. Background = gate state.");
 
     addAndMakeVisible (attackK);
     attackK.attach (ap.getParameter (ParamIDs::attack));
@@ -250,7 +250,8 @@ void GateStage::timerCallback()
 {
     state = TailCanvas::gateState (processor, open01, tail01);
 
-    hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(), state });
+    hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
+                      processor.getOffbandDb(), state });
     if ((int) hist.size() > kHist)
         hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
 
@@ -308,7 +309,7 @@ void GateStage::paint (juce::Graphics& g)
             g.setColour (pal->warn);
             g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
         }
-        juce::Path line, fill, fastLine;
+        juce::Path line, fill, fastLine, offLine;
         fill.startNewSubPath (cv.getRight() - (float) n * cw, cv.getBottom());
         for (int i = 0; i < n; ++i)
         {
@@ -317,11 +318,17 @@ void GateStage::paint (juce::Graphics& g)
             fill.lineTo (x, y);
             const float fy = yFor (hist[(size_t) i].fast);
             i == 0 ? fastLine.startNewSubPath (x, fy) : fastLine.lineTo (x, fy);
+            const float oy = yFor (hist[(size_t) i].off);
+            i == 0 ? offLine.startNewSubPath (x, oy) : offLine.lineTo (x, oy);
         }
         fill.lineTo (cv.getRight(), cv.getBottom());
         fill.closeSubPath();
         g.setColour (pal->accent.withAlpha (0.22f)); g.fillPath (fill);
         g.setColour (pal->accent);                   g.strokePath (line, juce::PathStrokeType (1.4f));
+        // off-band level — the Selectivity reference (tune it by eye: your
+        // drum lifts the bright trace above this, other drums the reverse)
+        g.setColour (pal->tail.withAlpha (0.6f));
+        g.strokePath (offLine, juce::PathStrokeType (0.9f));
         // the fast opening detector: what actually fires the gate
         g.setColour (pal->accent.interpolatedWith (pal->txt, 0.65f).withAlpha (0.85f));
         g.strokePath (fastLine, juce::PathStrokeType (0.9f));

@@ -530,6 +530,7 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     grDb.store (compressor.getCurrentGainReductionDb());
     detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
     fastDetectorDb.store (compressor.getCurrentFastDetectorDb());
+    offbandDb.store (compressor.getCurrentOffbandDb());
 
     // ---- 3. Dry path: exactly the same integer-sample delay (always ticks) ----
     for (int ch = 0; ch < nCh; ++ch)

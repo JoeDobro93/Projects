@@ -37,7 +37,7 @@ void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxLo
     currentRmsWindowMs = -1.0;
     setRmsWindow (10.0);
     hystLagCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, kHystLagSeconds * sr));
-    broadPkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
+    offPkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
 
     reset();
 }
@@ -54,7 +54,8 @@ void CompressorProcessor::reset()
 
     fastMeanSq = 0.0;
     broadMeanSq = 0.0;
-    broadPkSq = 0.0;
+    offPkSq = 0.0;
+    vetoLatch = false;
     slowDbLag = -120.0;
     currentGainDb = 0.0;
     holdCounter = 0;
@@ -144,6 +145,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
     float minGainDb = 0.0f;
     float maxRmsDb = -120.0f;
     float maxFastDb = -120.0f;
+    float maxOffDb = -120.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -170,22 +172,41 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         slowDbLag += hystLagCoeff * (rmsDb - slowDbLag);
 
         // ---- Contrast (Selectivity) veto: a hit may only OPEN the gate if
-        // the focused band holds enough of the whole mic's energy. Bleed
-        // from another drum is loud at ITS frequency, so the unfiltered
-        // level towers over the band and the veto blocks it — regardless of
-        // absolute level. A soft on-target hit is quiet everywhere BUT the
-        // band, so it passes. At the knob's maximum the veto is off.
-        // The broadband reference is peak-held (instant attack, ~12 ms
-        // release): fast followers ripple several dB on low-frequency
-        // content, and a momentary downward ripple of the reference must
-        // not blink the veto off mid-bleed.
+        // the focused band dominates the OFF-BAND remainder of the mic
+        // (energy subtraction of the two same-speed followers, so no extra
+        // filters and the target's own energy never inflates the
+        // reference). Bleed from another drum is loud at ITS frequency, so
+        // the off-band level towers over the band — regardless of absolute
+        // level — while a soft on-target hit is quiet everywhere BUT the
+        // band. The reference is peak-held (instant attack, ~12 ms release)
+        // because fast followers ripple several dB on low-frequency content
+        // and a downward ripple must not blink the veto off mid-bleed.
+        //
+        // The decision then LATCHES per event: hard off-drum hits grow
+        // in-band content late (sympathetic snare buzz, 2nd harmonics), so
+        // an event that STARTS off-band stays vetoed until it either fades
+        // or the band convincingly takes over (a real hit landing on top).
+        // At the knob's maximum the veto is off.
         const double broad = detectorBroad[i];
         broadMeanSq += fastCoeff * (broad * broad - broadMeanSq);
-        broadPkSq = broadMeanSq > broadPkSq
-                        ? broadMeanSq
-                        : broadPkSq + broadPkRelCoeff * (broadMeanSq - broadPkSq);
-        const bool contrastOk = contrastDb >= 23.75
-            || 10.0 * std::log10 (broadPkSq + 1.0e-30) - fastDb <= contrastDb;
+        const double offSq = juce::jmax (broadMeanSq - fastMeanSq, broadMeanSq * 0.001);
+        offPkSq = offSq > offPkSq
+                      ? offSq
+                      : offPkSq + offPkRelCoeff * (offSq - offPkSq);
+        const double offDb = 10.0 * std::log10 (offPkSq + 1.0e-30);
+        maxOffDb = juce::jmax (maxOffDb, (float) offDb);
+        bool contrastOk = true;
+        if (contrastDb < 23.75)
+        {
+            const double excess = offDb - fastDb;
+            if (! vetoLatch)
+                vetoLatch = excess > contrastDb && offDb > thresholdDb - 6.0;
+            else if (excess < contrastDb - 6.0 || offDb < thresholdDb - 12.0)
+                vetoLatch = false;
+            contrastOk = ! vetoLatch && excess <= contrastDb;
+        }
+        else
+            vetoLatch = false;
 
         // ---- Gate state: open fast, close slow with hysteresis ----
         if (contrastOk && juce::jmax (fastDb, rmsDb) > thresholdDb)
@@ -269,6 +290,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
     lastBlockGrDb = minGainDb;
     lastBlockRmsDb = maxRmsDb;
     lastBlockFastDb = maxFastDb;
+    lastBlockOffDb = maxOffDb;
 }
 
 } // namespace mdd
