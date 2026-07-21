@@ -20,6 +20,11 @@ inline juce::Font font (float px, bool bold = false)
 inline double qToOct (double q)       { return (2.0 / std::log (2.0)) * std::asinh (1.0 / (2.0 * q)); }
 juce::String fmtHz (double v);
 
+// Toolbar logo: blue snare + striking stick + sparkles, "MAGIC DRUM GATE"
+// wordmark with a gate-green → tail-gold underline. Draws at x = sc(12),
+// designed for (and vertically centred in) the sc(46) toolbar strip.
+void drawLogo (juce::Graphics& g);
+
 void setHint (juce::Component& c, const juce::String& title, const juce::String& text);
 // Returns "<b>title</b> — text" style pair for the component chain under `c`, or empty.
 bool findHint (juce::Component* c, juce::String& title, juce::String& text);

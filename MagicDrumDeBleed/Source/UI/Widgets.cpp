@@ -11,6 +11,82 @@ juce::String fmtHz (double v)
                        : juce::String (juce::roundToInt (v)) + " Hz";
 }
 
+void drawLogo (juce::Graphics& g)
+{
+    // Coordinates live in the 46-unit-tall toolbar mockup space, × ui::scale.
+    // Snare construction mirrors the Simple-view preset icon (shell, hoops, lugs).
+    const juce::Rectangle<float> shell (scf (12.0f), scf (17.5f), scf (26.0f), scf (13.0f));
+    g.setColour (pal->accent);
+    g.drawRect (shell, scf (1.6f));
+    const float ov = scf (1.43f), hoopH = scf (2.4f);
+    for (float yy : { shell.getY(), shell.getBottom() })
+        g.fillRoundedRectangle (shell.getX() - ov, yy - hoopH * 0.5f,
+                                shell.getWidth() + ov * 2.0f, hoopH, hoopH * 0.5f);
+    g.setColour (pal->dim);
+    const float m = scf (2.86f), lugW = scf (1.44f);
+    for (int i = 0; i < 4; ++i)
+    {
+        const float lx = shell.getX() + shell.getWidth() * (0.16f + 0.226f * (float) i);
+        g.fillRect (lx - lugW * 0.5f, shell.getY() + m, lugW, shell.getHeight() - m * 2.0f);
+    }
+
+    {   // drumstick striking down from the right, acorn bead just off the rim
+        const juce::Point<float> butt (scf (42.5f), scf (5.5f)), tip (scf (27.5f), scf (13.5f));
+        const float ang = std::atan2 (tip.y - butt.y, tip.x - butt.x);
+        const juce::Point<float> perp (-std::sin (ang), std::cos (ang));
+        const float wb = scf (1.5f), wt = scf (0.75f);
+        juce::Path stick;
+        stick.startNewSubPath (butt + perp * wb);
+        stick.lineTo (tip + perp * wt);
+        stick.lineTo (tip - perp * wt);
+        stick.lineTo (butt - perp * wb);
+        stick.closeSubPath();
+        stick.addEllipse (butt.x - wb, butt.y - wb, wb * 2.0f, wb * 2.0f);
+        juce::Path bead;
+        bead.addEllipse (-scf (2.3f), -scf (1.35f), scf (4.6f), scf (2.7f));
+        bead.applyTransform (juce::AffineTransform::rotation (ang)
+                                 .translated (tip.x + std::cos (ang) * scf (1.9f),
+                                              tip.y + std::sin (ang) * scf (1.9f)));
+        stick.addPath (bead);
+        g.setColour (pal->txt);
+        g.fillPath (stick);
+    }
+
+    auto sparkle = [&g] (float cx, float cy, float sz, float alpha)
+    {
+        const float s = scf (sz), k = s * 0.2f, x = scf (cx), y = scf (cy);
+        juce::Path p;
+        p.startNewSubPath (x, y - s);
+        p.quadraticTo (x + k, y - k, x + s, y);
+        p.quadraticTo (x + k, y + k, x, y + s);
+        p.quadraticTo (x - k, y + k, x - s, y);
+        p.quadraticTo (x - k, y - k, x, y - s);
+        p.closeSubPath();
+        g.setColour (pal->gold.withAlpha (alpha));
+        g.fillPath (p);
+    };
+    sparkle (19.0f, 10.5f, 3.3f, 1.0f);
+    sparkle (24.0f,  6.2f, 1.8f, 0.8f);
+
+    const float tx = scf (50.0f);
+    const juce::Font f = font (16.0f, true).withExtraKerningFactor (0.06f);
+    juce::AttributedString as;
+    as.setJustification (juce::Justification::centredLeft);
+    as.setWordWrap (juce::AttributedString::none);
+    as.append ("MAGIC ", f, pal->accent);
+    as.append ("DRUM GATE", f, pal->txt);
+    juce::TextLayout tl;
+    tl.createLayout (as, scf (400.0f));
+    tl.draw (g, { tx, 0.0f, tl.getWidth() + scf (4.0f), scf (46.0f) });
+
+    // underline: gate-open green crossfading to tail gold, fading out at the end
+    const float uy = scf (35.5f), ut = scf (2.2f), uw = tl.getWidth();
+    juce::ColourGradient grad (pal->open, tx, uy, pal->tail.withAlpha (0.0f), tx + uw, uy, false);
+    grad.addColour (0.55, pal->tail);
+    g.setGradientFill (grad);
+    g.fillRoundedRectangle (tx, uy - ut * 0.5f, uw, ut, ut * 0.5f);
+}
+
 void setHint (juce::Component& c, const juce::String& title, const juce::String& text)
 {
     c.getProperties().set ("hintTitle", title);

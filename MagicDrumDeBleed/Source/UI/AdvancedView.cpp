@@ -34,9 +34,7 @@ void AdvancedView::paint (juce::Graphics& g)
     g.fillRect (0, 0, getWidth(), hh);
     g.setColour (pal->line);
     g.fillRect (0, hh - 1, getWidth(), 1);
-    g.setColour (pal->accent);
-    g.setFont (font (16.0f, true));
-    g.drawText ("MAGIC DRUM GATE", sc (12), 0, sc (300), hh, juce::Justification::centredLeft);
+    drawLogo (g);
 }
 
 void AdvancedView::resized()

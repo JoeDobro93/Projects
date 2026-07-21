@@ -272,6 +272,21 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
+> **v1.0 (logo + release):** toolbar title text replaced by a vector logo
+> in BOTH views — `ui::drawLogo(g)` in Widgets.cpp, drawn at x=sc(12) in
+> the sc(46) strip, coordinates in 46-unit mockup space × ui::scale.
+> Elements: accent-blue snare (same shell/hoops/lugs construction as the
+> Simple-view preset icon, dim lugs), txt-colour drumstick striking down
+> from upper right (tapered polygon + butt circle + rotated acorn bead,
+> bead hovering just OFF the rim — user-requested), two gold 4-point
+> sparkles at the impact, wordmark "MAGIC " (accent) + "DRUM GATE" (txt)
+> via AttributedString/TextLayout (kerning 0.06), and an underline the
+> width of the text: ColourGradient open→(0.55)tail→tail-alpha-0.
+> User iterated across 3 concept sheets (scratchpad logos*.py renders);
+> approved mockup = scratchpad/logo_final.png. CMake VERSION was already
+> 1.0.0; tagged v1.0.0. Simple-view min-width check: logo ends ~x219,
+> themeBtn starts x262 at 330 wide — no overlap.
+>
 > **v2.5.4 (preset tuning):** Kick/Snare/Toms factory values retuned per
 > drum ADSR, assuming Learn re-centres scFreq/K1 (PresetDefaults.h has
 > the full rationale block). Kick {Width Q 1.9, hold 50, rel 60, K1 Q 2.5
