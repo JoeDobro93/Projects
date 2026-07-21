@@ -1,0 +1,78 @@
+name: Build Magic Drum Gate
+
+# Builds downloadable plugin binaries on GitHub's Windows and macOS runners.
+# Runs whenever the plugin sources (or this file) change. Artifacts appear
+# under Actions → (run) → Artifacts.
+
+on:
+  push:
+    paths:
+      - "MagicDrumDeBleed/**"
+      - ".github/workflows/build-plugin.yml"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (VST3 + Standalone)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        working-directory: MagicDrumDeBleed
+        run: cmake -B build
+
+      - name: Build
+        working-directory: MagicDrumDeBleed
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumGate-Windows-VST3
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/VST3/*.vst3
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumGate-Windows-Standalone
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/Standalone/*.exe
+
+  macos:
+    name: macOS (AU + VST3 + Standalone, universal)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal x86_64 + arm64)
+        working-directory: MagicDrumDeBleed
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Build
+        working-directory: MagicDrumDeBleed
+        run: cmake --build build --parallel
+
+      # Apple Silicon requires a valid signature to load code. We can't
+      # notarize without a paid Developer ID, but a fresh ad-hoc signature
+      # makes the bundles load once the user clears the download quarantine
+      # (xattr -dr com.apple.quarantine "…", or right-click > Open).
+      - name: Ad-hoc code sign
+        working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
+        run: |
+          codesign --force --deep --sign - "AU/Magic Drum Gate.component"
+          codesign --force --deep --sign - "VST3/Magic Drum Gate.vst3"
+          codesign --force --deep --sign - "Standalone/Magic Drum Gate.app"
+
+      # ditto-zip each bundle so unix permissions survive artifact upload
+      - name: Zip bundles
+        working-directory: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release
+        run: |
+          ditto -c -k --keepParent "AU/Magic Drum Gate.component" MagicDrumGate-macOS-AU.zip
+          ditto -c -k --keepParent "VST3/Magic Drum Gate.vst3" MagicDrumGate-macOS-VST3.zip
+          ditto -c -k --keepParent "Standalone/Magic Drum Gate.app" MagicDrumGate-macOS-Standalone.zip
+
+      - name: Upload macOS bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagicDrumGate-macOS
+          path: MagicDrumDeBleed/build/MagicDrumDeBleed_artefacts/Release/*.zip
