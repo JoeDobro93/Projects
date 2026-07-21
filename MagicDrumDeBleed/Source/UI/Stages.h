@@ -39,9 +39,9 @@ private:
     ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
-    ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" };
+    ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" }, midiBtn { "MIDI" };
     eqids::LearnButton learnBtn { processor };
-    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt;
+    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt;
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
     bool filterOn = true;
 };
@@ -60,8 +60,6 @@ private:
     StageHeader header { 2, "GATE", 1 };
     ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
              release { "Release", ui::Knob::openClr }, hystK { "Hysteresis", ui::Knob::openClr };
-    ui::LightToggle midiBtn { "MIDI" };
-    std::unique_ptr<juce::ParameterAttachment> midiAtt;
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass

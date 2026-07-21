@@ -370,7 +370,7 @@ void TailCanvas::paint (juce::Graphics& g)
         g.drawText (juce::String::fromUTF8 ("No keep bands active \xe2\x80\x94 the gate will cut the drum off dead."),
                     0, (int) (h / 2) - sc (16), (int) w, sc (14), juce::Justification::centred);
         g.setFont (font (11.0f));
-        g.drawText ("Enable LOWS, or drag a K band onto the drum's fundamental.",
+        g.drawText ("Enable LP, or drag a K band onto the drum's fundamental.",
                     0, (int) (h / 2) + sc (1), (int) w, sc (14), juce::Justification::centred);
     }
     g.restoreState();

@@ -246,6 +246,19 @@
 > (4) History speed: rate = 30·9^v Hz (bottom 30 = old middle, default 90
 > = old top, top 270 for per-hit detail). 24 tests (+MIDI opens,
 > closes after note-off).
+> **v2.5.1:** (1) Stuck-gate fix: held MIDI notes are a per-note SET
+> (heldKeys[128]+heldCount) instead of a counter — muting the MIDI track
+> swallows note-offs, and a counter drifts up when the same note is
+> re-played (1→2→1 = stuck, the user's "sometimes"); a set self-heals on
+> re-trigger. Also clears on transport stop and backwards ppq jumps
+> (getPlayHead()->getPosition(), wasPlaying/lastPpq members; null-safe
+> for hosts without a playhead). Regression test 25 covers the
+> lost-note-off scenario. (2) MIDI toggle moved to TRIGGER's SENSITIVITY
+> column, centred under Threshold/Smoothing (sens knobs now
+> removeFromTop(84)); dims with compBypass. (3) Band selector LOWS→"LP",
+> HIGHS→"HP" — deliberately INVERTED from the internal parallel-path
+> filter kinds (band 0 = HPF on the cancellation copy = keeps lows =
+> LP of the KEPT signal); canvas empty-state text updated.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new

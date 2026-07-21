@@ -217,7 +217,10 @@ private:
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
     void buildForceMask (const juce::MidiBuffer& midi, int numSamples);
     std::vector<unsigned char> forceMask;
-    int heldNotes = 0;
+    bool heldKeys[128] = {};                 // set, not a counter: self-heals lost note-offs
+    int heldCount = 0;
+    bool wasPlaying = false;
+    double lastPpq = -1.0e9;
 
     // Per-block cached control state
     double sampleRateCached = 44100.0;

@@ -316,7 +316,8 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
     detectorRaw.assign ((size_t) block, 0.0);
     detectorFiltered.assign ((size_t) block, 0.0);
     forceMask.assign ((size_t) block, 0);
-    heldNotes = 0;
+    std::fill (std::begin (heldKeys), std::end (heldKeys), false);
+    heldCount = 0;
     eqGateEnvBuffer.assign ((size_t) block, 0.0);
 
     intensitySmoothed.reset (sampleRate, 0.05);
@@ -433,20 +434,43 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 //==============================================================================
 void MagicDrumDeBleedAudioProcessor::buildForceMask (const juce::MidiBuffer& midi, int n)
 {
-    // Per-sample mask of "a MIDI note is holding the gate open". Notes are
-    // counted so overlaps behave; all-notes-off / all-sound-off clears.
+    // Per-sample mask of "a MIDI note is holding the gate open".
+    //
+    // Hosts drop matching note-offs when a routed MIDI track is muted, or on
+    // seeks and loops — so held notes are a per-note SET (playing the same
+    // note again cannot double-count, and its next note-off always clears
+    // it), and any transport stop or backwards jump releases everything.
     if ((int) forceMask.size() < n)
         forceMask.resize ((size_t) n, 0);
 
+    auto clearHeld = [this]
+    {
+        std::fill (std::begin (heldKeys), std::end (heldKeys), false);
+        heldCount = 0;
+    };
+
+    if (auto* ph = getPlayHead())
+    {
+        if (const auto pos = ph->getPosition())
+        {
+            const bool playing = pos->getIsPlaying();
+            const double ppq = pos->getPpqPosition().orFallback (lastPpq);
+            if ((wasPlaying && ! playing) || (playing && ppq < lastPpq - 1.0e-6))
+                clearHeld();
+            wasPlaying = playing;
+            lastPpq = ppq;
+        }
+    }
+
     if (pMidiTrigger->load() < 0.5f)
     {
-        heldNotes = 0;
+        clearHeld();
         std::fill (forceMask.begin(), forceMask.begin() + n, (unsigned char) 0);
         midiForcedFlag.store (0.0f);
         return;
     }
 
-    int idx = 0, held = heldNotes;
+    int idx = 0;
     for (const auto meta : midi)
     {
         const auto msg = meta.getMessage();
@@ -455,14 +479,22 @@ void MagicDrumDeBleedAudioProcessor::buildForceMask (const juce::MidiBuffer& mid
         if (! on && ! off)
             continue;
         const int pos = juce::jlimit (idx, n, (int) meta.samplePosition);
-        std::fill (forceMask.begin() + idx, forceMask.begin() + pos, (unsigned char) (held > 0 ? 1 : 0));
+        std::fill (forceMask.begin() + idx, forceMask.begin() + pos, (unsigned char) (heldCount > 0 ? 1 : 0));
         idx = pos;
-        if (on)                     ++held;
-        else if (msg.isNoteOff())   held = juce::jmax (0, held - 1);
-        else                        held = 0;
+        if (on)
+        {
+            const int note = msg.getNoteNumber();
+            if (! heldKeys[note]) { heldKeys[note] = true; ++heldCount; }
+        }
+        else if (msg.isNoteOff())
+        {
+            const int note = msg.getNoteNumber();
+            if (heldKeys[note]) { heldKeys[note] = false; heldCount = juce::jmax (0, heldCount - 1); }
+        }
+        else
+            clearHeld();
     }
-    std::fill (forceMask.begin() + idx, forceMask.begin() + n, (unsigned char) (held > 0 ? 1 : 0));
-    heldNotes = held;
+    std::fill (forceMask.begin() + idx, forceMask.begin() + n, (unsigned char) (heldCount > 0 ? 1 : 0));
 
     bool any = false;
     for (int i = 0; i < n && ! any; ++i)

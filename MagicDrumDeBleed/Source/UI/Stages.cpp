@@ -57,6 +57,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
             const float a = v > 0.5f ? 0.45f : 1.0f;
             threshold.setAlpha (a);
             smoothing.setAlpha (a);
+            midiBtn.setAlpha (a);
         });
     bypassAtt->sendInitialUpdate();
 
@@ -70,6 +71,17 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (smoothing);
     smoothing.attach (ap.getParameter (ParamIDs::rmsWindow));
     setHint (smoothing, "Smoothing", "How much the detector averages. Opening always uses a fast detector so attacks are never clipped; Smoothing mainly steadies when the gate closes and rejects short spikes of bleed.");
+
+    addAndMakeVisible (midiBtn);
+    setHint (midiBtn, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note (hold and release then run as normal) - the manual repair path for hits the detector misses. Any note, any channel.");
+    midiBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::midiTrigger);
+        midiAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    midiAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::midiTrigger),
+        [this] (float v) { midiBtn.setState (v > 0.5f); });
+    midiAtt->sendInitialUpdate();
 
     addAndMakeVisible (focus);
     focus.attach (ap.getParameter (ParamIDs::scFreq));
@@ -179,8 +191,11 @@ void TriggerStage::resized()
     sensLabelX = r.getX();
     auto sens = r.removeFromLeft (sc (150));
     sens.removeFromTop (sc (14));
-    threshold.setBounds (sens.removeFromLeft (sc (70)));
-    smoothing.setBounds (sens.removeFromLeft (sc (70)));
+    auto sensKnobs = sens.removeFromTop (sc (84));
+    threshold.setBounds (sensKnobs.removeFromLeft (sc (70)));
+    smoothing.setBounds (sensKnobs.removeFromLeft (sc (70)));
+    midiBtn.setBounds (sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (64)),
+                                                   juce::jmin (sens.getHeight(), sc (24))));
 
     r.removeFromLeft (sc (6));
     dividerX = r.getX();
@@ -218,16 +233,6 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, orange trace = off-band level (what Selectivity compares against: your drum puts the bright trace ON TOP of the orange, other drums the reverse). Red dashes = Threshold, dimmer dashes = the close level. Background = gate state.");
 
-    addAndMakeVisible (midiBtn);
-    setHint (midiBtn, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note (hold and release then run as normal) - the manual repair path for hits the detector misses. Any note, any channel.");
-    midiBtn.onClick = [this]
-    {
-        auto* p = processor.apvts.getParameter (ParamIDs::midiTrigger);
-        midiAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
-    };
-    midiAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::midiTrigger),
-        [this] (float v) { midiBtn.setState (v > 0.5f); });
-    midiAtt->sendInitialUpdate();
     addAndMakeVisible (hystK);
     hystK.attach (ap.getParameter (ParamIDs::hysteresis));
     setHint (hystK, "Hysteresis", "The gate only closes once the detector has fallen this far below the Threshold (second dashed line) while still falling. Bigger = marginal hits ring out longer.");
@@ -245,7 +250,6 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
             hold.setAlpha (a);
             release.setAlpha (a);
             hystK.setAlpha (a);
-            midiBtn.setAlpha (a);
         });
     dimAtt->sendInitialUpdate();
 
@@ -396,7 +400,6 @@ void GateStage::resized()
     auto krow1 = knobs.removeFromTop (sc (84));
     lookahead.setBounds (krow1.removeFromLeft (sc (70)));
     hystK.setBounds (krow1.removeFromLeft (sc (70)));
-    midiBtn.setBounds (krow1.withSizeKeepingCentre (juce::jmin (krow1.getWidth(), sc (64)), sc (24)));
     auto krow2 = knobs;
     hold.setBounds (krow2.removeFromLeft (sc (70)));
     release.setBounds (krow2.removeFromLeft (sc (70)));
@@ -474,7 +477,7 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (canvas);
     setHint (canvas, "TAIL display", "Blue = the dry signal. Orange = what survives once the EQ'd cancellation copy is subtracted. Drag a handle: sideways = frequency, up/down = how loud it rings. Mouse-wheel = Q. Click the dry/kept legend to hide a layer.");
 
-    static const char* labs[7] = { "LOWS", "HIGHS", "K1", "K2", "K3", "K4", "K5" };
+    static const char* labs[7] = { "LP", "HP", "K1", "K2", "K3", "K4", "K5" };
     static const char* bandHints[7] = {
         "Everything BELOW this frequency keeps ringing through the tail \xe2\x80\x94 the main body-of-the-drum control.",
         "Everything ABOVE this frequency keeps ringing \xe2\x80\x94 snare wires, stick noise, air.",
@@ -572,7 +575,7 @@ void TailStage::selectBand (int b)
     ring.attach (isKeep ? ap.getParameter (eqids::gainId (sel)) : nullptr);
     slopeK.attach (isKeep ? nullptr : ap.getParameter (eqids::shapeId (sel)));   // hpf/lpf slope
 
-    static const char* labs[7] = { "LOWS", "HIGHS", "K1", "K2", "K3", "K4", "K5" };
+    static const char* labs[7] = { "LP", "HP", "K1", "K2", "K3", "K4", "K5" };
     bandLabel.setText (juce::String (labs[sel]) + (sel == 0 ? juce::String::fromUTF8 (" \xe2\x80\x94 keeps everything below")
                                      : sel == 1 ? juce::String::fromUTF8 (" \xe2\x80\x94 keeps everything above")
                                                 : juce::String::fromUTF8 (" \xe2\x80\x94 keep band")),
@@ -595,7 +598,7 @@ void TailStage::rebuildShapeSeg()
 {
     shapeAtt.reset();
     const bool isKeep = sel >= 2;
-    shapeSel.setVisible (isKeep);       // LOWS/HIGHS use the Slope knob instead
+    shapeSel.setVisible (isKeep);       // LP/HP use the Slope knob instead
     if (isKeep)
         if (auto* p = processor.apvts.getParameter (eqids::shapeId (sel)))
         {
