@@ -212,7 +212,8 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
-    speedSlider.onChange = [this] (float v) { startTimerHz (juce::roundToInt (10.0f * std::pow (3.0f, 2.0f * v))); };
+    speedSlider.onChange = [this] (float v)
+        { startTimerHz (juce::jmax (1, juce::roundToInt (10.0f * std::pow (9.0f, 2.0f * v - 1.0f)))); };
 
     dimAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
         [this] (float v)
@@ -225,7 +226,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     dimAtt->sendInitialUpdate();
 
     hist.reserve (kHist);
-    startTimerHz (30);
+    startTimerHz (10);
 }
 
 void GateStage::timerCallback()
@@ -628,9 +629,9 @@ void TailStage::resized()
     scaleLabelY = leftCol.getY();
     leftCol.removeFromTop (sc (14));
     scaleSel.setBounds (leftCol.removeFromTop (sc (54)));
-    r.removeFromLeft (sc (4));
-    mon.setBounds (r.removeFromLeft (sc (26)));
     r.removeFromLeft (sc (5));
+    mon.setBounds (r.removeFromRight (sc (26)));
+    r.removeFromRight (sc (4));
     canvas.setBounds (r);
 
     // Three anchored groups: keep bands left, band settings centred, tail

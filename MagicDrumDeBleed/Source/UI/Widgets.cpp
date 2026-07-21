@@ -8,7 +8,7 @@ float scale = 1.0f;
 juce::String fmtHz (double v)
 {
     return v >= 1000.0 ? juce::String (v / 1000.0, v >= 10000.0 ? 1 : 2) + " kHz"
-                       : juce::String (v, 0) + " Hz";
+                       : juce::String (juce::roundToInt (v)) + " Hz";
 }
 
 void setHint (juce::Component& c, const juce::String& title, const juce::String& text)

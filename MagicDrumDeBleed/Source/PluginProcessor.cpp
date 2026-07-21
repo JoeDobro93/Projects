@@ -55,7 +55,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 
     const auto ms = juce::AudioParameterFloatAttributes()
         .withLabel ("ms")
-        .withStringFromValueFunction ([] (float v, int) { return juce::String (v, v < 10.0f ? 1 : 0) + " ms"; });
+        .withStringFromValueFunction ([] (float v, int)
+        {   // String(v, 0) would print the raw float — round explicitly
+            return (v < 10.0f ? juce::String (v, 1) : juce::String (juce::roundToInt (v))) + " ms";
+        });
 
     const auto msInt = juce::AudioParameterFloatAttributes()
         .withLabel ("ms")
@@ -149,7 +152,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                                 .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 2); })));
         }
         p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::notchGain (i), 1 },
-                        "Notch " + num + " Ring", juce::NormalisableRange<float> (0.0f, 20.0f, 0.1f), 9.8f,
+                        "Notch " + num + " Ring", juce::NormalisableRange<float> (0.0f, 20.0f), 9.8f,
                         juce::AudioParameterFloatAttributes()
                             .withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1); })));
         p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::notchShape (i), 1 },

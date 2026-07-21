@@ -172,6 +172,15 @@
 > [22px, h−6px] — and alternate dry-blue 0x4aa8e0 / kept-orange 0xe07e2a
 > (0.75 alpha; even multiples of 12 blue) so they read as the spectra's
 > axis; positive values show a + sign.
+> **v2.3.14:** JUCE trap fixed: `String(v, 0)` does NOT round — it prints
+> the raw float, so continuous values ≥10 showed as e.g.
+> "40.7002143859863 ms" (the real cause of the "4 decimals" reports; the
+> `ms` lambda and `fmtHz` now round explicitly via roundToInt). Ring
+> level range is continuous (0.1 interval dropped; displays still 1 dec).
+> MON fader moved to the RIGHT of the canvas (beside the signal ticks):
+> [scale 56][5][canvas][4][mon 26]. History speed remapped: rate =
+> 10·9^(2v−1) Hz → default position (0.5) = 10 Hz (the old slowest),
+> range 1.1–90 Hz; ctor timer starts at 10 Hz.
 >
 > **v2.2 gate detection (2026-07):** CompressorProcessor detection reworked so
 > marginal hits (ghost notes, LF kicks) neither click nor cut short — no new
