@@ -253,7 +253,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     auto& ap = processor.apvts;
     addAndMakeVisible (lookahead);
     lookahead.attach (ap.getParameter (ParamIDs::lookahead));
-    setHint (lookahead, "Lookahead", "The gate opens this far BEFORE the transient arrives, so attacks are never clipped. Costs this much latency, compensated by your DAW.");
+    setHint (lookahead, "Lookahead", "The gate opens this far BEFORE the transient arrives, so attacks are never clipped. Total plugin latency stays fixed no matter what.");
     addAndMakeVisible (hold);
     hold.attach (ap.getParameter (ParamIDs::hold));
     setHint (hold, "Hold", "Minimum time the gate stays fully open after a hit.");
@@ -959,15 +959,8 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
         });
     monAtt->sendInitialUpdate();
 
-    // Total latency readout: Lookahead + the fixed envelope margin.
-    lookAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::lookahead),
-        [this] (float v)
-        {
-            latencyText = juce::String (juce::roundToInt (v)
-                                        + MagicDrumDeBleedAudioProcessor::kEnvMarginMs) + " ms latency";
-            repaint();
-        });
-    lookAtt->sendInitialUpdate();
+    // Constant total latency: max Lookahead + the flam-recovery margin.
+    latencyText = juce::String (MagicDrumDeBleedAudioProcessor::kTotalLatencyMs) + " ms latency";
 }
 
 void RightRail::paint (juce::Graphics& g)

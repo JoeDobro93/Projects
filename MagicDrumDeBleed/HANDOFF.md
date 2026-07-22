@@ -272,7 +272,21 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.1 (comp round 2):** (1) **Flam fix / envelope margin**: fixed
+> **v1.1.2 (constant latency):** total plugin delay is now CONSTANT
+> kTotalLatencyMs = kMaxLookaheadMs(10) + kEnvMarginMs(10) = 20 ms —
+> it never moves with ANY knob, mode or Selectivity (user caught that
+> v1.1.1's lookahead+10 still varied with the Lookahead knob). The
+> Lookahead param is now 0–10 ms (was 1–20), default 5, presets 5; the
+> knob repositions decisions inside the fixed window and the envelope
+> ring absorbs the remainder (ring = total − lookahead ∈ [10,20] ms, so
+> the veto-late flam-recovery headroom is ≥ 10 ms at EVERY lookahead —
+> the compounding the user asked about: constant = Lmax + margin, not
+> just Lmax, else recovery dies at max lookahead). envMarginSamples now
+> holds the TOTAL delay; compressor gets margin = total − lookahead.
+> Latency text is static ("20 ms latency", lookAtt removed). Tests 34:
+> latency 960 @48k + constancy check at lookahead 10. VERSION 1.1.2.
+>
+> > **v1.1.1 (comp round 2):** (1) **Flam fix / envelope margin**: fixed
 > +10 ms envelope-application margin (kEnvMarginMs, PluginProcessor.h
 > public constexpr). Audio runs Lookahead+10 ms behind the detector;
 > gain AND tail envelopes route through margin-length rings

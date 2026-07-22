@@ -102,7 +102,8 @@ public:
         back by the Selectivity veto (level qualified, veto said no) applies
         UNDELAYED for one margin window instead, recovering the head start the
         veto's settle time consumed — no more flammed attacks at partial
-        Amount. Latency = lookahead + margin, constant. */
+        Amount. The caller passes margin = totalDelay − lookahead, so the sum
+        (and the plugin's reported latency) never moves with any knob. */
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
                         int marginSamples,
                         double rmsWindowMs, double holdMs, double releaseMs,

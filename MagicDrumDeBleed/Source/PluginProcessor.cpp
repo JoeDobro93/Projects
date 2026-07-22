@@ -91,7 +91,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
                     juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -40.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
-                    1, 20, 5, juce::AudioParameterIntAttributes()
+                    0, 10, 5, juce::AudioParameterIntAttributes()
                                 .withLabel ("ms")
                                 .withStringFromValueFunction ([] (int v, int) { return juce::String (v) + " ms"; })));
     {
@@ -312,24 +312,23 @@ bool MagicDrumDeBleedAudioProcessor::isBusesLayoutSupported (const BusesLayout& 
 void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sampleRateCached = sampleRate;
-    maxLookaheadSamples = (int) std::ceil (0.020 * sampleRate) + 1;   // 20 ms cap
-    // Fixed envelope-application margin: audio runs lookahead + margin behind
-    // the detector, and decisions are applied margin samples late — EXCEPT
-    // veto-delayed opens, which apply immediately and so recover the head
-    // start Selectivity's settle time ate (the "flam" fix). Constant, so
-    // latency never moves with knobs or mode.
-    envMarginSamples = (int) std::lround (kEnvMarginMs * 0.001 * sampleRate);
+    maxLookaheadSamples = (int) std::lround (kMaxLookaheadMs * 0.001 * sampleRate);
+    // The TOTAL audio delay is constant (kTotalLatencyMs): the Lookahead knob
+    // moves decisions inside that window and the envelope-application ring
+    // absorbs the remainder (ring = total − lookahead ≥ kEnvMarginMs, the
+    // guaranteed flam-recovery headroom for veto-delayed opens).
+    envMarginSamples = (int) std::lround (kTotalLatencyMs * 0.001 * sampleRate);
 
     const int numCh = juce::jlimit (1, 2, getTotalNumInputChannels());
 
-    compressor.prepare (sampleRate, numCh, maxLookaheadSamples + envMarginSamples, envMarginSamples);
+    compressor.prepare (sampleRate, numCh, envMarginSamples, envMarginSamples);
     eq.prepare (sampleRate, numCh);
     scFilter.prepare (sampleRate);
     learnAnalyzer.prepare (sampleRate);
 
     dryDelays.resize ((size_t) numCh);
     for (auto& d : dryDelays)
-        d.prepare (maxLookaheadSamples + envMarginSamples);
+        d.prepare (envMarginSamples);
 
     const int block = juce::jmax (16, samplesPerBlock);
     conversionBuffer.setSize (numCh, block);
@@ -359,7 +358,8 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
 void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 {
-    // ---- Lookahead / latency (audio runs lookahead + margin behind) ----
+    // ---- Lookahead (total delay is constant; the knob moves decisions
+    // inside the window, the ring absorbs total − lookahead) ----
     const int lookaheadMs = (int) pLookahead->load();
     const int lookahead = juce::jlimit (0, maxLookaheadSamples,
                                         (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));
@@ -367,13 +367,14 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     {
         currentLookaheadSamples = lookahead;
         for (auto& d : dryDelays)
-            d.setDelay (lookahead + envMarginSamples);
-        setLatencySamples (lookahead + envMarginSamples);
+            d.setDelay (envMarginSamples);              // constant total
+        setLatencySamples (envMarginSamples);
     }
 
     // ---- Compressor / sidechain (each mode has its own Smoothing state) ----
     const bool compModeOn = pCompMode->load() > 0.5f;
-    compressor.setParameters (pThreshold->load(), kReductionDb, lookahead, envMarginSamples,
+    compressor.setParameters (pThreshold->load(), kReductionDb, lookahead,
+                              envMarginSamples - lookahead,
                               compModeOn ? pCompRmsWindow->load() : pRmsWindow->load(),
                               pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());

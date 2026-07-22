@@ -85,9 +85,13 @@ class MagicDrumDeBleedAudioProcessor : public juce::AudioProcessor,
                                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    // Fixed envelope-application margin (see CompressorProcessor): total
-    // latency = Lookahead + this. The UI's latency readout adds it too.
-    static constexpr int kEnvMarginMs = 10;
+    // Total plugin delay is CONSTANT: max Lookahead + the flam-recovery
+    // margin. The Lookahead knob repositions decisions inside that window
+    // (the envelope-application ring absorbs the rest), so latency never
+    // moves with any knob, mode or Selectivity setting.
+    static constexpr int kMaxLookaheadMs = 10;
+    static constexpr int kEnvMarginMs    = 10;
+    static constexpr int kTotalLatencyMs = kMaxLookaheadMs + kEnvMarginMs;
 
     enum MonitorMode
     {
@@ -233,7 +237,7 @@ private:
     // Per-block cached control state
     double sampleRateCached = 44100.0;
     int    maxLookaheadSamples = 0;
-    int    envMarginSamples = 0;        // Selectivity/flam recovery margin (fixed 10 ms)
+    int    envMarginSamples = 0;        // = kTotalLatencyMs in samples (constant total delay)
     int    currentLookaheadSamples = -1;
     int    monitorModeCached = monitorNormal;
     int    soloBandCached = -1;
