@@ -315,14 +315,14 @@ void SimpleView::resized()
     krow.removeFromLeft (kgap);
     auto c2 = krow.removeFromLeft (kw);
     resoAmt.setBounds (c2.withTrimmedBottom (sc (28)));
-    midiTg.setBounds (c2.getX(), learnY, kw, sc (24));
     krow.removeFromLeft (kgap);
     auto c3 = krow.removeFromLeft (kw);
     tailHold.setBounds (c3.withTrimmedBottom (sc (28)));
     krow.removeFromLeft (kgap);
     auto c4 = krow.removeFromLeft (kw);
     tailFade.setBounds (c4.withTrimmedBottom (sc (28)));
-    modeSw.setBounds (c3.getX(), learnY, c4.getRight() - c3.getX(), sc (24));
+    modeSw.setBounds (c2.getX(), learnY, c3.getRight() - c2.getX(), sc (24));
+    midiTg.setBounds (c4.getX(), learnY, kw, sc (24));
 
     // meter row: TRIGGER · GATE · AMOUNT · OUT spread across the content
     // width so its bounding box matches the knobs below

@@ -191,6 +191,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::eqGateRelease, 1 }, "EQ Gate Release",
                         logRange (5.0f, 800.0f, 5000.0f, true), 100.0f, msInt));
     }
+    // Comp-mode tail blend: hits between T and T+range engage the tail
+    // partially (base% at T ramping to 100% at T+range) — the rumble fix.
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::tailRange, 1 }, "Tail Range",
+                    juce::NormalisableRange<float> (0.0f, 12.0f), 3.0f, dB));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::tailBase, 1 }, "Tail Base",
+                    juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f, pct));
 
     // ---- Output / monitoring ----
     p.push_back (std::make_unique<AudioParameterFloat>  (ParameterID { ParamIDs::intensity, 1 }, "Intensity",
@@ -250,6 +256,8 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pEqGateOn      = raw (ParamIDs::eqGateOn);
     pEqGateHold    = raw (ParamIDs::eqGateHold);
     pEqGateRelease = raw (ParamIDs::eqGateRelease);
+    pTailRange     = raw (ParamIDs::tailRange);
+    pTailBase      = raw (ParamIDs::tailBase);
 
     pIntensity   = raw (ParamIDs::intensity);
     pMonitorMode = raw (ParamIDs::monitorMode);
@@ -382,7 +390,8 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
                               compModeOn ? pCompRmsWindow->load() : pRmsWindow->load(),
                               pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());
-    compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
+    compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load(),
+                                    pTailRange->load(), pTailBase->load() * 0.01f);
     {
         // GR per dB over threshold: standard ratios reduce by 1-1/R (copy
         // squeezed toward the threshold); the negative ratios -N:1 reduce by

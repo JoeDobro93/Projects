@@ -710,6 +710,18 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     tailFade.attach (ap.getParameter (ParamIDs::eqGateRelease));
     setHint (tailFade, "Tail fade", "How long the kept bands take to fade to silence. This is what makes a decay sound natural instead of chopped.");
 
+    addAndMakeVisible (tailRangeK);
+    tailRangeK.attach (ap.getParameter (ParamIDs::tailRange));
+    setHint (tailRangeK, "Tail range", "Comp mode: how far past the Threshold a hit must peak for the tail to engage fully. Quieter events start their hold/fade from a proportional blend, so false triggers just over the line no longer ring the whole tail. 0 = always full.");
+    addAndMakeVisible (tailBaseK);
+    tailBaseK.attach (ap.getParameter (ParamIDs::tailBase));
+    setHint (tailBaseK, "Tail base", "Comp mode: the tail blend for a hit exactly AT the Threshold - the bottom of the ramp that reaches 100% at Tail range.");
+
+    // Tail range/base only act in Comp mode - dim them like a bypass in Gate.
+    compModeAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compMode),
+        [this] (float v) { compOn = v > 0.5f; updateDim(); });
+    compModeAtt->sendInitialUpdate();
+
     addAndMakeVisible (tailMeter);
     setHint (tailMeter, "TAIL", "How much of the tail is currently ringing through.");
 
@@ -799,6 +811,8 @@ void TailStage::updateDim()
     // when the tail gate is off (they only time the gated tail).
     const float band = eqByp ? 0.45f : 1.0f;
     const float tail = (eqByp || ! tgOn) ? 0.45f : 1.0f;
+    tailRangeK.setAlpha ((eqByp || ! tgOn || ! compOn) ? 0.45f : 1.0f);
+    tailBaseK.setAlpha ((eqByp || ! tgOn || ! compOn) ? 0.45f : 1.0f);
     for (int b = 0; b < 7; ++b)
     {
         bandBtns[b].setAlpha (band);
@@ -847,7 +861,7 @@ void TailStage::resized()
 
     // Three anchored groups: keep bands left, band settings centred, tail
     // gate + meter right. Widths shrink proportionally when space is tight.
-    const float leftW = scf (244), centreW = scf (212 + 6 + 96), rightW = scf (142 + 6 + 36);
+    const float leftW = scf (244), centreW = scf (212 + 6 + 96), rightW = scf (264 + 6 + 36);
     const float gap = scf (10);
     const float shrink = juce::jmin (1.0f, (float) controls.getWidth() / (leftW + centreW + rightW + gap * 2));
     auto col = [&] (float px) { return (int) (scf (px) * shrink); };
@@ -866,13 +880,15 @@ void TailStage::resized()
 
     auto right = juce::Rectangle<int> (controls.getRight() - (int) (rightW * shrink), controls.getY(),
                                        (int) (rightW * shrink), controls.getHeight());
-    auto tailGrp = right.removeFromLeft (col (142));
+    auto tailGrp = right.removeFromLeft (col (264));
     tailGrp.removeFromTop (sc (14));                          // aligns with the other knob groups
     auto swRow = tailGrp.removeFromBottom (sc (16));
     tailGateSw.setBounds (swRow.withSizeKeepingCentre (juce::jmin (swRow.getWidth(), sc (96)), sc (16)));
-    const int tw = tailGrp.getWidth() / 2;
+    const int tw = tailGrp.getWidth() / 4;
     tailHold.setBounds (tailGrp.removeFromLeft (tw));
     tailFade.setBounds (tailGrp.removeFromLeft (tw));
+    tailRangeK.setBounds (tailGrp.removeFromLeft (tw));
+    tailBaseK.setBounds (tailGrp.removeFromLeft (tw));
     right.removeFromLeft (col (6));
     tailMeter.setBounds (right.removeFromLeft (col (36)));
 

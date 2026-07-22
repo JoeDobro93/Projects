@@ -74,8 +74,11 @@ void CompressorProcessor::setCompParameters (bool enabled, double grPerOverDb, d
     compReleaseCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, releaseMs * 0.001 * sr));
 }
 
-void CompressorProcessor::setEqGateParameters (double holdMs, double releaseMs)
+void CompressorProcessor::setEqGateParameters (double holdMs, double releaseMs,
+                                               double newTailRangeDb, double newTailBase01)
 {
+    tailRangeDb = newTailRangeDb;
+    tailBase01 = juce::jlimit (0.0, 1.0, newTailBase01);
     eqGateHoldSamples = (int) std::lround (holdMs * 0.001 * sr);
     // Coefficient chosen so the envelope falls ~60 dB (to 0.001) within the
     // release time — "fully cancels" on the user's timescale.
@@ -192,6 +195,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         const bool forced = forceOpen != nullptr && forceOpen[i] != 0;
         double targetDb;
         double envAttack = attackCoeff, envRelease = releaseCoeff;
+        double overNow = 0.0;
         bool openNow;
 
         if (compMode)
@@ -208,6 +212,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
             gateOpen = false;
             holdCounter = 0;
             const double over = rmsDb - thresholdDb;
+            overNow = over;
             targetDb = forced ? reductionDb
                               : over > 0.0 ? juce::jmax (reductionDb, -compGrPerDb * over)
                                            : 0.0;
@@ -313,7 +318,14 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         }
         else if (openNow)
         {
-            eqGateEnv = 1.0;               // instant, full engagement
+            // Comp mode: partial engagement scaled by how far past the
+            // threshold the event peaks (Tail Range / Tail Base); the env
+            // holds the event's maximum. Gate mode / MIDI force: full.
+            double engage = 1.0;
+            if (compMode && ! forced && tailRangeDb > 0.05)
+                engage = juce::jlimit (0.0, 1.0,
+                                       tailBase01 + (1.0 - tailBase01) * (overNow / tailRangeDb));
+            eqGateEnv = juce::jmax (eqGateEnv, engage);
             eqGateHoldCounter = eqGateHoldSamples;
         }
         else if (eqGateHoldCounter > 0)

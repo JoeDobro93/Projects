@@ -272,7 +272,27 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.3 (conditional margin + UI):** (1) the +10 ms flam-recovery
+> **v1.1.4 (comp tail blend — the rumble fix):** user report: comp mode
+> keeps ghosts beautifully, but FALSE triggers still engaged the tail at
+> 100%, ringing the keep bands ("rumble"). New comp-only params
+> tailRange (0–12 dB over T, def 3) and tailBase (0–100%, def 50): a hit
+> peaking `over` dB past the threshold engages the tail at
+> base + (1−base)·over/range, capped at 1 (user's design; e.g. 2 of
+> 3 dB over at base 50% → 83.3%). eqGateEnv takes the MAX engagement of
+> the event (instant attack to that ceiling), holds there, fades from
+> there; range < 0.05 = legacy always-full; gate mode and MIDI-forced
+> events always full. Implemented in setEqGateParameters(+2 args) +
+> the openNow env branch (overNow hoisted from the comp branch). History
+> lane gold already follows the env (t01 from getEqGateReductionDb) so
+> partial tails read dimmer automatically. UI: tailRangeK/tailBaseK in
+> the TailStage tail group (now 4 knobs, rightW 142→264, shrink logic
+> unchanged), dimmed unless comp mode AND tail gate on AND eq active
+> (compModeAtt + updateDim). Simple view Learn row order is now
+> Learn | mode switch | MIDI (swapped per request). Tests 38: blend
+> −2.51 dB at 1.5/3 over base 50 (theory −2.50), full at 5 over, legacy
+> at range 0. VERSION 1.1.4.
+>
+> > **v1.1.3 (conditional margin + UI):** (1) the +10 ms flam-recovery
 > margin is now carried ONLY while Selectivity is engaged in GATE mode
 > (user decision, accepting the PDC change at that boundary): latency =
 > 10 ms base (any mode, any Lookahead) / 20 ms with gate+Selectivity;

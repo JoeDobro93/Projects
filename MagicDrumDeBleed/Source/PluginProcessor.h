@@ -74,6 +74,8 @@ namespace ParamIDs
     inline constexpr const char* eqGateOn      = "eqGateOn";
     inline constexpr const char* eqGateHold    = "eqGateHold";
     inline constexpr const char* eqGateRelease = "eqGateRelease";
+    inline constexpr const char* tailRange     = "tailRange";   // comp: dB over T for full tail
+    inline constexpr const char* tailBase      = "tailBase";    // comp: tail blend AT the threshold
 
     inline constexpr const char* intensity    = "intensity";
     inline constexpr const char* monitorMode  = "monitorMode";
@@ -225,7 +227,7 @@ private:
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
-    std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
+    std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease, *pTailRange, *pTailBase;
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
     std::atomic<float> *pCompMode, *pCompRatio, *pCompAttack, *pCompRelease, *pCompRmsWindow;
     void buildForceMask (const juce::MidiBuffer& midi, int numSamples);

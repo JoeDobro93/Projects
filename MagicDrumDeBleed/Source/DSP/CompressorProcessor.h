@@ -109,8 +109,14 @@ public:
                         double rmsWindowMs, double holdMs, double releaseMs,
                         double hysteresisDb, double contrastDb);
 
-    // EQ-gate envelope timing (shares the detector/threshold/lookahead).
-    void setEqGateParameters (double holdMs, double releaseMs);
+    /*  EQ-gate envelope timing (shares the detector/threshold/lookahead).
+        tailRangeDb/tailBase01 (comp mode only): a hit peaking `over` dB past
+        the threshold engages the tail at base + (1−base)·over/range, capped
+        at 1 — false triggers just over the line no longer ring the full
+        tail. The envelope holds the event's MAX engagement, then fades from
+        there. range < 0.05 or gate mode = always full (legacy). */
+    void setEqGateParameters (double holdMs, double releaseMs,
+                              double tailRangeDb = 0.0, double tailBase01 = 1.0);
 
     // Compressor mode: continuous −grPerOverDb·overDb reduction of the
     // parallel path (own attack/release). While off, the gate runs unchanged.
@@ -202,6 +208,7 @@ private:
     double eqGateEnv = 0.0;
     int eqGateHoldCounter = 0, eqGateHoldSamples = 0;
     double eqGateReleaseCoeff = 1.0;
+    double tailRangeDb = 0.0, tailBase01 = 1.0;
 
     // Compressor mode
     bool   compMode = false;

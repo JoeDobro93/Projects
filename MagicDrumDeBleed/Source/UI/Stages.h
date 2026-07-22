@@ -125,12 +125,14 @@ private:
                                    { "Shelf",  ui::LightSelector::iconShelf } }, ui::Knob::tailClr };
     bool selIsKeep = true;
     std::unique_ptr<juce::ParameterAttachment> shapeAtt, tailGateAtt, bypassAtt;
-    ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
+    ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr },
+             tailRangeK { "Tail range", ui::Knob::tailClr }, tailBaseK { "Tail base", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
+    std::unique_ptr<juce::ParameterAttachment> compModeAtt;
     void updateDim();
     int sel = 0;
     int bandLabelsY = 0, shapeX = 0, scaleLabelY = 0;
-    bool eqByp = false, tgOn = true;
+    bool eqByp = false, tgOn = true, compOn = false;
 };
 
 //==============================================================================
