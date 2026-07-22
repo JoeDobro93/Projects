@@ -199,13 +199,13 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     midiAtt->sendInitialUpdate();
     addAndMakeVisible (midiTg);
 
-    setHint (modeSel, "Mode", "Gate = binary open/close. Comp = continuous high-ratio compression of the cancelling copy - smoother and level-tracking.");
-    modeSel.onChange = [this] (int i) { modeAtt->setValueAsCompleteGesture ((float) i); };
+    setHint (modeSw, "Mode", "COMP = continuous high-ratio compression of the cancelling copy - smoother and level-tracking. GATE = binary open/close.");
+    modeSw.onChange = [this] (bool left) { modeAtt->setValueAsCompleteGesture (left ? 1.0f : 0.0f); };
     modeAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::compMode),
         [this] (float v)
         {
             compOn = v > 0.5f;
-            modeSel.setSelected (compOn ? 1 : 0, false);
+            modeSw.setLeftActive (compOn, false);
             trigMeter.setCaption (compOn ? "INPUT" : "TRIGGER");
             setHint (trigMeter, compOn ? "INPUT" : "TRIGGER",
                      compOn ? "Input level after the trigger filter - what the compressor responds to. Drag the red line to set the Threshold."
@@ -214,7 +214,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
             grMeter.setVisible (compOn);
         });
     modeAtt->sendInitialUpdate();
-    addAndMakeVisible (modeSel);
+    addAndMakeVisible (modeSw);
 
     static const char* presetNames[4] = { "Default", "Kick", "Snare", "Toms" };
     for (int i = 0; i < 4; ++i)
@@ -322,7 +322,7 @@ void SimpleView::resized()
     krow.removeFromLeft (kgap);
     auto c4 = krow.removeFromLeft (kw);
     tailFade.setBounds (c4.withTrimmedBottom (sc (28)));
-    modeSel.setBounds (c3.getX(), learnY, c4.getRight() - c3.getX(), sc (24));
+    modeSw.setBounds (c3.getX(), learnY, c4.getRight() - c3.getX(), sc (24));
 
     // meter row: TRIGGER · GATE · AMOUNT · OUT spread across the content
     // width so its bounding box matches the knobs below

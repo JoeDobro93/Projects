@@ -272,7 +272,37 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.0 (Compressor mode):** second detection mode — the classic
+> **v1.1.1 (comp round 2):** (1) **Flam fix / envelope margin**: fixed
+> +10 ms envelope-application margin (kEnvMarginMs, PluginProcessor.h
+> public constexpr). Audio runs Lookahead+10 ms behind the detector;
+> gain AND tail envelopes route through margin-length rings
+> (gainRing/envRing in CompressorProcessor) so decisions still lead the
+> audio by exactly the Lookahead — but a veto-late open (level qualified
+> while contrastOk false → vetoBlockedSamples>0 at open) sets
+> bypassRemaining=margin and applies UNDELAYED for one window,
+> recovering the head start Selectivity's settle ate. Kills the
+> flam/comb at partial Amount. Latency = Lookahead+10, constant (no PDC
+> jumps); test expects 720 @48k; flam regression test passes 0.100/0.1
+> early-attack (was ~0). (2) **Per-mode Smoothing**: new param
+> compRmsWindow (same range); updateParametersForBlock feeds the active
+> mode's window; TriggerStage re-attaches the knob + hint per mode.
+> (3) **Ratios**: choices now 4:1|10:1|20:1|100:1|-1:1|-2:1 (Mirror
+> renamed; -2:1 new, grPerOverDb 3). Defaults: ratio 100:1, attack
+> 0.1 ms, release 10 ms, **compMode ON by default**; presets all carry
+> cAtk 0.1 / cRel 10. (4) **ui::TextSwitch**: pill switch, thumb covers
+> + names the active side (COMP left green / GATE right accent), MODE
+> caption above; lives in TriggerStage beside MIDI (GateStage selector
+> removed; Simple view Learn row uses it too). (5) **History**: the
+> full-height green/gold background is gone; traces' floor is raised
+> 8 px and the freed bottom strip is an activity lane (green = gate/GR
+> · alpha follows o01, gold = tail · alpha follows t01, accent =
+> forced); the green Output outline (post-EQ level) now draws in BOTH
+> modes via a 4th "Output" toggle (comp under-curve fill removed).
+> (6) Latency text: "## ms latency" (no "adds"), moved to RightRail
+> under LISTEN TO (lookahead attachment + kEnvMarginMs). Tests 33.
+> VERSION 1.1.1.
+>
+> > **v1.1.0 (Compressor mode):** second detection mode — the classic
 > high-ratio-parallel-compressor bleed trick, over-compressed. Param IDs
 > compMode/compRatio (choice 4:1|10:1|20:1|100:1|Mirror, default 20:1)/
 > compAttack (0.1|2|30 log, def 1 ms)/compRelease (5|100|1000 log int,

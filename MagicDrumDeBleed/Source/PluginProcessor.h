@@ -44,9 +44,10 @@ namespace ParamIDs
     // path instead of the binary gate. Its knobs are separate parameters so
     // each mode remembers its own settings.
     inline constexpr const char* compMode     = "compMode";
-    inline constexpr const char* compRatio    = "compRatio";   // choice: 4/10/20/100 : 1
+    inline constexpr const char* compRatio    = "compRatio";   // choice: 4:1..100:1, -1:1, -2:1
     inline constexpr const char* compAttack   = "compAttack";
     inline constexpr const char* compRelease  = "compRelease";
+    inline constexpr const char* compRmsWindow = "compRmsWindow";   // comp mode's own Smoothing
 
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
@@ -84,6 +85,10 @@ class MagicDrumDeBleedAudioProcessor : public juce::AudioProcessor,
                                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
+    // Fixed envelope-application margin (see CompressorProcessor): total
+    // latency = Lookahead + this. The UI's latency readout adds it too.
+    static constexpr int kEnvMarginMs = 10;
+
     enum MonitorMode
     {
         monitorNormal = 0,      // dry + parallel (final output)
@@ -217,7 +222,7 @@ private:
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
-    std::atomic<float> *pCompMode, *pCompRatio, *pCompAttack, *pCompRelease;
+    std::atomic<float> *pCompMode, *pCompRatio, *pCompAttack, *pCompRelease, *pCompRmsWindow;
     void buildForceMask (const juce::MidiBuffer& midi, int numSamples);
     std::vector<unsigned char> forceMask;
     bool heldKeys[128] = {};                 // set, not a counter: self-heals lost note-offs
@@ -228,6 +233,7 @@ private:
     // Per-block cached control state
     double sampleRateCached = 44100.0;
     int    maxLookaheadSamples = 0;
+    int    envMarginSamples = 0;        // Selectivity/flam recovery margin (fixed 10 ms)
     int    currentLookaheadSamples = -1;
     int    monitorModeCached = monitorNormal;
     int    soloBandCached = -1;

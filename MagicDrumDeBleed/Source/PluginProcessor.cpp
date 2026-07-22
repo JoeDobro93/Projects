@@ -116,14 +116,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                         .withStringFromValueFunction ([] (float v, int)
                         { return v >= 23.75f ? juce::String ("Off") : juce::String (v, 1) + " dB"; })));
 
-    // ---- Compressor mode (parallel over-threshold ducker) ----
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::compMode, 1 }, "Comp Mode", false));
+    // ---- Compressor mode (parallel over-threshold compressor) ----
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::compMode, 1 }, "Comp Mode", true));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::compRatio, 1 }, "Ratio",
-                    juce::StringArray { "4:1", "10:1", "20:1", "100:1", "Mirror" }, 2));
+                    juce::StringArray { "4:1", "10:1", "20:1", "100:1", "-1:1", "-2:1" }, 3));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compAttack, 1 }, "Comp Attack",
-                    logRange (0.1f, 2.0f, 30.0f), 1.0f, ms));
+                    logRange (0.1f, 2.0f, 30.0f), 0.1f, ms));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compRelease, 1 }, "Comp Release",
-                    logRange (5.0f, 100.0f, 1000.0f, true), 100.0f, msInt));
+                    logRange (5.0f, 100.0f, 1000.0f, true), 10.0f, msInt));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compRmsWindow, 1 }, "Comp RMS Window",
+                    logRange (1.0f, 10.0f, 100.0f), 10.0f, ms));
 
     // ---- Sidechain ----
     p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::scEnable, 1 }, "SC Filter", true));
@@ -222,6 +224,7 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pCompRatio    = raw (ParamIDs::compRatio);
     pCompAttack   = raw (ParamIDs::compAttack);
     pCompRelease  = raw (ParamIDs::compRelease);
+    pCompRmsWindow = raw (ParamIDs::compRmsWindow);
     pScEnable     = raw (ParamIDs::scEnable);
     pScFreq       = raw (ParamIDs::scFreq);
     pScQ          = raw (ParamIDs::scQ);
@@ -310,17 +313,23 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 {
     sampleRateCached = sampleRate;
     maxLookaheadSamples = (int) std::ceil (0.020 * sampleRate) + 1;   // 20 ms cap
+    // Fixed envelope-application margin: audio runs lookahead + margin behind
+    // the detector, and decisions are applied margin samples late — EXCEPT
+    // veto-delayed opens, which apply immediately and so recover the head
+    // start Selectivity's settle time ate (the "flam" fix). Constant, so
+    // latency never moves with knobs or mode.
+    envMarginSamples = (int) std::lround (kEnvMarginMs * 0.001 * sampleRate);
 
     const int numCh = juce::jlimit (1, 2, getTotalNumInputChannels());
 
-    compressor.prepare (sampleRate, numCh, maxLookaheadSamples);
+    compressor.prepare (sampleRate, numCh, maxLookaheadSamples + envMarginSamples, envMarginSamples);
     eq.prepare (sampleRate, numCh);
     scFilter.prepare (sampleRate);
     learnAnalyzer.prepare (sampleRate);
 
     dryDelays.resize ((size_t) numCh);
     for (auto& d : dryDelays)
-        d.prepare (maxLookaheadSamples);
+        d.prepare (maxLookaheadSamples + envMarginSamples);
 
     const int block = juce::jmax (16, samplesPerBlock);
     conversionBuffer.setSize (numCh, block);
@@ -350,7 +359,7 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
 void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 {
-    // ---- Lookahead / latency ----
+    // ---- Lookahead / latency (audio runs lookahead + margin behind) ----
     const int lookaheadMs = (int) pLookahead->load();
     const int lookahead = juce::jlimit (0, maxLookaheadSamples,
                                         (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));
@@ -358,22 +367,24 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     {
         currentLookaheadSamples = lookahead;
         for (auto& d : dryDelays)
-            d.setDelay (lookahead);
-        setLatencySamples (lookahead);
+            d.setDelay (lookahead + envMarginSamples);
+        setLatencySamples (lookahead + envMarginSamples);
     }
 
-    // ---- Compressor / sidechain ----
-    compressor.setParameters (pThreshold->load(), kReductionDb, lookahead,
-                              pRmsWindow->load(), pHold->load(), pRelease->load(),
+    // ---- Compressor / sidechain (each mode has its own Smoothing state) ----
+    const bool compModeOn = pCompMode->load() > 0.5f;
+    compressor.setParameters (pThreshold->load(), kReductionDb, lookahead, envMarginSamples,
+                              compModeOn ? pCompRmsWindow->load() : pRmsWindow->load(),
+                              pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
     {
         // GR per dB over threshold: standard ratios reduce by 1-1/R (copy
-        // squeezed toward the threshold); Mirror is a negative ratio (-1:1),
-        // 2 dB down per dB over, pushing the copy BELOW the threshold.
-        static constexpr double kGrPerDb[5] = { 0.75, 0.90, 0.95, 0.99, 2.0 };
-        compressor.setCompParameters (pCompMode->load() > 0.5f,
-                                      kGrPerDb[juce::jlimit (0, 4, (int) pCompRatio->load())],
+        // squeezed toward the threshold); the negative ratios -N:1 reduce by
+        // 1+N, pushing the copy N dB BELOW the threshold per dB over.
+        static constexpr double kGrPerDb[6] = { 0.75, 0.90, 0.95, 0.99, 2.0, 3.0 };
+        compressor.setCompParameters (compModeOn,
+                                      kGrPerDb[juce::jlimit (0, 5, (int) pCompRatio->load())],
                                       pCompAttack->load(), pCompRelease->load());
     }
     eqGateOnCached = pEqGateOn->load() > 0.5f;

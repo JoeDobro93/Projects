@@ -41,6 +41,7 @@ private:
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
     ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" }, midiBtn { "MIDI" };
+    ui::TextSwitch modeSw { "COMP", "GATE" };
     eqids::LearnButton learnBtn { processor };
     std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt,
                                                compModeAtt;
@@ -68,13 +69,11 @@ private:
     // Compressor-mode knobs share the grid slots (visibility follows the mode)
     ui::Knob ratioK { "Ratio", ui::Knob::openClr }, compAtk { "Attack", ui::Knob::openClr },
              compRel { "Release", ui::Knob::openClr };
-    ui::LightSelector modeSel { { { "Gate", ui::LightSelector::iconNone },
-                                  { "Comp", ui::LightSelector::iconNone } },
-                                ui::Knob::openClr, true };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
-    ui::LightToggle trigTg { "Input" }, smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr };
+    ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Input" },
+                    smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr };
     ui::SnowButton histFreeze;
-    bool showTrig = true, showSmooth = true, showOff = true;
+    bool showOut = true, showTrig = true, showSmooth = true, showOff = true;
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
     std::unique_ptr<juce::ParameterAttachment> modeAtt;
@@ -85,7 +84,6 @@ private:
     juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;
     float open01 = 0.0f, tail01 = 0.0f;
     int state = 0;
-    juce::String latencyText;
 };
 
 //==============================================================================
@@ -149,7 +147,9 @@ private:
     ui::GateMeter gateMeter;
     ui::GrMeter grMeter;                                // comp mode: replaces GATE
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
-    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, modeAtt;
+    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, modeAtt, lookAtt;
+    juce::String latencyText;
+    int latencyY = 0;
     int listenY = 0, amountX = 0, amountY = 0;
 };
 

@@ -15,13 +15,17 @@ namespace
     constexpr double kHystFallEpsDb  = 0.15;
 }
 
-void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxLookaheadSamples)
+void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxDelaySamples,
+                                   int maxMarginSamples)
 {
     sr = sampleRate;
 
     delays.resize ((size_t) juce::jmax (1, numChannels));
     for (auto& d : delays)
-        d.prepare (maxLookaheadSamples);
+        d.prepare (maxDelaySamples);
+
+    gainRing.assign ((size_t) juce::jmax (1, maxMarginSamples), 0.0);
+    envRing.assign ((size_t) juce::jmax (1, maxMarginSamples), 0.0);
 
     // Worst-case RMS window is 100 ms.
     rmsBuffer.assign ((size_t) juce::jmax (1, (int) std::ceil (0.1 * sr) + 1), 0.0);
@@ -54,6 +58,11 @@ void CompressorProcessor::reset()
     gateOpen = false;
     eqGateEnv = 0.0;
     eqGateHoldCounter = 0;
+    std::fill (gainRing.begin(), gainRing.end(), 0.0);
+    std::fill (envRing.begin(), envRing.end(), 0.0);
+    ringIdx = 0;
+    bypassRemaining = 0;
+    vetoBlockedSamples = 0;
     lastBlockGrDb = 0.0f;
 }
 
@@ -105,7 +114,8 @@ void CompressorProcessor::rebuildRmsSum()
 }
 
 void CompressorProcessor::setParameters (double newThresholdDb, double newReductionDb,
-                                         int newLookaheadSamples, double rmsWindowMs,
+                                         int newLookaheadSamples, int newMarginSamples,
+                                         double rmsWindowMs,
                                          double holdMs, double releaseMs,
                                          double newHysteresisDb, double newContrastDb)
 {
@@ -115,8 +125,9 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
     contrastDb = newContrastDb;
 
     lookaheadSamples = juce::jmax (0, newLookaheadSamples);
+    marginSamples = juce::jlimit (0, (int) gainRing.size(), newMarginSamples);
     for (auto& d : delays)
-        d.setDelay (lookaheadSamples);
+        d.setDelay (lookaheadSamples + marginSamples);
 
     setRmsWindow (rmsWindowMs);
 
@@ -248,8 +259,16 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
             // ---- Gate state: open fast, close slow with hysteresis. A MIDI
             // note (forceOpen) is authoritative: no threshold, no veto. ----
-            if (forced || (contrastOk && juce::jmax (fastDb, rmsDb) > thresholdDb))
+            const bool levelQualifies = juce::jmax (fastDb, rmsDb) > thresholdDb;
+            if (! forced && levelQualifies && ! contrastOk)
+                ++vetoBlockedSamples;                       // veto is eating head start
+            else if (! levelQualifies)
+                vetoBlockedSamples = 0;
+            if (forced || (contrastOk && levelQualifies))
             {
+                if (! gateOpen && ! forced && vetoBlockedSamples > 0)
+                    bypassRemaining = marginSamples;        // veto-late open: apply NOW
+                vetoBlockedSamples = 0;
                 gateOpen = true;
                 holdCounter = holdSamples;
             }
@@ -284,35 +303,56 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
             currentGainDb = reductionDb;
         }
 
-        const double gain = std::pow (10.0, currentGainDb / 20.0);
-        minGainDb = juce::jmin (minGainDb, (float) currentGainDb);
-
         // ---- EQ-gate envelope: instant engage (within lookahead), hold, release.
         // Keys on the mode's open state — gate mode: the gate itself; comp
         // mode: slow RMS above threshold (or MIDI force) — so the tail's
         // hold starts counting the moment the hit stops qualifying.
-        if (eqGateEnvOut != nullptr)
+        if (! applyGain)
         {
-            if (! applyGain)
-            {
-                eqGateEnv = 1.0;           // trigger bypassed: tail rings too
-            }
-            else if (openNow)
-            {
-                eqGateEnv = 1.0;               // instant, full engagement
-                eqGateHoldCounter = eqGateHoldSamples;
-            }
-            else if (eqGateHoldCounter > 0)
-            {
-                --eqGateHoldCounter;
-                eqGateEnv = 1.0;
-            }
+            eqGateEnv = 1.0;               // trigger bypassed: tail rings too
+        }
+        else if (openNow)
+        {
+            eqGateEnv = 1.0;               // instant, full engagement
+            eqGateHoldCounter = eqGateHoldSamples;
+        }
+        else if (eqGateHoldCounter > 0)
+        {
+            --eqGateHoldCounter;
+            eqGateEnv = 1.0;
+        }
+        else
+        {
+            eqGateEnv += eqGateReleaseCoeff * (0.0 - eqGateEnv);
+        }
+
+        // ---- Envelope-application margin: gain AND tail env are applied
+        // marginSamples late (audio is delayed lookahead + margin, so
+        // decisions still lead the audio by exactly the lookahead); a
+        // veto-late open bypasses the ring for one window — applied fresh,
+        // it recovers the head start the veto's settle time consumed.
+        double applyDb = currentGainDb;
+        double applyEnv = eqGateEnv;
+        if (marginSamples > 0)
+        {
+            const double gOld = gainRing[(size_t) ringIdx];
+            const double eOld = envRing[(size_t) ringIdx];
+            gainRing[(size_t) ringIdx] = currentGainDb;
+            envRing[(size_t) ringIdx] = eqGateEnv;
+            if (++ringIdx >= marginSamples)
+                ringIdx = 0;
+            if (bypassRemaining > 0)
+                --bypassRemaining;
             else
             {
-                eqGateEnv += eqGateReleaseCoeff * (0.0 - eqGateEnv);
+                applyDb = gOld;
+                applyEnv = eOld;
             }
-            eqGateEnvOut[i] = eqGateEnv;
         }
+        const double gain = std::pow (10.0, applyDb / 20.0);
+        minGainDb = juce::jmin (minGainDb, (float) currentGainDb);
+        if (eqGateEnvOut != nullptr)
+            eqGateEnvOut[i] = applyEnv;
 
         // ---- Delay the audio by the lookahead and apply the gain ----
         for (int ch = 0; ch < numChannels; ++ch)

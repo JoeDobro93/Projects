@@ -32,9 +32,7 @@ private:
              tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     eqids::LearnButton learnBtn { processor };
     ui::LightToggle midiTg { "MIDI" };
-    ui::LightSelector modeSel { { { "Gate", ui::LightSelector::iconNone },
-                                  { "Comp", ui::LightSelector::iconNone } },
-                                ui::Knob::openClr, true };
+    ui::TextSwitch modeSw { "COMP", "GATE" };
     class DrumButton;
     std::unique_ptr<juce::Button> presetBtns[4];
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;

@@ -118,6 +118,24 @@ private:
 };
 
 //==============================================================================
+/*  Two-position mode switch: a pill holding both labels; the sliding thumb
+    covers — and names — the ACTIVE side. Optional small caption above. */
+class TextSwitch : public juce::Component
+{
+public:
+    TextSwitch (juce::String leftLabel, juce::String rightLabel);
+    std::function<void (bool leftActive)> onChange;
+    void setCaption (juce::String c)           { caption = std::move (c); repaint(); }
+    void setLeftActive (bool left, bool notify);
+    bool isLeftActive() const                  { return leftActive; }
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    juce::String lLab, rLab, caption;
+    bool leftActive = true;
+};
+
+//==============================================================================
 /*  Tiny pill switch: dark knob left = off, highlighted knob right = on. */
 class MiniSwitch : public juce::Component
 {

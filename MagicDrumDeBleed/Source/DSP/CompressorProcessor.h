@@ -32,9 +32,9 @@
     over threshold), clamped at the full reduction. Standard ratios R map
     to grPerOverDb = 1−1/R (the copy is squeezed toward the threshold, so
     hits escape the null partially attenuated — the classic sound); the
-    Mirror setting is a negative ratio (−1:1), grPerOverDb = 2, pushing
-    the copy as far BELOW the threshold as the input is above — the most
-    extreme, most gate-like setting. Its own attack/release envelope;
+    negative ratios −N:1 use grPerOverDb = 1+N, pushing the copy N dB
+    BELOW the threshold per dB over — the extreme, most gate-like end.
+    Its own attack/release envelope and its own Smoothing state;
     Selectivity/hysteresis/hold are gate-mode-only; MIDI force = full duck.
     The tail (EQ-gate) keys on "slow RMS above threshold" in this mode.
 
@@ -92,10 +92,19 @@ private:
 class CompressorProcessor
 {
 public:
-    void prepare (double sampleRate, int numChannels, int maxLookaheadSamples);
+    void prepare (double sampleRate, int numChannels, int maxDelaySamples,
+                  int maxMarginSamples = 0);
     void reset();
 
+    /*  marginSamples: the audio is delayed lookahead + margin, and the gain/
+        tail envelopes are applied margin samples LATE — so decisions still
+        lead the audio by exactly the lookahead. A gate opening that was held
+        back by the Selectivity veto (level qualified, veto said no) applies
+        UNDELAYED for one margin window instead, recovering the head start the
+        veto's settle time consumed — no more flammed attacks at partial
+        Amount. Latency = lookahead + margin, constant. */
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
+                        int marginSamples,
                         double rmsWindowMs, double holdMs, double releaseMs,
                         double hysteresisDb, double contrastDb);
 
@@ -180,6 +189,13 @@ private:
     double currentGainDb = 0.0;
     int holdCounter = 0;
     bool gateOpen = false;
+
+    // Envelope-application margin (see setParameters): rings hold the gain
+    // and tail envelopes for marginSamples; veto-late opens bypass them.
+    std::vector<double> gainRing { 1, 0.0 }, envRing { 1, 0.0 };
+    int marginSamples = 0, ringIdx = 0;
+    int bypassRemaining = 0;
+    int vetoBlockedSamples = 0;
 
     // EQ-gate envelope (0..1 linear)
     double eqGateEnv = 0.0;
