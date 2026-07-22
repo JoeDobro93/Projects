@@ -421,7 +421,7 @@ void TailCanvas::mouseDown (const juce::MouseEvent& e)
     if (drag < 0) return;
     sel = drag;
     if (onBandSelected) onBandSelected (drag);
-    freqP[drag]->beginChangeGesture();
+    if (! freqLock) freqP[drag]->beginChangeGesture();
     if (gainP[drag] != nullptr) gainP[drag]->beginChangeGesture();
 }
 
@@ -429,11 +429,14 @@ void TailCanvas::mouseDrag (const juce::MouseEvent& e)
 {
     if (drag < 0) return;
     auto area = plotArea();
-    auto* fp = freqP[drag];
-    const auto& fr = fp->getNormalisableRange();
-    const float f = juce::jlimit (fr.start, fr.end,
-                                  (float) xf (juce::jlimit (0.0f, area.getWidth(), e.position.x - area.getX()), area.getWidth()));
-    fp->setValueNotifyingHost (fp->convertTo0to1 (f));
+    if (! freqLock)
+    {
+        auto* fp = freqP[drag];
+        const auto& fr = fp->getNormalisableRange();
+        const float f = juce::jlimit (fr.start, fr.end,
+                                      (float) xf (juce::jlimit (0.0f, area.getWidth(), e.position.x - area.getX()), area.getWidth()));
+        fp->setValueNotifyingHost (fp->convertTo0to1 (f));
+    }
 
     if (auto* gp = gainP[drag])
     {
@@ -449,7 +452,7 @@ void TailCanvas::mouseDrag (const juce::MouseEvent& e)
 void TailCanvas::mouseUp (const juce::MouseEvent&)
 {
     if (drag < 0) return;
-    freqP[drag]->endChangeGesture();
+    if (! freqLock) freqP[drag]->endChangeGesture();
     if (gainP[drag] != nullptr) gainP[drag]->endChangeGesture();
     drag = -1;
 }

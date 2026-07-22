@@ -142,6 +142,8 @@ public:
     void   startLearn()                 { learnAnalyzer.startCapture(); }
     bool   isLearning() const           { return learnAnalyzer.isCapturing(); }
     double finishLearnAndAnalyse();     // stops capture, returns detected Hz or -1
+    // Stops capture, returns the LP<1 kHz resonance centres (loudest first).
+    std::vector<mdd::LearnAnalyzer::Resonance> finishLearnAndAnalyseResonances();
 
     // ---- Metering / analysis feeds for the UI ----
     float getGainReductionDb() const    { return grDb.load(); }

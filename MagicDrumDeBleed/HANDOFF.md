@@ -272,7 +272,38 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.5 (tail blend hold fix + range line):** v1.1.4's blend was
+> **v1.2.0 (multi-band resonance Learn + freq lock):** (1)
+> LearnAnalyzer::analyseResonances(ceiling, maxCount=8): shared
+> averageSpectrum refactor; all local maxima parabolic-refined, greedy
+> pick loudest-first with spacing padding max(12 Hz, 6%) and a
+> kResonanceFloorDb=−30 floor relative to the fundamental (returns
+> {hz, levelDb-rel-fund}, loudest first). Processor accessor
+> finishLearnAndAnalyseResonances() = stopCapture + analyseResonances
+> (1 kHz fixed — the "LP under 1 kHz" analysis). (2) Slot model
+> (eqids::assignResonanceSlots(proc, res, selfBand)): slot0 = K1 =
+> fundamental; slots 1..4 = loudest remaining resonances ABOVE the
+> fundamental in level order. Enabled K bands (≠ selfBand) PIN their
+> centres into their slots and absorb nearby detections (anti-cluster
+> stability across hit variation); selfBand −1 = learn-all, no pinning.
+> applyResonanceToBand: freq, Q 10, ring 7 (K1 ring 10), enable; K1
+> freq mirrors into Focus via the existing link listener. (3) UI:
+> eqids::BandLearnButton under each K band's SOLO (row at strip
+> +54/13px; controls height unchanged, 67 of 90 used) — listens 3 s,
+> assigns ITS slot, red flash 900 ms + untouched band when that slot
+> wasn't detected. "Learn all" button spans the LP+HP columns of the
+> same row (LearnButton gained learnAllBands ctor flag + setIdleText +
+> fail flash; assigns every fillable slot, leaves the rest alone, sets
+> Focus to the fundamental). Simple-view Learn is now learn-all.
+> Trigger-stage Learn unchanged (Focus + K1-via-link only). (4) "Lock"
+> MiniSwitch under the SCALE selector (state prop "freqLock"):
+> TailCanvas::setFreqLock — handle drags change ring only (freq gesture
+> skipped entirely), wheel-Q unaffected, Frequency knob still works.
+> (5) Edge pin: tailRange 0 + tailBase 0 = legacy full tail (range
+> guard short-circuits before base is read). Tests 42: slots exactly
+> 80/210/330/480/none with −40 dB component floored out; pinned-K2
+> learn-K3 lands 330. VERSION 1.2.0.
+>
+> > **v1.1.5 (tail blend hold fix + range line):** v1.1.4's blend was
 > inaudible in the field: the eqGate HOLD branch still pinned
 > eqGateEnv = 1.0, so the instant a light tap fell below T the partial
 > engagement was overwritten with full (TAIL meter shot to 100%) — the

@@ -738,6 +738,29 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     addAndMakeVisible (tailMeter);
     setHint (tailMeter, "TAIL", "How much of the tail is currently ringing through.");
 
+    for (int b = 0; b < 5; ++b)
+    {
+        bandLearnBtns[b] = std::make_unique<eqids::BandLearnButton> (processor, b);
+        setHint (*bandLearnBtns[b], "Learn K" + juce::String (b + 1),
+                 b == 0 ? juce::String ("Listens for 3 seconds and parks K1 on the drum's fundamental (Q 10, ring 10). With Link on, Focus follows.")
+                        : "Listens for 3 seconds and parks K" + juce::String (b + 1) + " on the drum's #"
+                          + juce::String (b + 1) + " resonance - the next loudest ring above the bands already placed (Q 10, ring 7). Flashes red if that resonance isn't there.");
+        addAndMakeVisible (*bandLearnBtns[b]);
+    }
+    learnAllBtn.setIdleText ("Learn all");
+    setHint (learnAllBtn, "Learn all", "Listens for 3 seconds and sets up EVERY keep band it can: the fundamental into K1 (and Focus), then the loudest resonances above it into K2 onward. Bands with no detected resonance are left alone.");
+    addAndMakeVisible (learnAllBtn);
+
+    addAndMakeVisible (lockSw);
+    setHint (lockSw, "Lock freq", "Locks band frequencies against drag on the display - handles only change ring level (and Q with the scroll wheel). The Frequency knob still works.");
+    lockSw.setState ((bool) processor.apvts.state.getProperty ("freqLock", false), false);
+    canvas.setFreqLock (lockSw.getState());
+    lockSw.onChange = [this] (bool on)
+    {
+        canvas.setFreqLock (on);
+        processor.apvts.state.setProperty ("freqLock", on, nullptr);
+    };
+
     selectBand (2);                                     // K1 — the default-enabled band
     updateSoloButtons();
 }
@@ -832,6 +855,10 @@ void TailStage::updateDim()
         soloBtns[b].setAlpha (band);
         bandSw[b].setAlpha (band);
     }
+    for (auto& lb : bandLearnBtns)
+        if (lb != nullptr)
+            lb->setAlpha (band);
+    learnAllBtn.setAlpha (band);
     bandLabel.setAlpha (band);
     freq.setAlpha (band);
     widthK.setAlpha (band);
@@ -865,6 +892,8 @@ void TailStage::resized()
     scaleLabelY = leftCol.getY();
     leftCol.removeFromTop (sc (14));
     scaleSel.setBounds (leftCol.removeFromTop (sc (54)));
+    leftCol.removeFromTop (sc (10));
+    lockSw.setBounds (leftCol.removeFromTop (sc (16)));
     r.removeFromLeft (sc (5));
     mon.setBounds (r.removeFromRight (sc (26)));
     r.removeFromRight (sc (4));
@@ -889,7 +918,10 @@ void TailStage::resized()
         bandSw[b].setBounds (x + (colW - sc (20)) / 2, strip.getY(), sc (20), sc (10));
         bandBtns[b].setBounds (x, strip.getY() + sc (13), colW - sc (3), sc (22));
         soloBtns[b].setBounds (x, strip.getY() + sc (38), colW - sc (3), sc (13));
+        if (b >= 2)
+            bandLearnBtns[b - 2]->setBounds (x, strip.getY() + sc (54), colW - sc (3), sc (13));
     }
+    learnAllBtn.setBounds (strip.getX(), strip.getY() + sc (54), colW * 2 - sc (3), sc (13));
 
     auto right = juce::Rectangle<int> (controls.getRight() - (int) (rightW * shrink), controls.getY(),
                                        (int) (rightW * shrink), controls.getHeight());

@@ -26,6 +26,9 @@ public:
     void setFrozen (bool b)           { frozen = b; }
     void setMonitorGain (float db)    { monGainDb = db; repaint(); }
     void setDisplayScale (float maxCutDb)   { dispMax = maxCutDb; repaint(); }   // 12/18/24
+    // Lock freq: handle drags change only the ring level (and wheel the Q);
+    // frequency stays put — knobs still move it.
+    void setFreqLock (bool b)         { freqLock = b; }
 
     // Broadband average of |1 − amount·H| — the keepAudible() feed (spec §3).
     static double keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount);
@@ -71,6 +74,7 @@ private:
     bool accumulate = false, frozen = false, internals = false;
     bool showDry = true, showKept = true;                 // legend toggles
     float monGainDb = 0.0f;                               // display-only spectrum offset
+    bool freqLock = false;
     float dispMax = 24.0f;                                // gold-curve axis: cut depth 0..dispMax
     juce::Rectangle<int> dryLegend, keptLegend;           // clickable legend chips
 

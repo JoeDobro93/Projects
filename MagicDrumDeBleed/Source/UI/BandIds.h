@@ -4,6 +4,7 @@
 #include "../PluginProcessor.h"
 #include "../PresetDefaults.h"
 #include "Widgets.h"
+#include <array>
 
 namespace eqids
 {
@@ -23,22 +24,92 @@ inline void setRealValue (MagicDrumDeBleedAudioProcessor& proc, const juce::Stri
     }
 }
 
-/*  Learn button, shared by the Trigger stage and the Simple view. First click
-    starts capture (green, auto-finishes after 3 s); the second click — or the
-    timeout — analyses, sets Focus, and with Link to K1 on updates K1
-    (enabling it at ring 4.5 ≈ −3 dB ring level if it was off). */
+/*  Resonance slot model. Slot 0 (K1) = the fundamental; slots 1..4
+    (K2..K5) = the loudest remaining resonances ABOVE the fundamental in
+    loudness order. ENABLED K bands other than `selfBand` PIN their centres
+    into their slots — hit-to-hit variation can't shuffle a neighbour's
+    resonance onto the band being learned, and detected peaks near a pinned
+    centre are absorbed by it. selfBand −1 = learn-all (no pinning, fresh
+    assignment). Unfillable slots return 0. */
+inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcessor& proc,
+                                                   const std::vector<mdd::LearnAnalyzer::Resonance>& res,
+                                                   int selfBand)
+{
+    std::array<double, 5> slot {};
+    if (res.empty())
+        return slot;
+
+    auto spacing = [] (double f) { return juce::jmax (12.0, 0.06 * f); };
+    if (selfBand >= 0)
+        for (int b = 0; b < 5; ++b)
+            if (b != selfBand)
+                if (auto* on = proc.apvts.getRawParameterValue (ParamIDs::notchOn (b));
+                    on != nullptr && on->load() > 0.5f)
+                    slot[(size_t) b] = (double) proc.apvts.getRawParameterValue (ParamIDs::notchFreq (b))->load();
+
+    if (slot[0] <= 0.0)
+        slot[0] = res[0].hz;                       // res is loudest-first
+    const double f0 = slot[0];
+
+    for (const auto& r : res)                      // level order fills K2 first
+    {
+        if (r.hz <= f0 + spacing (f0))
+            continue;                              // the fundamental region itself
+        bool taken = false;
+        for (double s : slot)
+            if (s > 0.0 && std::abs (r.hz - s) < spacing (s))
+            {
+                taken = true;                      // a pinned centre owns this one
+                break;
+            }
+        if (taken)
+            continue;
+        for (size_t i = 1; i < slot.size(); ++i)
+            if (slot[i] <= 0.0)
+            {
+                slot[i] = r.hz;
+                break;
+            }
+    }
+    return slot;
+}
+
+/*  Turn band b (0..4 = K1..K5) into a learned resonance keeper: enabled,
+    centred on hz, Q 10, ring 7 (K1: ring 10 — the fundamental is the main
+    keeper). Setting K1's frequency mirrors into Focus when Link is on. */
+inline void applyResonanceToBand (MagicDrumDeBleedAudioProcessor& proc, int b, double hz)
+{
+    setRealValue (proc, ParamIDs::notchFreq (b), (float) hz);
+    setRealValue (proc, ParamIDs::notchQ (b), 10.0f);
+    setRealValue (proc, ParamIDs::notchGain (b), b == 0 ? 10.0f : 7.0f);
+    setRealValue (proc, ParamIDs::notchOn (b), 1.0f);
+}
+
+/*  Learn button, shared by the Trigger stage, the Simple view and the Tail
+    stage's "Learn all". First click starts capture (green, auto-finishes
+    after 3 s); the second click — or the timeout — analyses.
+    learnAllBands == false (Trigger): sets Focus, and with Link to K1 on
+    updates K1 (enabling it at ring 4.5 ≈ −3 dB ring level if it was off).
+    learnAllBands == true: assigns EVERY resonance slot it can fill —
+    fundamental → K1 (+ Focus), then the loudest above-fundamental
+    resonances → K2.. as far as they go; bands with no detected slot are
+    left untouched. Flashes red briefly when nothing was detected. */
 class LearnButton : public juce::TextButton, private juce::Timer
 {
 public:
-    explicit LearnButton (MagicDrumDeBleedAudioProcessor& p) : juce::TextButton ("Learn"), proc (p)
+    explicit LearnButton (MagicDrumDeBleedAudioProcessor& p, bool learnAllBands = false)
+        : juce::TextButton ("Learn"), proc (p), learnAll (learnAllBands)
     {
         onClick = [this] { proc.isLearning() ? finish() : begin(); };
         applyColours (false);
     }
 
+    void setIdleText (const juce::String& t)  { idleText = t; setButtonText (t); }
+
 private:
     void begin()
     {
+        flashing = false;
         proc.startLearn();
         setButtonText (juce::String::fromUTF8 ("listening\xe2\x80\xa6"));
         applyColours (true);
@@ -48,27 +119,56 @@ private:
     void finish()
     {
         stopTimer();
-        const double f = proc.finishLearnAndAnalyse();
-        setButtonText ("Learn");
+        setButtonText (idleText);
         applyColours (false);
-        if (f <= 0.0) return;
 
-        setRealValue (proc, ParamIDs::scFreq, (float) f);
-        auto* link = proc.apvts.getParameter (ParamIDs::linkK1);
-        if (link != nullptr && link->getValue() > 0.5f)
+        if (! learnAll)
         {
-            auto* on = proc.apvts.getParameter (ParamIDs::notchOn (0));
-            const bool wasOn = on != nullptr && on->getValue() > 0.5f;
-            setRealValue (proc, ParamIDs::notchFreq (0), (float) f);
-            if (! wasOn)
+            const double f = proc.finishLearnAndAnalyse();
+            if (f <= 0.0) { fail(); return; }
+
+            setRealValue (proc, ParamIDs::scFreq, (float) f);
+            auto* link = proc.apvts.getParameter (ParamIDs::linkK1);
+            if (link != nullptr && link->getValue() > 0.5f)
             {
-                setRealValue (proc, ParamIDs::notchOn (0), 1.0f);
-                setRealValue (proc, ParamIDs::notchGain (0), 4.5f);   // ring ≈ −3 dB
+                auto* on = proc.apvts.getParameter (ParamIDs::notchOn (0));
+                const bool wasOn = on != nullptr && on->getValue() > 0.5f;
+                setRealValue (proc, ParamIDs::notchFreq (0), (float) f);
+                if (! wasOn)
+                {
+                    setRealValue (proc, ParamIDs::notchOn (0), 1.0f);
+                    setRealValue (proc, ParamIDs::notchGain (0), 4.5f);   // ring ≈ −3 dB
+                }
             }
+            return;
         }
+
+        const auto res = proc.finishLearnAndAnalyseResonances();
+        const auto slot = assignResonanceSlots (proc, res, -1);
+        if (slot[0] <= 0.0) { fail(); return; }
+
+        setRealValue (proc, ParamIDs::scFreq, (float) slot[0]);
+        for (int b = 0; b < 5; ++b)
+            if (slot[(size_t) b] > 0.0)
+                applyResonanceToBand (proc, b, slot[(size_t) b]);
     }
 
-    void timerCallback() override   { if (proc.isLearning()) finish(); else stopTimer(); }
+    void fail()
+    {
+        flashing = true;
+        const auto c = ui::pal->warn;
+        setColour (juce::TextButton::buttonColourId, c);
+        setColour (juce::TextButton::textColourOffId, ui::pal->bg);
+        repaint();
+        startTimer (900);
+    }
+
+    void timerCallback() override
+    {
+        if (proc.isLearning()) { finish(); return; }
+        stopTimer();
+        if (flashing) { flashing = false; applyColours (false); }
+    }
 
     void applyColours (bool listening)
     {
@@ -79,6 +179,73 @@ private:
     }
 
     MagicDrumDeBleedAudioProcessor& proc;
+    juce::String idleText { "Learn" };
+    bool learnAll = false;
+    bool flashing = false;
+};
+
+/*  Per-band Learn (under each K band's solo button): listens, then assigns
+    THIS band's resonance slot — K1 the fundamental, K2 the next loudest
+    above it, and so on — pinning the other enabled bands' centres so the
+    ranking stays stable between hits. Flashes red if that slot could not
+    be detected (band is left untouched, not enabled). */
+class BandLearnButton : public juce::TextButton, private juce::Timer
+{
+public:
+    BandLearnButton (MagicDrumDeBleedAudioProcessor& p, int kBand)
+        : juce::TextButton ("Learn"), proc (p), band (kBand)
+    {
+        onClick = [this] { proc.isLearning() ? finish() : begin(); };
+        applyColours (false);
+    }
+
+private:
+    void begin()
+    {
+        flashing = false;
+        proc.startLearn();
+        setButtonText (juce::String::fromUTF8 ("\xe2\x80\xa6"));
+        applyColours (true);
+        startTimer (3000);
+    }
+
+    void finish()
+    {
+        stopTimer();
+        setButtonText ("Learn");
+        applyColours (false);
+
+        const auto res = proc.finishLearnAndAnalyseResonances();
+        const auto slot = assignResonanceSlots (proc, res, band);
+        if (slot[(size_t) band] <= 0.0)
+        {
+            flashing = true;                       // that resonance wasn't there
+            setColour (juce::TextButton::buttonColourId, ui::pal->warn);
+            setColour (juce::TextButton::textColourOffId, ui::pal->bg);
+            repaint();
+            startTimer (900);
+            return;
+        }
+        applyResonanceToBand (proc, band, slot[(size_t) band]);
+    }
+
+    void timerCallback() override
+    {
+        if (proc.isLearning()) { finish(); return; }
+        stopTimer();
+        if (flashing) { flashing = false; applyColours (false); }
+    }
+
+    void applyColours (bool listening)
+    {
+        setColour (juce::TextButton::buttonColourId, listening ? ui::pal->open : ui::pal->btn);
+        setColour (juce::TextButton::textColourOffId, listening ? ui::pal->bg : ui::pal->dim);
+        repaint();
+    }
+
+    MagicDrumDeBleedAudioProcessor& proc;
+    const int band;
+    bool flashing = false;
 };
 
 /*  Apply a factory preset: reset everything except the per-mic calibration

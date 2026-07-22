@@ -827,6 +827,12 @@ double MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyse()
     return learnAnalyzer.analyse (pLearnCeiling->load());
 }
 
+std::vector<mdd::LearnAnalyzer::Resonance> MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyseResonances()
+{
+    learnAnalyzer.stopCapture();
+    return learnAnalyzer.analyseResonances (1000.0);
+}
+
 //==============================================================================
 juce::Point<int> MagicDrumDeBleedAudioProcessor::getAdvancedSize() const
 {

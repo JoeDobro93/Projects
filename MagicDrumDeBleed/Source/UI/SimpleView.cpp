@@ -185,7 +185,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     addAndMakeVisible (tailFade);
     tailFade.attach (proc.apvts.getParameter (ParamIDs::eqGateRelease));
     setHint (tailFade, "Tail fade", "How long the kept resonance takes to fade to silence.");
-    setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the plugin on this drum's dominant frequency.");
+    setHint (learnBtn, "Learn", "Listens for up to 3 seconds, parks the plugin on this drum's fundamental and sets up every keep band it can find a resonance for (up to 5).");
     addAndMakeVisible (learnBtn);
 
     setHint (midiTg, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note - the manual repair path for hits the detector misses.");

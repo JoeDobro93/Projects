@@ -115,6 +115,9 @@ private:
 
     juce::TextButton bandBtns[7], soloBtns[7];
     ui::MiniSwitch bandSw[7];                           // enable switches
+    std::unique_ptr<eqids::BandLearnButton> bandLearnBtns[5];   // K1..K5
+    eqids::LearnButton learnAllBtn { processor, true };
+    ui::MiniSwitch lockSw { "Lock" };
     std::unique_ptr<juce::ParameterAttachment> onAtts[7];
     juce::Label bandLabel;
     ui::Knob freq { "Frequency", ui::Knob::tailClr }, widthK { "Q", ui::Knob::tailClr },

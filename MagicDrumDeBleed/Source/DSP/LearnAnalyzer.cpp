@@ -39,17 +39,15 @@ void LearnAnalyzer::pushSamples (const double* samples, int numSamples)
     captureCount += toCopy;                         // buffer full: silently stop taking more
 }
 
-double LearnAnalyzer::analyse (double ceilingHz)
+int LearnAnalyzer::averageSpectrum (std::vector<double>& averaged)
 {
-    const juce::SpinLock::ScopedLockType sl (lock);
-
     const int skip = (int) std::lround (kSkipMs * 0.001 * sr);
     const int usable = captureCount - skip;
     if (usable < 1024)
-        return -1.0;                                // not enough material captured
+        return 0;                                   // not enough material captured
 
     std::vector<float> fftData ((size_t) kFftSize * 2, 0.0f);
-    std::vector<double> averaged ((size_t) kFftSize / 2, 0.0);
+    averaged.assign ((size_t) kFftSize / 2, 0.0);
 
     const int hop = kFftSize / 2;
     int frames = 0;
@@ -74,7 +72,15 @@ double LearnAnalyzer::analyse (double ceilingHz)
         if (frameLen < kFftSize)
             break;
     }
+    return frames;
+}
 
+double LearnAnalyzer::analyse (double ceilingHz)
+{
+    const juce::SpinLock::ScopedLockType sl (lock);
+
+    std::vector<double> averaged;
+    const int frames = averageSpectrum (averaged);
     if (frames == 0)
         return -1.0;
 
@@ -103,6 +109,70 @@ double LearnAnalyzer::analyse (double ceilingHz)
         offset = juce::jlimit (-0.5, 0.5, 0.5 * (m0 - m2) / denom);
 
     return ((double) peakBin + offset) * binHz;
+}
+
+std::vector<LearnAnalyzer::Resonance> LearnAnalyzer::analyseResonances (double ceilingHz, int maxCount)
+{
+    const juce::SpinLock::ScopedLockType sl (lock);
+
+    std::vector<double> averaged;
+    const int frames = averageSpectrum (averaged);
+    if (frames == 0)
+        return {};
+
+    const double binHz = sr / (double) kFftSize;
+    const int minBin = juce::jmax (2, (int) std::ceil (30.0 / binHz));
+    const int maxBin = juce::jmin ((int) averaged.size() - 2, (int) std::floor (ceilingHz / binHz));
+    if (maxBin <= minBin)
+        return {};
+
+    // Every local maximum, refined for sub-bin accuracy.
+    struct Cand { double hz, mag; };
+    std::vector<Cand> cands;
+    for (int bin = minBin; bin <= maxBin; ++bin)
+    {
+        const double m0 = averaged[(size_t) (bin - 1)];
+        const double m1 = averaged[(size_t) bin];
+        const double m2 = averaged[(size_t) (bin + 1)];
+        if (m1 < m0 || m1 < m2 || m1 <= 1.0e-9 * (double) frames)
+            continue;
+        const double denom = m0 - 2.0 * m1 + m2;
+        double offset = 0.0;
+        if (std::abs (denom) > 1.0e-20)
+            offset = juce::jlimit (-0.5, 0.5, 0.5 * (m0 - m2) / denom);
+        cands.push_back ({ ((double) bin + offset) * binHz, m1 });
+    }
+    if (cands.empty())
+        return {};
+
+    std::sort (cands.begin(), cands.end(), [] (const Cand& a, const Cand& b) { return a.mag > b.mag; });
+
+    // Greedy pick with spacing padding; the first pick is the fundamental
+    // and sets the floor for everything after it.
+    auto spacing = [] (double f) { return juce::jmax (12.0, 0.06 * f); };
+    const double floorRatio = std::pow (10.0, kResonanceFloorDb / 20.0);
+    std::vector<Resonance> out;
+    double fundMag = 0.0;
+    for (const auto& c : cands)
+    {
+        if ((int) out.size() >= maxCount)
+            break;
+        if (fundMag > 0.0 && c.mag < fundMag * floorRatio)
+            break;                                  // sorted: everything after is quieter
+        bool clash = false;
+        for (const auto& p : out)
+            if (std::abs (c.hz - p.hz) < spacing (p.hz))
+            {
+                clash = true;                       // absorbed into a stronger centre
+                break;
+            }
+        if (clash)
+            continue;
+        if (out.empty())
+            fundMag = c.mag;
+        out.push_back ({ c.hz, 20.0 * std::log10 (c.mag / fundMag) });
+    }
+    return out;
 }
 
 } // namespace mdd
