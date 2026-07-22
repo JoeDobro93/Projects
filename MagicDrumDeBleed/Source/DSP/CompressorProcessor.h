@@ -22,11 +22,9 @@
         the zone below the threshold, so a barely-over hit rings out through
         its own decay like a loud one. The sustain requires a falling level,
         so bleed parked steadily inside the zone releases normally.
-      - SOFT KNEE: within 6 dB below the threshold, the amount by which the
-        fast detector leads the slow one pre-opens the gate proportionally.
-        This spreads the opening over the attack's rise instead of a step
-        (no click), and cannot leak on steady bleed: fast == slow in steady
-        state, so the knee term vanishes.
+    Gain only ever moves through a full open -> hold -> release cycle; there
+    is deliberately no partial/soft-knee state (v1.0.1: a partial opening
+    with no gate cycle audibly popped on vetoed tom hits).
 
     Lookahead: the audio passing through this processor is delayed by the
     lookahead amount; the detector is analysed *un-delayed*, so the gain
@@ -150,11 +148,13 @@ private:
     double currentRmsWindowMs = -1.0;
 
     // Fast RMS detector (single-pole mean-square) — opening only. The broad
-    // twin runs on the unfiltered sidechain for the contrast veto.
+    // twin runs on the unfiltered sidechain for the contrast veto. Both are
+    // peak-held (instant attack, shared release) BEFORE the off-band
+    // subtraction, so a hit's own bandpass ring-up can't read as off-band.
     double fastMeanSq = 0.0, fastCoeff = 1.0;
     double broadMeanSq = 0.0;
-    double offPkSq = 0.0;                        // peak-held OFF-BAND energy: veto reference
-    double offPkRelCoeff = 1.0;
+    double broadPkSq = 0.0, fastPkSq = 0.0;      // peak-held inputs of the veto reference
+    double pkRelCoeff = 1.0;
     bool vetoLatch = false;                      // event classified off-band at onset
 
     // Lagged copy of the slow level (dB) — the hysteresis falling test.

@@ -13,15 +13,6 @@ namespace
     // drum decays run 40–300 dB/s, bleed wobble is far slower).
     constexpr double kHystLagSeconds = 0.006;
     constexpr double kHystFallEpsDb  = 0.15;
-
-    // Soft-knee span below the threshold: the fast detector's lead over the
-    // slow one pre-opens the gate proportionally inside this zone.
-    constexpr double kKneeDb = 6.0;
-
-    // The knee only engages when the fast detector leads the slow one by this
-    // much. Real onsets lead by 7 dB+; the fast detector's ripple on steady
-    // low-frequency bleed stays under it, so bleed in the knee cannot leak.
-    constexpr double kKneeLeadDb = 4.0;
 }
 
 void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxLookaheadSamples)
@@ -37,7 +28,7 @@ void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxLo
     currentRmsWindowMs = -1.0;
     setRmsWindow (10.0);
     hystLagCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, kHystLagSeconds * sr));
-    offPkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
+    pkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
 
     reset();
 }
@@ -54,7 +45,8 @@ void CompressorProcessor::reset()
 
     fastMeanSq = 0.0;
     broadMeanSq = 0.0;
-    offPkSq = 0.0;
+    broadPkSq = 0.0;
+    fastPkSq = 0.0;
     vetoLatch = false;
     slowDbLag = -120.0;
     currentGainDb = 0.0;
@@ -176,13 +168,16 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         // ---- Contrast (Selectivity) veto: a hit may only OPEN the gate if
         // the focused band dominates the OFF-BAND remainder of the mic
         // (energy subtraction of the two same-speed followers, so no extra
-        // filters and the target's own energy never inflates the
-        // reference). Bleed from another drum is loud at ITS frequency, so
+        // filters). Bleed from another drum is loud at ITS frequency, so
         // the off-band level towers over the band — regardless of absolute
         // level — while a soft on-target hit is quiet everywhere BUT the
-        // band. The reference is peak-held (instant attack, ~12 ms release)
-        // because fast followers ripple several dB on low-frequency content
-        // and a downward ripple must not blink the veto off mid-bleed.
+        // band. BOTH follower inputs are peak-held (instant attack, ~12 ms
+        // release) and subtracted AFTER the hold: for a pure in-band hit the
+        // two peaks match, so the trigger filter's own ring-up (band lags
+        // broad by ~2Q/omega) collapses to the floor instead of reading as
+        // off-band energy that vetoes soft on-target hits — while ripple on
+        // low-frequency bleed still can't blink the veto off mid-event
+        // (both holds ride their ripple tops together).
         //
         // The decision then LATCHES per event: hard off-drum hits grow
         // in-band content late (sympathetic snare buzz, 2nd harmonics), so
@@ -191,11 +186,14 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         // At the knob's maximum the veto is off.
         const double broad = detectorBroad[i];
         broadMeanSq += fastCoeff * (broad * broad - broadMeanSq);
-        const double offSq = juce::jmax (broadMeanSq - fastMeanSq, broadMeanSq * 0.001);
-        offPkSq = offSq > offPkSq
-                      ? offSq
-                      : offPkSq + offPkRelCoeff * (offSq - offPkSq);
-        const double offDb = 10.0 * std::log10 (offPkSq + 1.0e-30);
+        broadPkSq = broadMeanSq > broadPkSq
+                        ? broadMeanSq
+                        : broadPkSq + pkRelCoeff * (broadMeanSq - broadPkSq);
+        fastPkSq = fastMeanSq > fastPkSq
+                       ? fastMeanSq
+                       : fastPkSq + pkRelCoeff * (fastMeanSq - fastPkSq);
+        const double offSq = juce::jmax (broadPkSq - fastPkSq, broadPkSq * 0.001);
+        const double offDb = 10.0 * std::log10 (offSq + 1.0e-30);
         maxOffDb = juce::jmax (maxOffDb, (float) offDb);
         bool contrastOk = true;
         if (contrastDb < 23.75)
@@ -228,17 +226,10 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
                 gateOpen = false;
         }
 
-        // ---- Soft knee: transient pre-open inside the 6 dB below threshold.
-        // Uses the fast detector's lead over the slow one, so it ramps the
-        // gate open during an attack's rise but is zero for steady bleed.
-        double open01 = gateOpen ? 1.0 : 0.0;
-        if (! gateOpen && contrastOk && fastDb > thresholdDb - kKneeDb && fastDb > rmsDb + kKneeLeadDb)
-        {
-            auto knee01 = [this] (double db)
-            { return juce::jlimit (0.0, 1.0, (db - (thresholdDb - kKneeDb)) / kKneeDb); };
-            open01 = juce::jmax (0.0, knee01 (fastDb) - knee01 (rmsDb));
-        }
-        const double targetDb = reductionDb * open01;
+        // No partial states: gain moves only through a full open/hold/release
+        // cycle. (A soft knee here used to pre-open on onsets; it could pop
+        // without any gate cycle when a Selectivity latch cleared mid-decay.)
+        const double targetDb = gateOpen ? reductionDb : 0.0;
 
         // ---- Smooth the envelope (attack towards reduction, release back to 0 dB) ----
         if (applyGain)

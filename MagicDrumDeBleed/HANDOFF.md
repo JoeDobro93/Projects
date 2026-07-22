@@ -272,6 +272,31 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
+> **v1.0.1 (gate fixes, sim-driven):** two detection changes, both verified
+> by scratchpad/popsim.cpp (drives the real CompressorProcessor with
+> synthetic tom/snare hits; eqGateEnv used as a gate-open probe).
+> (1) **Soft knee REMOVED** (kKneeDb/kKneeLeadDb and the partial-open01
+> block): user reported quick pops on vetoed tom hits with no hold/release
+> cycle. Sim showed the knee partially opening (−11 dB for ~27 ms) when a
+> Selectivity latch cleared mid-decay while the tom's in-band leftovers sat
+> in the knee zone still "leading" slow. Gain now moves ONLY through full
+> open→hold→release; open latency unaffected (fast path, test 2.7 ms).
+> (2) **Selectivity reference fixed**: was peak-hold(broad−band); the
+> trigger bandpass rings up ~2Q/ω slower than broad, so EVERY hit's own
+> onset read as off-band and the 12 ms peak-hold remembered it — soft
+> on-band hits latched the veto forever at strict contrast (user field
+> report: "raising selectivity removes softer hits"). Now BOTH follower
+> energies are peak-held (broadPkSq/fastPkSq, shared pkRelCoeff) and
+> subtracted after: pure in-band peaks match → reference collapses to the
+> broadPk·0.001 floor once the band rings up. Sim: soft over-T hit at
+> contrast 4 was never-opens → opens at +10 ms; tom rejection unchanged
+> (0.0 dB GR both cases); LF-ripple bridging preserved (both holds ride
+> ripple tops together). Residual: Sel-ON opening still waits for band
+> ring-up (~4–7 ms, stricter = later) — physics; advise Lookahead 8–10 ms
+> with strict Selectivity. test_host: knee test reworded (near-threshold
+> bleed), NEW test: contrast 4 on-band ghost opens (26 tests).
+> CMake VERSION → 1.0.1.
+>
 > **v1.0 (logo + release):** toolbar title text replaced by a vector logo
 > in BOTH views — `ui::drawLogo(g)` in Widgets.cpp, drawn at x=sc(12) in
 > the sc(46) strip, coordinates in 46-unit mockup space × ui::scale.
