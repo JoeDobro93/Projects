@@ -30,7 +30,7 @@ private:
     ui::LevelMeter outMeter;
     ui::Knob resonance { "Resonance" }, resoAmt { "Reso Amt", ui::Knob::tailClr },
              tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
-    eqids::LearnButton learnBtn { processor, true };    // learn-all: fills every band it can
+    eqids::LearnButton learnBtn { processor, 3 };       // fills the lowest 3 bands it can
     ui::LightToggle midiTg { "MIDI" };
     ui::TextSwitch modeSw { "COMP", "GATE" };
     class DrumButton;

@@ -742,24 +742,28 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     {
         bandLearnBtns[b] = std::make_unique<eqids::BandLearnButton> (processor, b);
         setHint (*bandLearnBtns[b], "Learn K" + juce::String (b + 1),
-                 b == 0 ? juce::String ("Listens for 3 seconds and parks K1 on the drum's fundamental (Q 10, ring 10). With Link on, Focus follows.")
-                        : "Listens for 3 seconds and parks K" + juce::String (b + 1) + " on the drum's #"
-                          + juce::String (b + 1) + " resonance - the next loudest ring above the bands already placed (Q 10, ring 7). Flashes red if that resonance isn't there.");
+                 b == 0 ? juce::String ("Listens for 3 seconds and parks K1 on the drum's lowest strong resonance - normally the fundamental (Q 10, ring 10). With Link on, Focus follows.")
+                        : "Listens for 3 seconds and parks K" + juce::String (b + 1) + " on the drum's next resonance up in frequency - bands run low to high, and enabled neighbours fence the search (Q 10, ring 7). Flashes red if no resonance fits between them.");
         addAndMakeVisible (*bandLearnBtns[b]);
     }
     learnAllBtn.setIdleText ("Learn all");
-    setHint (learnAllBtn, "Learn all", "Listens for 3 seconds and sets up EVERY keep band it can: the fundamental into K1 (and Focus), then the loudest resonances above it into K2 onward. Bands with no detected resonance are left alone.");
+    setHint (learnAllBtn, "Learn all", "Listens for 3 seconds and sets up every keep band it can from the drum's five loudest resonances, K1 to K5 in frequency order (lowest = the fundamental, into K1 and Focus). Bands with no detected resonance are left alone.");
     addAndMakeVisible (learnAllBtn);
 
-    addAndMakeVisible (lockSw);
-    setHint (lockSw, "Lock freq", "Locks band frequencies against drag on the display - handles only change ring level (and Q with the scroll wheel). The Frequency knob still works.");
-    lockSw.setState ((bool) processor.apvts.state.getProperty ("freqLock", false), false);
-    canvas.setFreqLock (lockSw.getState());
-    lockSw.onChange = [this] (bool on)
+    addAndMakeVisible (lockBtn);
+    setHint (lockBtn, "Lock freq", "Locks band frequencies against drag on the display - handles only change ring level (and Q with the scroll wheel). The Frequency knob still works.");
+    lockBtn.onClick = [this]
     {
-        canvas.setFreqLock (on);
+        const bool on = ! (bool) processor.apvts.state.getProperty ("freqLock", false);
         processor.apvts.state.setProperty ("freqLock", on, nullptr);
+        canvas.setFreqLock (on);
+        styleSeg (lockBtn, on);
     };
+    {
+        const bool on = (bool) processor.apvts.state.getProperty ("freqLock", false);
+        canvas.setFreqLock (on);
+        styleSeg (lockBtn, on);
+    }
 
     selectBand (2);                                     // K1 — the default-enabled band
     updateSoloButtons();
@@ -879,6 +883,8 @@ void TailStage::resized()
     head.removeFromRight (sc (7));
     accumBtn.setBounds (head.removeFromRight (sc (88)));
     head.removeFromRight (sc (7));
+    lockBtn.setBounds (head.removeFromRight (sc (78)));
+    head.removeFromRight (sc (7));
     bypassBtn.setBounds (head.removeFromRight (sc (64)));
     header.setBounds (head);
     r.removeFromTop (sc (4));
@@ -892,8 +898,6 @@ void TailStage::resized()
     scaleLabelY = leftCol.getY();
     leftCol.removeFromTop (sc (14));
     scaleSel.setBounds (leftCol.removeFromTop (sc (54)));
-    leftCol.removeFromTop (sc (10));
-    lockSw.setBounds (leftCol.removeFromTop (sc (16)));
     r.removeFromLeft (sc (5));
     mon.setBounds (r.removeFromRight (sc (26)));
     r.removeFromRight (sc (4));

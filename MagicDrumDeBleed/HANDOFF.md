@@ -272,7 +272,25 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.2.0 (multi-band resonance Learn + freq lock):** (1)
+> **v1.2.1 (frequency-ordered slots + lock relocation):** slot model
+> reworked per user: the top-5 LOUDEST resonances are assigned K1..K5
+> in FREQUENCY order lowest→highest (loudness only selects the set;
+> K1 = lowest of the set, normally still the fundamental).
+> assignResonanceSlots: learn-all sorts and fills; individual learns
+> use enabled neighbours as FENCES — new freq must sit strictly between
+> the nearest enabled band below and above (clear of spacing padding),
+> and when several disabled bands share one gap each takes its
+> positional share of the gap's ascending candidates (K2@350 enabled,
+> learn K4 → 2nd candidate above 350). K1&K3 enabled → K2 learn = the
+> single resonance between them or fail. LearnButton bool→int
+> learnBandCount (0 = trigger focus-only, 3 = Simple view — lowest 3
+> of the top-5 set, 5 = Learn all). Lock switch: MiniSwitch under
+> SCALE deleted; now a styleSeg TextButton "Lock freq" in the TAIL
+> header row (Bypass · Lock freq · Accumulate · Show internals), same
+> state prop. Tests 44: freq-order (loudest at 210, K1 still gets 80),
+> fence, gap-fill 210, empty-gap fail. VERSION 1.2.1.
+>
+> > **v1.2.0 (multi-band resonance Learn + freq lock):** (1)
 > LearnAnalyzer::analyseResonances(ceiling, maxCount=8): shared
 > averageSpectrum refactor; all local maxima parabolic-refined, greedy
 > pick loudest-first with spacing padding max(12 Hz, 6%) and a

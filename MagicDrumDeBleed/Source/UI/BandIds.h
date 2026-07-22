@@ -24,13 +24,20 @@ inline void setRealValue (MagicDrumDeBleedAudioProcessor& proc, const juce::Stri
     }
 }
 
-/*  Resonance slot model. Slot 0 (K1) = the fundamental; slots 1..4
-    (K2..K5) = the loudest remaining resonances ABOVE the fundamental in
-    loudness order. ENABLED K bands other than `selfBand` PIN their centres
-    into their slots — hit-to-hit variation can't shuffle a neighbour's
-    resonance onto the band being learned, and detected peaks near a pinned
-    centre are absorbed by it. selfBand −1 = learn-all (no pinning, fresh
-    assignment). Unfillable slots return 0. */
+/*  Resonance slot model — FREQUENCY-ordered: the top-5 loudest resonances
+    are assigned to K1..K5 lowest-to-highest (for drums the fundamental is
+    normally both loudest and lowest, so K1 still lands on it).
+
+    Learn-all (selfBand −1): fresh assignment of every slot.
+
+    Individual learn of band i: enabled neighbours act as fences — the new
+    frequency must sit strictly between the nearest enabled band below i
+    and the nearest enabled band above i (clear of their spacing padding).
+    When several disabled bands share one gap, each takes its positional
+    share of the gap's candidates in ascending order (K2 enabled at 350,
+    learning K4: candidates above 350; K3 would take the 1st, K4 takes the
+    2nd, K5 the 3rd). K1&K3 enabled, learning K2: exactly one resonance
+    between their frequencies, or fail. Unfillable slots return 0. */
 inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcessor& proc,
                                                    const std::vector<mdd::LearnAnalyzer::Resonance>& res,
                                                    int selfBand)
@@ -40,36 +47,69 @@ inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcesso
         return slot;
 
     auto spacing = [] (double f) { return juce::jmax (12.0, 0.06 * f); };
-    if (selfBand >= 0)
+
+    // Top-5 loudest (res is loudest-first), then frequency-ascending.
+    std::vector<double> d;
+    for (const auto& r : res)
+    {
+        if ((int) d.size() >= 5)
+            break;
+        d.push_back (r.hz);
+    }
+    std::sort (d.begin(), d.end());
+
+    if (selfBand < 0)                              // learn-all: lowest -> highest
+    {
+        for (size_t i = 0; i < d.size() && i < slot.size(); ++i)
+            slot[i] = d[i];
+        return slot;
+    }
+
+    auto enabledFreq = [&] (int b) -> double
+    {
+        auto* on = proc.apvts.getRawParameterValue (ParamIDs::notchOn (b));
+        if (on == nullptr || on->load() <= 0.5f)
+            return -1.0;
+        return (double) proc.apvts.getRawParameterValue (ParamIDs::notchFreq (b))->load();
+    };
+
+    // Fences: nearest enabled band below / above the one being learned.
+    double lower = 0.0, upper = 0.0;               // upper 0 = unbounded
+    int lowerIdx = -1;
+    for (int b = selfBand - 1; b >= 0; --b)
+        if (const double f = enabledFreq (b); f > 0.0) { lower = f; lowerIdx = b; break; }
+    for (int b = selfBand + 1; b < 5; ++b)
+        if (const double f = enabledFreq (b); f > 0.0) { upper = f; break; }
+
+    // Positional rank of this band within the disabled run above the fence
+    // (re-learning an enabled band counts itself).
+    int rank = 0;
+    for (int b = lowerIdx + 1; b <= selfBand; ++b)
+        if (b == selfBand || enabledFreq (b) <= 0.0)
+            ++rank;
+
+    int n = 0;
+    for (const double f : d)                       // ascending
+    {
+        if (lower > 0.0 && f <= lower + spacing (lower))
+            continue;
+        if (upper > 0.0 && f >= upper - spacing (upper))
+            break;                                 // ascending: everything after is out too
+        bool taken = false;
         for (int b = 0; b < 5; ++b)
             if (b != selfBand)
-                if (auto* on = proc.apvts.getRawParameterValue (ParamIDs::notchOn (b));
-                    on != nullptr && on->load() > 0.5f)
-                    slot[(size_t) b] = (double) proc.apvts.getRawParameterValue (ParamIDs::notchFreq (b))->load();
-
-    if (slot[0] <= 0.0)
-        slot[0] = res[0].hz;                       // res is loudest-first
-    const double f0 = slot[0];
-
-    for (const auto& r : res)                      // level order fills K2 first
-    {
-        if (r.hz <= f0 + spacing (f0))
-            continue;                              // the fundamental region itself
-        bool taken = false;
-        for (double s : slot)
-            if (s > 0.0 && std::abs (r.hz - s) < spacing (s))
-            {
-                taken = true;                      // a pinned centre owns this one
-                break;
-            }
+                if (const double ef = enabledFreq (b); ef > 0.0 && std::abs (f - ef) < spacing (ef))
+                {
+                    taken = true;
+                    break;
+                }
         if (taken)
             continue;
-        for (size_t i = 1; i < slot.size(); ++i)
-            if (slot[i] <= 0.0)
-            {
-                slot[i] = r.hz;
-                break;
-            }
+        if (++n == rank)
+        {
+            slot[(size_t) selfBand] = f;
+            break;
+        }
     }
     return slot;
 }
@@ -90,15 +130,16 @@ inline void applyResonanceToBand (MagicDrumDeBleedAudioProcessor& proc, int b, d
     after 3 s); the second click — or the timeout — analyses.
     learnAllBands == false (Trigger): sets Focus, and with Link to K1 on
     updates K1 (enabling it at ring 4.5 ≈ −3 dB ring level if it was off).
-    learnAllBands == true: assigns EVERY resonance slot it can fill —
-    fundamental → K1 (+ Focus), then the loudest above-fundamental
-    resonances → K2.. as far as they go; bands with no detected slot are
-    left untouched. Flashes red briefly when nothing was detected. */
+    learnBandCount > 0: assigns the lowest `learnBandCount` resonance
+    slots (frequency-ordered from the top-5 loudest) — K1 the lowest, then
+    upward; the Simple view uses 3, the Tail stage's "Learn all" uses 5.
+    Bands with no detected slot are left untouched. Focus follows K1.
+    Flashes red briefly when nothing was detected. */
 class LearnButton : public juce::TextButton, private juce::Timer
 {
 public:
-    explicit LearnButton (MagicDrumDeBleedAudioProcessor& p, bool learnAllBands = false)
-        : juce::TextButton ("Learn"), proc (p), learnAll (learnAllBands)
+    explicit LearnButton (MagicDrumDeBleedAudioProcessor& p, int learnBandCount = 0)
+        : juce::TextButton ("Learn"), proc (p), learnBands (learnBandCount)
     {
         onClick = [this] { proc.isLearning() ? finish() : begin(); };
         applyColours (false);
@@ -122,7 +163,7 @@ private:
         setButtonText (idleText);
         applyColours (false);
 
-        if (! learnAll)
+        if (learnBands <= 0)
         {
             const double f = proc.finishLearnAndAnalyse();
             if (f <= 0.0) { fail(); return; }
@@ -148,7 +189,7 @@ private:
         if (slot[0] <= 0.0) { fail(); return; }
 
         setRealValue (proc, ParamIDs::scFreq, (float) slot[0]);
-        for (int b = 0; b < 5; ++b)
+        for (int b = 0; b < juce::jmin (5, learnBands); ++b)
             if (slot[(size_t) b] > 0.0)
                 applyResonanceToBand (proc, b, slot[(size_t) b]);
     }
@@ -180,7 +221,7 @@ private:
 
     MagicDrumDeBleedAudioProcessor& proc;
     juce::String idleText { "Learn" };
-    bool learnAll = false;
+    int learnBands = 0;
     bool flashing = false;
 };
 
