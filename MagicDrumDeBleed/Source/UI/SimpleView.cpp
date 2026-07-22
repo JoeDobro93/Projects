@@ -152,6 +152,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
       trigMeter ("TRIGGER", [&proc] { return proc.getDetectorRmsDb(); },
                  proc.apvts.getParameter (ParamIDs::threshold)),
       gateMeter ([&proc] (float& o, float& t) { return TailCanvas::gateState (proc, o, t); }),
+      grMeter ([&proc] { return proc.getGainReductionDb(); }),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); })
 {
@@ -159,6 +160,8 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     addAndMakeVisible (trigMeter);
     setHint (gateMeter, "GATE", "Green = open (drum passing), amber = tail fading, empty = closed.");
     addAndMakeVisible (gateMeter);
+    setHint (grMeter, "GR", "How hard the hit is escaping the null (compression on the cancelling copy). Empty = bleed fully cancelled.");
+    addChildComponent (grMeter);
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed.");
     addAndMakeVisible (fader);
     amountVal.setJustificationType (juce::Justification::centred);
@@ -185,13 +188,41 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the plugin on this drum's dominant frequency.");
     addAndMakeVisible (learnBtn);
 
+    setHint (midiTg, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note - the manual repair path for hits the detector misses.");
+    midiTg.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::midiTrigger);
+        midiAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    midiAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::midiTrigger),
+        [this] (float v) { midiTg.setState (v > 0.5f); });
+    midiAtt->sendInitialUpdate();
+    addAndMakeVisible (midiTg);
+
+    setHint (modeSel, "Mode", "Gate = binary open/close. Comp = continuous high-ratio compression of the cancelling copy - smoother and level-tracking.");
+    modeSel.onChange = [this] (int i) { modeAtt->setValueAsCompleteGesture ((float) i); };
+    modeAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::compMode),
+        [this] (float v)
+        {
+            compOn = v > 0.5f;
+            modeSel.setSelected (compOn ? 1 : 0, false);
+            trigMeter.setCaption (compOn ? "INPUT" : "TRIGGER");
+            setHint (trigMeter, compOn ? "INPUT" : "TRIGGER",
+                     compOn ? "Input level after the trigger filter - what the compressor responds to. Drag the red line to set the Threshold."
+                            : "Detector level after the trigger filter. Drag the red line to set the Threshold.");
+            gateMeter.setVisible (! compOn);
+            grMeter.setVisible (compOn);
+        });
+    modeAtt->sendInitialUpdate();
+    addAndMakeVisible (modeSel);
+
     static const char* presetNames[4] = { "Default", "Kick", "Snare", "Toms" };
     for (int i = 0; i < 4; ++i)
     {
         presetBtns[i] = std::make_unique<DrumButton> ((DrumButton::Kind) i, presetNames[i]);
         presetBtns[i]->setButtonText (presetNames[i]);
         setHint (*presetBtns[i], presetNames[i],
-                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold, Selectivity, Hysteresis and MIDI settings are kept.");
+                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold, Selectivity, Hysteresis, MIDI and the Gate/Comp mode are kept.");
         presetBtns[i]->onClick = [this, i]
         {
             for (auto& fp : presets::kFactoryPresets)
@@ -280,12 +311,18 @@ void SimpleView::resized()
     learnBtn.setBounds (rcol.removeFromBottom (sc (24)));
     rcol.removeFromBottom (sc (4));
     resonance.setBounds (rcol);
+    const int learnY = learnBtn.getY();
     krow.removeFromLeft (kgap);
-    resoAmt.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
+    auto c2 = krow.removeFromLeft (kw);
+    resoAmt.setBounds (c2.withTrimmedBottom (sc (28)));
+    midiTg.setBounds (c2.getX(), learnY, kw, sc (24));
     krow.removeFromLeft (kgap);
-    tailHold.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
+    auto c3 = krow.removeFromLeft (kw);
+    tailHold.setBounds (c3.withTrimmedBottom (sc (28)));
     krow.removeFromLeft (kgap);
-    tailFade.setBounds (krow.removeFromLeft (kw).withTrimmedBottom (sc (28)));
+    auto c4 = krow.removeFromLeft (kw);
+    tailFade.setBounds (c4.withTrimmedBottom (sc (28)));
+    modeSel.setBounds (c3.getX(), learnY, c4.getRight() - c3.getX(), sc (24));
 
     // meter row: TRIGGER · GATE · AMOUNT · OUT spread across the content
     // width so its bounding box matches the knobs below
@@ -295,7 +332,9 @@ void SimpleView::resized()
 
     trigMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (mgap);
-    gateMeter.setBounds (row.removeFromLeft (mw));
+    const auto gmCell = row.removeFromLeft (mw);
+    gateMeter.setBounds (gmCell);
+    grMeter.setBounds (gmCell);
     row.removeFromLeft (mgap);
     auto fcol = row.removeFromLeft (fw);
     amountX = fcol.getX();

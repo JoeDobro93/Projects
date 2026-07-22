@@ -24,16 +24,22 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     ui::LevelMeter trigMeter;
     ui::GateMeter gateMeter;
+    ui::GrMeter grMeter;                                // comp mode: replaces GATE
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
     ui::Knob resonance { "Resonance" }, resoAmt { "Reso Amt", ui::Knob::tailClr },
              tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     eqids::LearnButton learnBtn { processor };
+    ui::LightToggle midiTg { "MIDI" };
+    ui::LightSelector modeSel { { { "Gate", ui::LightSelector::iconNone },
+                                  { "Comp", ui::LightSelector::iconNone } },
+                                ui::Knob::openClr, true };
     class DrumButton;
     std::unique_ptr<juce::Button> presetBtns[4];
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
-    std::unique_ptr<juce::ParameterAttachment> amtAtt;
+    std::unique_ptr<juce::ParameterAttachment> amtAtt, midiAtt, modeAtt;
+    bool compOn = false;
     int amountX = 0, amountY = 0;
     juce::Rectangle<int> divider;
 

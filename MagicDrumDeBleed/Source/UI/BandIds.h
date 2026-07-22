@@ -88,7 +88,8 @@ private:
 inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
 {
     static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::contrast,
-                                               ParamIDs::hysteresis, ParamIDs::midiTrigger };
+                                               ParamIDs::hysteresis, ParamIDs::midiTrigger,
+                                               ParamIDs::compMode, ParamIDs::compRatio };
     for (auto* p : proc.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (! preserved.contains (ranged->paramID))
@@ -105,5 +106,7 @@ inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const pres
     setRealValue (proc, ParamIDs::notchGain (0), pr.k1Ring);
     setRealValue (proc, ParamIDs::eqGateHold,    pr.tailHoldMs);
     setRealValue (proc, ParamIDs::eqGateRelease, pr.tailFadeMs);
+    setRealValue (proc, ParamIDs::compAttack,    pr.compAttackMs);
+    setRealValue (proc, ParamIDs::compRelease,   pr.compReleaseMs);
 }
 }

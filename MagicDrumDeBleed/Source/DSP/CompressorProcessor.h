@@ -26,6 +26,15 @@
     is deliberately no partial/soft-knee state (v1.0.1: a partial opening
     with no gate cycle audibly popped on vetoed tom hits).
 
+    COMPRESSOR MODE (setCompParameters, v1.1): replaces the binary gate with
+    a continuous over-threshold ducker — the classic parallel bleed trick.
+    GR target = −ratio × (slow RMS dB over threshold), clamped at the full
+    reduction: 1 dB over pulls the parallel copy ratio dB down, pushing it
+    BELOW the threshold (over-compression) so hits pass nearly untouched
+    while sub-threshold bleed still nulls. Its own attack/release envelope;
+    Selectivity/hysteresis/hold are gate-mode-only; MIDI force = full duck.
+    The tail (EQ-gate) keys on "slow RMS above threshold" in this mode.
+
     Lookahead: the audio passing through this processor is delayed by the
     lookahead amount; the detector is analysed *un-delayed*, so the gain
     reduction has already reached its target by the time the transient
@@ -90,6 +99,10 @@ public:
     // EQ-gate envelope timing (shares the detector/threshold/lookahead).
     void setEqGateParameters (double holdMs, double releaseMs);
 
+    // Compressor mode: continuous −ratio·overDb ducking of the parallel path
+    // (own attack/release). While off, the gate logic above runs unchanged.
+    void setCompParameters (bool enabled, double ratio, double attackMs, double releaseMs);
+
     /*  Delays `audio` in place by the lookahead amount, computes the gain
         envelope from `detector` (mono, un-delayed, already sidechain-filtered
         by the caller) and applies it to all channels.
@@ -128,9 +141,9 @@ public:
     // fires the gate; the history view overlays it on the smoothed trace.
     float getCurrentFastDetectorDb() const noexcept    { return lastBlockFastDb; }
 
-    // Highest off-band (veto reference) level of the last block — the level
-    // the Selectivity comparison runs against, for the history view.
-    float getCurrentOffbandDb() const noexcept         { return lastBlockOffDb; }
+    // Highest raw (unfiltered) input level of the last block — the "Dry"
+    // trace in the history view.
+    float getCurrentDryDb() const noexcept             { return lastBlockDryDb; }
 
 private:
     void setRmsWindow (double windowMs);
@@ -170,6 +183,11 @@ private:
     int eqGateHoldCounter = 0, eqGateHoldSamples = 0;
     double eqGateReleaseCoeff = 1.0;
 
+    // Compressor mode
+    bool   compMode = false;
+    double compRatio = 20.0;
+    double compAttackCoeff = 1.0, compReleaseCoeff = 1.0;
+
     // Cached parameters
     double thresholdDb = -20.0, reductionDb = -24.0;
     int lookaheadSamples = 0, holdSamples = 0;
@@ -179,7 +197,7 @@ private:
     float lastBlockGrDb = 0.0f;
     float lastBlockRmsDb = -120.0f;
     float lastBlockFastDb = -120.0f;
-    float lastBlockOffDb = -120.0f;
+    float lastBlockDryDb = -120.0f;
 };
 
 } // namespace mdd

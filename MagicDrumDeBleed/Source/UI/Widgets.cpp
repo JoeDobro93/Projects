@@ -499,6 +499,51 @@ void GateMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+GrMeter::GrMeter (std::function<float()> g) : getDb (std::move (g))
+{
+    startTimerHz (30);
+}
+
+void GrMeter::timerCallback()
+{
+    const float v = getDb();
+    shown = v < shown ? v : shown + 0.25f * (v - shown);   // instant down, eased back
+    repaint();
+}
+
+void GrMeter::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setFont (font (9.0f, true));
+    g.setColour (pal->faint);
+    auto cr = r.removeFromTop (scf (13.0f));
+    g.drawSingleLineText ("GR", (int) cr.getCentreX(), (int) cr.getBottom() - sc (3),
+                          juce::Justification::horizontallyCentred);
+
+    auto vr = r.removeFromBottom (scf (13.0f));
+    g.setFont (font (9.5f));
+    const bool active = shown < -0.5f;
+    g.setColour (active ? pal->open : pal->faint);
+    g.drawText (active ? juce::String (juce::roundToInt (shown)) : juce::String::fromUTF8 ("â"),
+                vr, juce::Justification::centred);
+
+    auto bar = r;
+    g.setColour (pal->panel2); g.fillRoundedRectangle (bar, 3.0f);
+    g.setColour (pal->line);   g.drawRoundedRectangle (bar, 3.0f, 1.0f);
+    for (int t = 1; t < 4; ++t)                             // ticks every 12 dB
+        g.drawHorizontalLine ((int) (bar.getY() + bar.getHeight() * (float) t / 4.0f),
+                              bar.getX() + 1, bar.getRight() - 1);
+
+    const float h = juce::jlimit (0.0f, 1.0f, -shown / 48.0f) * (bar.getHeight() - 2.0f);
+    if (h > 1.0f)
+    {
+        g.setGradientFill (juce::ColourGradient (pal->open, 0, bar.getY(),
+                                                 pal->open.darker (0.4f), 0, bar.getBottom(), false));
+        g.fillRect (juce::Rectangle<float> (bar.getX() + 1, bar.getY() + 1, bar.getWidth() - 2, h));
+    }
+}
+
+//==============================================================================
 PercentMeter::PercentMeter (std::function<float()> g01) : get01 (std::move (g01))
 {
     startTimerHz (30);

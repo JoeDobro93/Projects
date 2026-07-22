@@ -116,6 +116,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                         .withStringFromValueFunction ([] (float v, int)
                         { return v >= 23.75f ? juce::String ("Off") : juce::String (v, 1) + " dB"; })));
 
+    // ---- Compressor mode (parallel over-threshold ducker) ----
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::compMode, 1 }, "Comp Mode", false));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::compRatio, 1 }, "Ratio",
+                    juce::StringArray { "4:1", "10:1", "20:1", "100:1" }, 2));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compAttack, 1 }, "Comp Attack",
+                    logRange (0.1f, 2.0f, 30.0f), 1.0f, ms));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compRelease, 1 }, "Comp Release",
+                    logRange (5.0f, 100.0f, 1000.0f, true), 100.0f, msInt));
+
     // ---- Sidechain ----
     p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::scEnable, 1 }, "SC Filter", true));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::scFreq, 1 }, "SC Frequency",
@@ -209,6 +218,10 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pHysteresis   = raw (ParamIDs::hysteresis);
     pContrast     = raw (ParamIDs::contrast);
     pMidiTrigger  = raw (ParamIDs::midiTrigger);
+    pCompMode     = raw (ParamIDs::compMode);
+    pCompRatio    = raw (ParamIDs::compRatio);
+    pCompAttack   = raw (ParamIDs::compAttack);
+    pCompRelease  = raw (ParamIDs::compRelease);
     pScEnable     = raw (ParamIDs::scEnable);
     pScFreq       = raw (ParamIDs::scFreq);
     pScQ          = raw (ParamIDs::scQ);
@@ -354,6 +367,12 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
                               pRmsWindow->load(), pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
+    {
+        static constexpr double kRatios[4] = { 4.0, 10.0, 20.0, 100.0 };
+        compressor.setCompParameters (pCompMode->load() > 0.5f,
+                                      kRatios[juce::jlimit (0, 3, (int) pCompRatio->load())],
+                                      pCompAttack->load(), pCompRelease->load());
+    }
     eqGateOnCached = pEqGateOn->load() > 0.5f;
     scFilter.setParameters ((int) pScType->load(), pScFreq->load(), pScQ->load(), pScSlope->load());
     scEnabledCached = pScEnable->load() > 0.5f;
@@ -602,7 +621,7 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
     grDb.store (compressor.getCurrentGainReductionDb());
     detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
     fastDetectorDb.store (compressor.getCurrentFastDetectorDb());
-    offbandDb.store (compressor.getCurrentOffbandDb());
+    dryDb.store (compressor.getCurrentDryDb());
 
     // ---- 3. Dry path: exactly the same integer-sample delay (always ticks) ----
     for (int ch = 0; ch < nCh; ++ch)

@@ -272,6 +272,35 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
+> **v1.1.0 (Compressor mode):** second detection mode — the classic
+> high-ratio-parallel-compressor bleed trick, over-compressed. Param IDs
+> compMode/compRatio (choice 4:1|10:1|20:1|100:1, default 20:1)/
+> compAttack (0.1|2|30 log, def 1 ms)/compRelease (5|100|1000 log int,
+> def 100). DSP (CompressorProcessor::setCompParameters + compMode
+> branch in process()): GR target = −ratio·max(0, slowRMS − T) clamped
+> at −96, own attack/release coeffs, MIDI force = full duck, veto/hold/
+> hysteresis parked; tail (eqGate) keys on `openNow` = rms>T‖forced
+> (gate mode: gateOpen). getOffbandDb→getDryDb: the history's orange
+> trace now shows the RAW mic level (broadMeanSq) in BOTH modes — the
+> off-band veto reference is internal-only. UI: GateStage mode switch
+> (LightSelector beside header), title GATE↔COMPRESSOR, knob slots swap
+> Hysteresis→Ratio & Hold→Attack & Release→comp Release (separate
+> params, per-mode state remembered), state box hidden in comp (canvas
+> stretches), history comp layers = green filled Output (getOutputPeakDb,
+> alpha ∝ gr01=−GR/48, hue → tail gold as t01·(1−gr01), accent when
+> MIDI-forced) + blue Input (slow RMS) + orange Dry; gate-mode trace
+> relabels Input/Average/Dry. TriggerStage dims Selectivity in comp.
+> ui::GrMeter (0..−48, ticks 12 dB, green top-down fill, instant-down/
+> eased-back) replaces GateMeter in RightRail + SimpleView via compMode
+> attachment. SimpleView Learn row now Learn|MIDI|Gate-Comp switch;
+> TRIGGER meter renamed INPUT in comp. Presets: FactoryPreset +=
+> compAttackMs/compReleaseMs (Default 1.5/150, Kick 3/200, Snare 1/150,
+> Toms 2/300); compMode+compRatio PRESERVED across presets. Ratio knob
+> snaps (choice param via snapToLegalValue). Tests 29: comp ratio law
+> (GR −40.0 at 4:1/10 over), hit survival 0.044/0.045, below-T null
+> 4e-6; snapshot renders adv_comp/adv_gate_back/simple_comp. VERSION
+> 1.1.0.
+>
 > **v1.0.1 (gate fixes, sim-driven):** two detection changes, both verified
 > by scratchpad/popsim.cpp (drives the real CompressorProcessor with
 > synthetic tom/snare hits; eqGateEnv used as a gate-open probe).

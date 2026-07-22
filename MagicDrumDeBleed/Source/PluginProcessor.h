@@ -40,6 +40,14 @@ namespace ParamIDs
     inline constexpr const char* contrast     = "contrast";    // selectivity: max off-band excess (dB)
     inline constexpr const char* midiTrigger  = "midiTrigger"; // notes force the gate open
 
+    // Compressor mode: continuous over-threshold ducking of the parallel
+    // path instead of the binary gate. Its knobs are separate parameters so
+    // each mode remembers its own settings.
+    inline constexpr const char* compMode     = "compMode";
+    inline constexpr const char* compRatio    = "compRatio";   // choice: 4/10/20/100 : 1
+    inline constexpr const char* compAttack   = "compAttack";
+    inline constexpr const char* compRelease  = "compRelease";
+
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
     inline constexpr const char* scQ          = "scQ";
@@ -127,7 +135,7 @@ public:
     float getGainReductionDb() const    { return grDb.load(); }
     float getDetectorRmsDb() const      { return detectorRmsDb.load(); }   // threshold-comparable input level
     float getFastDetectorDb() const     { return fastDetectorDb.load(); }  // opening detector (fast follower)
-    float getOffbandDb() const          { return offbandDb.load(); }         // Selectivity's off-band reference
+    float getDryDb() const              { return dryDb.load(); }            // raw (unfiltered) input level
     bool  getMidiForced() const         { return midiForcedFlag.load() > 0.5f; } // MIDI note holding the gate open
     float getEqGateReductionDb() const  { return eqGateDb.load(); }        // 0 = EQ fully engaged
     float getOutputPeakDb() const       { return outputPeakDb.load(); }
@@ -189,7 +197,7 @@ private:
     std::atomic<float> grDb { 0.0f };
     std::atomic<float> detectorRmsDb { -120.0f };
     std::atomic<float> fastDetectorDb { -120.0f };
-    std::atomic<float> offbandDb { -120.0f };
+    std::atomic<float> dryDb { -120.0f };
     std::atomic<float> midiForcedFlag { 0.0f };
     std::atomic<float> eqGateDb { 0.0f };
     std::atomic<float> outputPeakDb { -120.0f };
@@ -209,6 +217,7 @@ private:
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease;
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
+    std::atomic<float> *pCompMode, *pCompRatio, *pCompAttack, *pCompRelease;
     void buildForceMask (const juce::MidiBuffer& midi, int numSamples);
     std::vector<unsigned char> forceMask;
     bool heldKeys[128] = {};                 // set, not a counter: self-heals lost note-offs

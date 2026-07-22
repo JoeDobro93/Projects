@@ -105,6 +105,8 @@ class LightToggle : public juce::Component
 public:
     explicit LightToggle (juce::String label, Knob::ColourId clr = Knob::accentClr);
     std::function<void()> onClick;
+    void setText (juce::String l)              { label = std::move (l); repaint(); }
+    void setColourId (Knob::ColourId c)        { clr = c; repaint(); }
     void setState (bool on);
     bool getState() const                      { return state; }
     void paint (juce::Graphics& g) override;
@@ -170,6 +172,7 @@ public:
     LevelMeter (juce::String caption, std::function<float()> getDb,
                 juce::RangedAudioParameter* thresholdParam = nullptr,
                 bool showCaption = true, bool showValue = true);
+    void setCaption (juce::String c)           { caption = std::move (c); repaint(); }
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
@@ -202,6 +205,21 @@ private:
     Getter get;
     int state = 0;
     float open01 = 0.0f, tail01 = 0.0f;
+};
+
+//==============================================================================
+/*  GR meter (compressor mode): how hard the cancelling copy is compressed,
+    0 at the top down to −48 dB (anything deeper is visually clipped). Green
+    fill from the top — depth here means the hit is escaping the null. */
+class GrMeter : public juce::Component, private juce::Timer
+{
+public:
+    explicit GrMeter (std::function<float()> getDb);      // negative dB in
+    void paint (juce::Graphics& g) override;
+private:
+    void timerCallback() override;
+    std::function<float()> getDb;
+    float shown = 0.0f;
 };
 
 //==============================================================================
