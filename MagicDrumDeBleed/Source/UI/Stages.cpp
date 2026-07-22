@@ -742,12 +742,12 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
     {
         bandLearnBtns[b] = std::make_unique<eqids::BandLearnButton> (processor, b);
         setHint (*bandLearnBtns[b], "Learn K" + juce::String (b + 1),
-                 b == 0 ? juce::String ("Listens for 3 seconds and parks K1 on the drum's lowest strong resonance - normally the fundamental (Q 10, ring 10). With Link on, Focus follows.")
+                 b == 0 ? juce::String ("Listens for 3 seconds and parks K1 on the drum's fundamental - the loudest resonance, always the lowest band (Q 10, ring 10). With Link on, Focus follows.")
                         : "Listens for 3 seconds and parks K" + juce::String (b + 1) + " on the drum's next resonance up in frequency - bands run low to high, and enabled neighbours fence the search (Q 10, ring 7). Flashes red if no resonance fits between them.");
         addAndMakeVisible (*bandLearnBtns[b]);
     }
     learnAllBtn.setIdleText ("Learn all");
-    setHint (learnAllBtn, "Learn all", "Listens for 3 seconds and sets up every keep band it can from the drum's five loudest resonances, K1 to K5 in frequency order (lowest = the fundamental, into K1 and Focus). Bands with no detected resonance are left alone.");
+    setHint (learnAllBtn, "Learn all", "Listens for 3 seconds and sets up every keep band it can: the fundamental into K1 (and Focus), then the loudest resonances above it into K2..K5 in frequency order. Bands with no detected resonance are left alone.");
     addAndMakeVisible (learnAllBtn);
 
     addAndMakeVisible (lockBtn);

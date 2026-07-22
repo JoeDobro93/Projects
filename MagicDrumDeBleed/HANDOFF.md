@@ -272,7 +272,25 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.2.1 (frequency-ordered slots + lock relocation):** slot model
+> **v1.2.2 (K1 = fundamental + fence corrections):** three edge rules
+> from the user. (1) K1 is ALWAYS the fundamental (loudest resonance)
+> and nothing below it is ever considered: the working set is
+> d = [f0] + loudest resonances ABOVE f0 (5 total, ascending); a
+> louder-than-nothing sub-resonance below f0 is discarded (test: 80 Hz
+> at −10 dB below a 210 Hz fundamental never appears; K1 = 210). K1's
+> individual learn ignores fences entirely — always f0 (it's the band
+> linked to Focus). (2) Fences: ONLY the nearest enabled band below and
+> above are consulted; enabled bands farther out are never checked even
+> if their frequency falls inside the gap (test: K4 parked at 340
+> inside the K1@210..K3@480 gap doesn't block K2 learning 330 — the
+> old any-enabled-band "taken" spacing check is deleted). No enabled
+> band below → the fundamental is the floor and K1's slot counts as f0
+> in the rank (test: only K3 on, learn K2 → the higher of the two
+> under it = 330). (3) Re-learning an enabled band is fresh — its own
+> current frequency plays no part (test: K2 parked at bogus 999 still
+> learns 330). Tests 45. VERSION 1.2.2.
+>
+> > **v1.2.1 (frequency-ordered slots + lock relocation):** slot model
 > reworked per user: the top-5 LOUDEST resonances are assigned K1..K5
 > in FREQUENCY order lowest→highest (loudness only selects the set;
 > K1 = lowest of the set, normally still the fundamental).

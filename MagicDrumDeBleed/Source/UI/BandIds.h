@@ -24,20 +24,27 @@ inline void setRealValue (MagicDrumDeBleedAudioProcessor& proc, const juce::Stri
     }
 }
 
-/*  Resonance slot model — FREQUENCY-ordered: the top-5 loudest resonances
-    are assigned to K1..K5 lowest-to-highest (for drums the fundamental is
-    normally both loudest and lowest, so K1 still lands on it).
+/*  Resonance slot model — K1 is ALWAYS the fundamental (the loudest
+    resonance), and nothing below it is ever considered: the working set is
+    the fundamental plus the loudest resonances ABOVE it (5 total),
+    frequency-ascending, so K1..K5 run low to high with K1 = fundamental.
 
-    Learn-all (selfBand −1): fresh assignment of every slot.
+    Learn-all (selfBand −1): fresh assignment of every slot from that set.
 
-    Individual learn of band i: enabled neighbours act as fences — the new
-    frequency must sit strictly between the nearest enabled band below i
-    and the nearest enabled band above i (clear of their spacing padding).
-    When several disabled bands share one gap, each takes its positional
-    share of the gap's candidates in ascending order (K2 enabled at 350,
-    learning K4: candidates above 350; K3 would take the 1st, K4 takes the
-    2nd, K5 the 3rd). K1&K3 enabled, learning K2: exactly one resonance
-    between their frequencies, or fail. Unfillable slots return 0. */
+    Individual learns:
+      - K1 is the exception: always the fundamental, regardless of any
+        other band (it is the special band linked to the trigger Focus).
+      - K2..K5: ONLY the nearest enabled band below and the nearest enabled
+        band above form the search fences (an enabled band farther out is
+        never consulted, even if its frequency happens to fall inside the
+        gap); with no enabled band below, the fundamental itself is the
+        floor — K1's slot always counts as the fundamental. Several
+        disabled bands sharing one gap take positional shares of its
+        candidates in ascending order (only K3 enabled, learning K2: the
+        two slots under it are K1 = fundamental and K2 = the one resonance
+        between fundamental and K3). The band being learned is always
+        treated as fresh — its current frequency plays no part.
+    Unfillable slots return 0. */
 inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcessor& proc,
                                                    const std::vector<mdd::LearnAnalyzer::Resonance>& res,
                                                    int selfBand)
@@ -48,20 +55,23 @@ inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcesso
 
     auto spacing = [] (double f) { return juce::jmax (12.0, 0.06 * f); };
 
-    // Top-5 loudest (res is loudest-first), then frequency-ascending.
-    std::vector<double> d;
-    for (const auto& r : res)
-    {
-        if ((int) d.size() >= 5)
-            break;
-        d.push_back (r.hz);
-    }
-    std::sort (d.begin(), d.end());
+    // Working set: fundamental + loudest resonances above it, ascending.
+    const double f0 = res[0].hz;                   // res is loudest-first
+    std::vector<double> d { f0 };
+    for (size_t k = 1; k < res.size() && d.size() < 5; ++k)
+        if (res[k].hz > f0 + spacing (f0))
+            d.push_back (res[k].hz);               // below-fundamental: ignored
+    std::sort (d.begin(), d.end());                // d[0] == f0
 
-    if (selfBand < 0)                              // learn-all: lowest -> highest
+    if (selfBand < 0)                              // learn-all
     {
         for (size_t i = 0; i < d.size() && i < slot.size(); ++i)
             slot[i] = d[i];
+        return slot;
+    }
+    if (selfBand == 0)                             // K1: always the fundamental
+    {
+        slot[0] = f0;
         return slot;
     }
 
@@ -73,16 +83,21 @@ inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcesso
         return (double) proc.apvts.getRawParameterValue (ParamIDs::notchFreq (b))->load();
     };
 
-    // Fences: nearest enabled band below / above the one being learned.
-    double lower = 0.0, upper = 0.0;               // upper 0 = unbounded
-    int lowerIdx = -1;
-    for (int b = selfBand - 1; b >= 0; --b)
+    // Fences: nearest enabled band each side; no enabled band below means
+    // the fundamental is the floor (K1's slot is the fundamental by fiat).
+    double lower = f0;
+    int lowerIdx = 0;
+    for (int b = selfBand - 1; b >= 1; --b)
         if (const double f = enabledFreq (b); f > 0.0) { lower = f; lowerIdx = b; break; }
+    if (lowerIdx == 0)
+        if (const double f = enabledFreq (0); f > 0.0)
+            lower = f;                             // enabled K1 fences at ITS freq
+    double upper = 0.0;                            // 0 = unbounded above
     for (int b = selfBand + 1; b < 5; ++b)
         if (const double f = enabledFreq (b); f > 0.0) { upper = f; break; }
 
     // Positional rank of this band within the disabled run above the fence
-    // (re-learning an enabled band counts itself).
+    // (the band being learned always counts itself — a re-learn is fresh).
     int rank = 0;
     for (int b = lowerIdx + 1; b <= selfBand; ++b)
         if (b == selfBand || enabledFreq (b) <= 0.0)
@@ -91,20 +106,10 @@ inline std::array<double, 5> assignResonanceSlots (MagicDrumDeBleedAudioProcesso
     int n = 0;
     for (const double f : d)                       // ascending
     {
-        if (lower > 0.0 && f <= lower + spacing (lower))
+        if (f <= lower + spacing (lower))
             continue;
         if (upper > 0.0 && f >= upper - spacing (upper))
             break;                                 // ascending: everything after is out too
-        bool taken = false;
-        for (int b = 0; b < 5; ++b)
-            if (b != selfBand)
-                if (const double ef = enabledFreq (b); ef > 0.0 && std::abs (f - ef) < spacing (ef))
-                {
-                    taken = true;
-                    break;
-                }
-        if (taken)
-            continue;
         if (++n == rank)
         {
             slot[(size_t) selfBand] = f;
