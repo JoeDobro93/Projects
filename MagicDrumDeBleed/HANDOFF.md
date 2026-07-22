@@ -272,7 +272,20 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.4 (comp tail blend — the rumble fix):** user report: comp mode
+> **v1.1.5 (tail blend hold fix + range line):** v1.1.4's blend was
+> inaudible in the field: the eqGate HOLD branch still pinned
+> eqGateEnv = 1.0, so the instant a light tap fell below T the partial
+> engagement was overwritten with full (TAIL meter shot to 100%) — the
+> v1.1.4 test only measured DURING a sustained tone, never the hold
+> phase. Fix: the hold branch now only decrements the counter, holding
+> whatever level the event reached (gate mode enters hold at 1.0, so
+> its behaviour is unchanged). New regression: burst 1.5 dB over then
+> silence → env held at −2.51 dB through the hold phase (39 tests).
+> History: comp mode draws a gold dashed line at threshold + Tail
+> range (full-engagement level), same style family as the
+> threshold/close dashes. VERSION 1.1.5.
+>
+> > **v1.1.4 (comp tail blend — the rumble fix):** user report: comp mode
 > keeps ghosts beautifully, but FALSE triggers still engaged the tail at
 > 100%, ringing the keep bands ("rumble"). New comp-only params
 > tailRange (0–12 dB over T, def 3) and tailBase (0–100%, def 50): a hit

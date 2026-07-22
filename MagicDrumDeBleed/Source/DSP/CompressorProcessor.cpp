@@ -330,8 +330,11 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         }
         else if (eqGateHoldCounter > 0)
         {
+            // Hold at the level the event REACHED — pinning 1.0 here would
+            // undo the comp-mode partial engagement the moment the signal
+            // dropped below the threshold (the bug behind "the TAIL meter
+            // shoots to 100% no matter what Tail range/base are set to").
             --eqGateHoldCounter;
-            eqGateEnv = 1.0;
         }
         else
         {

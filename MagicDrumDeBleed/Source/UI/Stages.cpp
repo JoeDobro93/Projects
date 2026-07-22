@@ -437,6 +437,19 @@ void GateStage::paint (juce::Graphics& g)
                 const float dash2[2] = { 2.0f, 4.0f };
                 g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
             }
+            // comp mode: the Tail-range line — full tail engagement level
+            if (compOn)
+                if (auto* trp = processor.apvts.getParameter (ParamIDs::tailRange))
+                {
+                    const float tr = trp->convertFrom0to1 (trp->getValue());
+                    if (tr > 0.05f)
+                    {
+                        const float ry = yFor (thr + tr);
+                        g.setColour (pal->tail.withAlpha (0.55f));
+                        const float dashT[2] = { 2.0f, 4.0f };
+                        g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dashT, 2, 1.0f);
+                    }
+                }
             const float ty = yFor (thr);
             g.setColour (pal->warn);
             g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
