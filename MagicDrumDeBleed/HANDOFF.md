@@ -274,13 +274,18 @@
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
 > **v1.1.0 (Compressor mode):** second detection mode — the classic
 > high-ratio-parallel-compressor bleed trick, over-compressed. Param IDs
-> compMode/compRatio (choice 4:1|10:1|20:1|100:1, default 20:1)/
+> compMode/compRatio (choice 4:1|10:1|20:1|100:1|Mirror, default 20:1)/
 > compAttack (0.1|2|30 log, def 1 ms)/compRelease (5|100|1000 log int,
 > def 100). DSP (CompressorProcessor::setCompParameters + compMode
-> branch in process()): GR target = −ratio·max(0, slowRMS − T) clamped
-> at −96, own attack/release coeffs, MIDI force = full duck, veto/hold/
-> hysteresis parked; tail (eqGate) keys on `openNow` = rms>T‖forced
-> (gate mode: gateOpen). getOffbandDb→getDryDb: the history's orange
+> branch in process()): GR target = −k·max(0, slowRMS − T) clamped −96,
+> k = grPerOverDb table {0.75, 0.90, 0.95, 0.99, 2.0} — standard ratios
+> use 1−1/R (copy squeezed toward T; hits escape the null PARTIALLY,
+> e.g. 58% amplitude at 4:1/10 dB over — the classic trick sound),
+> Mirror is a negative ratio (−1:1, dbx-style): 2 dB down per dB over,
+> copy pushed BELOW T → ~90% escape, the most gate-like. Own
+> attack/release coeffs, MIDI force = full duck, veto/hold/hysteresis
+> parked; tail (eqGate) keys on `openNow` = rms>T‖forced (gate mode:
+> gateOpen). getOffbandDb→getDryDb: the history's orange
 > trace now shows the RAW mic level (broadMeanSq) in BOTH modes — the
 > off-band veto reference is internal-only. UI: GateStage mode switch
 > (LightSelector beside header), title GATE↔COMPRESSOR, knob slots swap
@@ -296,10 +301,10 @@
 > TRIGGER meter renamed INPUT in comp. Presets: FactoryPreset +=
 > compAttackMs/compReleaseMs (Default 1.5/150, Kick 3/200, Snare 1/150,
 > Toms 2/300); compMode+compRatio PRESERVED across presets. Ratio knob
-> snaps (choice param via snapToLegalValue). Tests 29: comp ratio law
-> (GR −40.0 at 4:1/10 over), hit survival 0.044/0.045, below-T null
-> 4e-6; snapshot renders adv_comp/adv_gate_back/simple_comp. VERSION
-> 1.1.0.
+> snaps (choice param via snapToLegalValue). Tests 31: ratio law exact
+> (4:1 → GR −7.5, escape 0.026/0.045; Mirror → GR −20.0, escape
+> 0.040/0.045), below-T null 2e-6; snapshot renders
+> adv_comp/adv_gate_back/simple_comp. VERSION 1.1.0.
 >
 > **v1.0.1 (gate fixes, sim-driven):** two detection changes, both verified
 > by scratchpad/popsim.cpp (drives the real CompressorProcessor with

@@ -27,11 +27,14 @@
     with no gate cycle audibly popped on vetoed tom hits).
 
     COMPRESSOR MODE (setCompParameters, v1.1): replaces the binary gate with
-    a continuous over-threshold ducker — the classic parallel bleed trick.
-    GR target = −ratio × (slow RMS dB over threshold), clamped at the full
-    reduction: 1 dB over pulls the parallel copy ratio dB down, pushing it
-    BELOW the threshold (over-compression) so hits pass nearly untouched
-    while sub-threshold bleed still nulls. Its own attack/release envelope;
+    a continuous over-threshold compressor on the parallel copy — the
+    classic parallel bleed trick. GR target = −grPerOverDb × (slow RMS dB
+    over threshold), clamped at the full reduction. Standard ratios R map
+    to grPerOverDb = 1−1/R (the copy is squeezed toward the threshold, so
+    hits escape the null partially attenuated — the classic sound); the
+    Mirror setting is a negative ratio (−1:1), grPerOverDb = 2, pushing
+    the copy as far BELOW the threshold as the input is above — the most
+    extreme, most gate-like setting. Its own attack/release envelope;
     Selectivity/hysteresis/hold are gate-mode-only; MIDI force = full duck.
     The tail (EQ-gate) keys on "slow RMS above threshold" in this mode.
 
@@ -99,9 +102,9 @@ public:
     // EQ-gate envelope timing (shares the detector/threshold/lookahead).
     void setEqGateParameters (double holdMs, double releaseMs);
 
-    // Compressor mode: continuous −ratio·overDb ducking of the parallel path
-    // (own attack/release). While off, the gate logic above runs unchanged.
-    void setCompParameters (bool enabled, double ratio, double attackMs, double releaseMs);
+    // Compressor mode: continuous −grPerOverDb·overDb reduction of the
+    // parallel path (own attack/release). While off, the gate runs unchanged.
+    void setCompParameters (bool enabled, double grPerOverDb, double attackMs, double releaseMs);
 
     /*  Delays `audio` in place by the lookahead amount, computes the gain
         envelope from `detector` (mono, un-delayed, already sidechain-filtered
@@ -185,7 +188,7 @@ private:
 
     // Compressor mode
     bool   compMode = false;
-    double compRatio = 20.0;
+    double compGrPerDb = 0.95;
     double compAttackCoeff = 1.0, compReleaseCoeff = 1.0;
 
     // Cached parameters

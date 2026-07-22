@@ -249,7 +249,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     addAndMakeVisible (ratioK);
     ratioK.attach (ap.getParameter (ParamIDs::compRatio));
-    setHint (ratioK, "Ratio", juce::String::fromUTF8 ("Reduction slope: every dB the input rises over the Threshold ducks the cancelling copy this many dB â past the threshold, not pinned at it â so hits escape the null almost untouched. Higher = harder, more gate-like."));
+    setHint (ratioK, "Ratio", "Compression ratio on the cancelling copy. Standard ratios squeeze it toward the Threshold — hits escape the null partially attenuated (the classic trick; 100:1 ≈ limiter). Mirror is a negative ratio (−1:1): every dB over pushes the cancelling copy a dB UNDER the threshold, so hits escape nearly untouched — the most gate-like setting.");
     addAndMakeVisible (compAtk);
     compAtk.attach (ap.getParameter (ParamIDs::compAttack));
     setHint (compAtk, "Attack", "How fast the compressor clamps down once a hit crosses the Threshold - the speed the hit opens. Lookahead gives it a head start.");

@@ -57,10 +57,10 @@ void CompressorProcessor::reset()
     lastBlockGrDb = 0.0f;
 }
 
-void CompressorProcessor::setCompParameters (bool enabled, double ratio, double attackMs, double releaseMs)
+void CompressorProcessor::setCompParameters (bool enabled, double grPerOverDb, double attackMs, double releaseMs)
 {
     compMode = enabled;
-    compRatio = ratio;
+    compGrPerDb = grPerOverDb;
     compAttackCoeff  = 1.0 - std::exp (-1.0 / juce::jmax (1.0, attackMs  * 0.001 * sr));
     compReleaseCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, releaseMs * 0.001 * sr));
 }
@@ -185,20 +185,20 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
         if (compMode)
         {
-            // ---- Compressor mode: continuous over-threshold ducker (the
-            // classic parallel bleed trick, over-compressed): every dB the
-            // slow RMS rises over the threshold pulls the parallel copy
-            // `ratio` dB down, pushing it BELOW the threshold so the null
-            // releases hits almost untouched while sub-threshold bleed
-            // still cancels. MIDI force = full duck. Gate-only machinery
-            // (veto latch, hold, hysteresis) stays parked and each mode's
-            // envelope state is whatever its own knobs dictate.
+            // ---- Compressor mode: a compressor on the parallel copy (the
+            // classic parallel bleed trick). Standard ratios squeeze the
+            // copy toward the threshold (grPerOverDb = 1−1/R), so hits
+            // escape the null partially attenuated; Mirror (−1:1 negative
+            // ratio, grPerOverDb 2) pushes it below — near-full escape.
+            // Sub-threshold bleed always cancels. MIDI force = full duck.
+            // Gate-only machinery (veto latch, hold, hysteresis) stays
+            // parked; each mode's envelope obeys its own knobs.
             vetoLatch = false;
             gateOpen = false;
             holdCounter = 0;
             const double over = rmsDb - thresholdDb;
             targetDb = forced ? reductionDb
-                              : over > 0.0 ? juce::jmax (reductionDb, -compRatio * over)
+                              : over > 0.0 ? juce::jmax (reductionDb, -compGrPerDb * over)
                                            : 0.0;
             envAttack = compAttackCoeff;
             envRelease = compReleaseCoeff;

@@ -119,7 +119,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
     // ---- Compressor mode (parallel over-threshold ducker) ----
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::compMode, 1 }, "Comp Mode", false));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::compRatio, 1 }, "Ratio",
-                    juce::StringArray { "4:1", "10:1", "20:1", "100:1" }, 2));
+                    juce::StringArray { "4:1", "10:1", "20:1", "100:1", "Mirror" }, 2));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compAttack, 1 }, "Comp Attack",
                     logRange (0.1f, 2.0f, 30.0f), 1.0f, ms));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compRelease, 1 }, "Comp Release",
@@ -368,9 +368,12 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
                               pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load());
     {
-        static constexpr double kRatios[4] = { 4.0, 10.0, 20.0, 100.0 };
+        // GR per dB over threshold: standard ratios reduce by 1-1/R (copy
+        // squeezed toward the threshold); Mirror is a negative ratio (-1:1),
+        // 2 dB down per dB over, pushing the copy BELOW the threshold.
+        static constexpr double kGrPerDb[5] = { 0.75, 0.90, 0.95, 0.99, 2.0 };
         compressor.setCompParameters (pCompMode->load() > 0.5f,
-                                      kRatios[juce::jlimit (0, 3, (int) pCompRatio->load())],
+                                      kGrPerDb[juce::jlimit (0, 4, (int) pCompRatio->load())],
                                       pCompAttack->load(), pCompRelease->load());
     }
     eqGateOnCached = pEqGateOn->load() > 0.5f;
