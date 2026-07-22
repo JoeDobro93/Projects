@@ -272,7 +272,24 @@
 > 0.16·t01, gate on top at 0.24·o01 (accent when MIDI-forced) — release
 > fades the green to uncover the tail. LevelMeter value text shows the
 > PEAK-HOLD line's value (pk), hold 1.0→1.6 s.
-> **v1.1.2 (constant latency):** total plugin delay is now CONSTANT
+> **v1.1.3 (conditional margin + UI):** (1) the +10 ms flam-recovery
+> margin is now carried ONLY while Selectivity is engaged in GATE mode
+> (user decision, accepting the PDC change at that boundary): latency =
+> 10 ms base (any mode, any Lookahead) / 20 ms with gate+Selectivity;
+> comp mode NEVER carries it. updateParametersForBlock computes
+> totalDelay = base + (sel ? margin : 0), guarded by currentTotalDelay;
+> compressor margin = totalDelay − lookahead. Latency readout is dynamic
+> again (RightRail updateLatencyText via compMode+contrast attachments);
+> Selectivity hint states the +10 ms. Tests: 480 base / constant vs
+> lookahead / 960 engaged / 480 in comp with contrast dialed (35 tests).
+> (2) GR meter idle dash was mojibake (double-encoded em dash from a
+> patch pipeline; file had C3A2 C280 C294) — proper \xe2\x80\x94 now.
+> (3) Mode switch moved from the cramped sens row to the TRIGGER header
+> row (right-aligned: MODE label · switch · Bypass, modeLabelArea drawn
+> in paint); MIDI toggle back to centred under Threshold/Smoothing.
+> VERSION 1.1.3.
+>
+> > **v1.1.2 (constant latency):** total plugin delay is now CONSTANT
 > kTotalLatencyMs = kMaxLookaheadMs(10) + kEnvMarginMs(10) = 20 ms —
 > it never moves with ANY knob, mode or Selectivity (user caught that
 > v1.1.1's lookahead+10 still varied with the Lookahead knob). The

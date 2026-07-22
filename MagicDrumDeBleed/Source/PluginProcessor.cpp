@@ -313,22 +313,21 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 {
     sampleRateCached = sampleRate;
     maxLookaheadSamples = (int) std::lround (kMaxLookaheadMs * 0.001 * sampleRate);
-    // The TOTAL audio delay is constant (kTotalLatencyMs): the Lookahead knob
-    // moves decisions inside that window and the envelope-application ring
-    // absorbs the remainder (ring = total − lookahead ≥ kEnvMarginMs, the
-    // guaranteed flam-recovery headroom for veto-delayed opens).
-    envMarginSamples = (int) std::lround (kTotalLatencyMs * 0.001 * sampleRate);
+    baseDelaySamples = maxLookaheadSamples;
+    marginSamples = (int) std::lround (kEnvMarginMs * 0.001 * sampleRate);
+    currentTotalDelay = -1;
 
     const int numCh = juce::jlimit (1, 2, getTotalNumInputChannels());
 
-    compressor.prepare (sampleRate, numCh, envMarginSamples, envMarginSamples);
+    compressor.prepare (sampleRate, numCh, baseDelaySamples + marginSamples,
+                        baseDelaySamples + marginSamples);
     eq.prepare (sampleRate, numCh);
     scFilter.prepare (sampleRate);
     learnAnalyzer.prepare (sampleRate);
 
     dryDelays.resize ((size_t) numCh);
     for (auto& d : dryDelays)
-        d.prepare (envMarginSamples);
+        d.prepare (baseDelaySamples + marginSamples);
 
     const int block = juce::jmax (16, samplesPerBlock);
     conversionBuffer.setSize (numCh, block);
@@ -358,23 +357,28 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
 
 void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 {
-    // ---- Lookahead (total delay is constant; the knob moves decisions
-    // inside the window, the ring absorbs total − lookahead) ----
+    // ---- Lookahead / total delay. The knob never changes latency (the
+    // ring absorbs total − lookahead); the ONLY thing that does is engaging
+    // Selectivity in gate mode, which adds the flam-recovery margin. Comp
+    // mode never carries the margin. ----
+    const bool compModeOn = pCompMode->load() > 0.5f;
+    const bool selectivityOn = ! compModeOn && pContrast->load() < 23.75f;
     const int lookaheadMs = (int) pLookahead->load();
     const int lookahead = juce::jlimit (0, maxLookaheadSamples,
                                         (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));
-    if (lookahead != currentLookaheadSamples)
+    const int totalDelay = baseDelaySamples + (selectivityOn ? marginSamples : 0);
+    if (totalDelay != currentTotalDelay)
     {
-        currentLookaheadSamples = lookahead;
+        currentTotalDelay = totalDelay;
         for (auto& d : dryDelays)
-            d.setDelay (envMarginSamples);              // constant total
-        setLatencySamples (envMarginSamples);
+            d.setDelay (totalDelay);
+        setLatencySamples (totalDelay);
     }
+    currentLookaheadSamples = lookahead;
 
     // ---- Compressor / sidechain (each mode has its own Smoothing state) ----
-    const bool compModeOn = pCompMode->load() > 0.5f;
     compressor.setParameters (pThreshold->load(), kReductionDb, lookahead,
-                              envMarginSamples - lookahead,
+                              totalDelay - lookahead,
                               compModeOn ? pCompRmsWindow->load() : pRmsWindow->load(),
                               pHold->load(), pRelease->load(),
                               pHysteresis->load(), pContrast->load());

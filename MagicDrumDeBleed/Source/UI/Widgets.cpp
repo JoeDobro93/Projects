@@ -524,7 +524,7 @@ void GrMeter::paint (juce::Graphics& g)
     g.setFont (font (9.5f));
     const bool active = shown < -0.5f;
     g.setColour (active ? pal->open : pal->faint);
-    g.drawText (active ? juce::String (juce::roundToInt (shown)) : juce::String::fromUTF8 ("â"),
+    g.drawText (active ? juce::String (juce::roundToInt (shown)) : juce::String::fromUTF8 ("\xe2\x80\x94"),
                 vr, juce::Justification::centred);
 
     auto bar = r;

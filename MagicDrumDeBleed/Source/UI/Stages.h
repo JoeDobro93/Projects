@@ -47,6 +47,7 @@ private:
                                                compModeAtt;
     void updateSelectivityDim();
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
+    juce::Rectangle<int> modeLabelArea;
     bool filterOn = true, compOn = false;
 };
 
@@ -147,7 +148,8 @@ private:
     ui::GateMeter gateMeter;
     ui::GrMeter grMeter;                                // comp mode: replaces GATE
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
-    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, modeAtt;
+    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, modeAtt, contrastAtt;
+    void updateLatencyText();
     juce::String latencyText;
     int latencyY = 0;
     int listenY = 0, amountX = 0, amountY = 0;

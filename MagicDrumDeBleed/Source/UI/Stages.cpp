@@ -95,7 +95,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     contrastK.attach (ap.getParameter (ParamIDs::contrast));
     contrastK.setReversed (true);          // Off (24) = empty arc; stricter = fuller
     setHint (contrastK, "Selectivity",
-             juce::String::fromUTF8 ("Tom-proofing: a hit only opens the gate if the focused band beats the OFF-BAND rest of the mic (orange trace in the history) by at least this margin at its onset \xe2\x80\x94 and a hit that starts as another drum stays vetoed even when its buzz later leaks into the band. Dial DOWN from Off until other drums stop triggering; on-frequency ghost notes still pass."));
+             juce::String::fromUTF8 ("Tom-proofing: a hit only opens the gate if the focused band beats the OFF-BAND rest of the mic (orange trace in the history) by at least this margin at its onset \xe2\x80\x94 and a hit that starts as another drum stays vetoed even when its buzz later leaks into the band. Dial DOWN from Off until other drums stop triggering; on-frequency ghost notes still pass. Engaging it adds 10 ms of latency (the attack-recovery margin)."));
 
     addAndMakeVisible (typeSel);
     setHint (typeSel, "Trigger Filter Type",
@@ -128,7 +128,6 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
 
     // Mode switch: COMP (left, default) / GATE. Lives here so the mode is
     // set where the detector is configured; the Gate pane retitles itself.
-    modeSw.setCaption ("MODE");
     setHint (modeSw, "Mode", "COMP = a continuous high-ratio compressor on the cancelling copy (smoother, level-tracking). GATE = binary open/close with hold and hysteresis. Each mode remembers its own knob settings.");
     modeSw.onChange = [this] (bool left) { compModeAtt->setValueAsCompleteGesture (left ? 1.0f : 0.0f); };
     addAndMakeVisible (modeSw);
@@ -196,6 +195,8 @@ void TriggerStage::paint (juce::Graphics& g)
     g.setColour (pal->line);   g.drawRoundedRectangle (r, 5.0f, 1.0f);
 
     g.setColour (pal->faint);
+    g.setFont (font (8.5f, true));
+    g.drawText ("MODE", modeLabelArea.withTrimmedRight (sc (6)), juce::Justification::centredRight);
     g.setFont (font (9.5f, true));
     g.drawText ("SENSITIVITY", sensLabelX, sc (34), sc (160), sc (12), juce::Justification::centredLeft);
     if (! filterOn) g.setColour (pal->faint.withAlpha (0.45f));
@@ -210,6 +211,9 @@ void TriggerStage::resized()
     auto r = getLocalBounds().reduced (sc (11), sc (8));
     auto head = r.removeFromTop (sc (20));
     bypassBtn.setBounds (head.removeFromRight (sc (64)).reduced (0, 0));
+    head.removeFromRight (sc (10));
+    modeSw.setBounds (head.removeFromRight (sc (76)));
+    modeLabelArea = head.removeFromRight (sc (40));
     header.setBounds (head);
     r.removeFromTop (sc (4));
 
@@ -222,9 +226,7 @@ void TriggerStage::resized()
     auto sensKnobs = sens.removeFromTop (sc (84));
     threshold.setBounds (sensKnobs.removeFromLeft (sc (70)));
     smoothing.setBounds (sensKnobs.removeFromLeft (sc (70)));
-    auto swCell = sens.removeFromLeft (sc (82));
-    modeSw.setBounds (swCell.withSizeKeepingCentre (sc (80), juce::jmin (swCell.getHeight(), sc (34))));
-    midiBtn.setBounds (sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (60)),
+    midiBtn.setBounds (sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (64)),
                                                    juce::jmin (sens.getHeight(), sc (24))));
 
     r.removeFromLeft (sc (6));
@@ -253,7 +255,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     auto& ap = processor.apvts;
     addAndMakeVisible (lookahead);
     lookahead.attach (ap.getParameter (ParamIDs::lookahead));
-    setHint (lookahead, "Lookahead", "The gate opens this far BEFORE the transient arrives, so attacks are never clipped. Total plugin latency stays fixed no matter what.");
+    setHint (lookahead, "Lookahead", "The gate opens this far BEFORE the transient arrives, so attacks are never clipped. This knob never changes the plugin's latency.");
     addAndMakeVisible (hold);
     hold.attach (ap.getParameter (ParamIDs::hold));
     setHint (hold, "Hold", "Minimum time the gate stays fully open after a hit.");
@@ -927,6 +929,7 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
         {
             gateMeter.setVisible (v <= 0.5f);
             grMeter.setVisible (v > 0.5f);
+            updateLatencyText();
         });
     modeAtt->sendInitialUpdate();
 
@@ -959,8 +962,20 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
         });
     monAtt->sendInitialUpdate();
 
-    // Constant total latency: max Lookahead + the flam-recovery margin.
-    latencyText = juce::String (MagicDrumDeBleedAudioProcessor::kTotalLatencyMs) + " ms latency";
+    // Latency readout: base window, + the flam-recovery margin only while
+    // Selectivity is engaged in gate mode.
+    contrastAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::contrast),
+        [this] (float) { updateLatencyText(); });
+    updateLatencyText();
+}
+
+void RightRail::updateLatencyText()
+{
+    const bool comp = processor.apvts.getRawParameterValue (ParamIDs::compMode)->load() > 0.5f;
+    const bool sel = ! comp && processor.apvts.getRawParameterValue (ParamIDs::contrast)->load() < 23.75f;
+    latencyText = juce::String (MagicDrumDeBleedAudioProcessor::kMaxLookaheadMs
+                                + (sel ? MagicDrumDeBleedAudioProcessor::kEnvMarginMs : 0)) + " ms latency";
+    repaint();
 }
 
 void RightRail::paint (juce::Graphics& g)
