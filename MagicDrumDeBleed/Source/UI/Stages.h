@@ -65,21 +65,20 @@ private:
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 2, "COMPRESSOR", 1 };
     ui::Knob compThreshK { "Threshold", ui::Knob::openClr }, ratioK { "Ratio", ui::Knob::openClr },
-             compAtk { "Attack", ui::Knob::openClr }, compRmsK { "Comp RMS", ui::Knob::openClr },
+             compAtk { "Attack", ui::Knob::openClr }, compRmsK { "RMS", ui::Knob::openClr },
              compRel { "Release", ui::Knob::openClr }, lookahead { "Lookahead", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
-    // Legend chips overlaid on the history canvas — LED = the line's colour,
-    // click to hide that line. Two extra chips cover the dashed threshold
-    // line pairs (gate T + close level; comp T + full-tail level).
+    // Legend chips — LED = the line's colour, click to hide that line, state
+    // persisted in the plugin state. The audio traces sit in a row overlaid
+    // on the canvas; the dashed-line chips stack to the canvas's left
+    // (thresholds, plus "Ranges" = close level + full-tail level).
     ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Trigger" },
                     smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr },
-                    gateLnTg { "Gate thr" }, compLnTg { "Comp thr" };
+                    gateLnTg { "Gate thr" }, compLnTg { "Comp thr" }, rangesTg { "Ranges" };
     ui::SnowButton histFreeze;
-    bool showOut = true, showTrig = true, showSmooth = true, showOff = true,
-         showGateLn = true, showCompLn = true;
-
-    std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
-    struct Sample { float det, fast, off, out, o01, t01; bool forced; };
+    bool showOut = false, showTrig = true, showSmooth = false, showOff = false,
+         showGateLn = true, showCompLn = true, showRanges = false;
+    struct Sample { float det, fast, off, out, o01, t01; };
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
     juce::Rectangle<int> canvasArea, speedLabelArea;

@@ -44,7 +44,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     auto& ap = processor.apvts;
 
     addAndMakeVisible (bypassBtn);
-    setHint (bypassBtn, "Bypass", "Bypass the trigger stage: the gate stays permanently open, so no bleed is removed.");
+    setHint (bypassBtn, "Bypass", "Bypass the gate only: every moment counts as an event, exactly as if the gate Threshold sat at minimum - the compressor alone decides what escapes and bleed under its threshold still cancels.");
     bypassBtn.onClick = [this]
     {
         auto* p = processor.apvts.getParameter (ParamIDs::compBypass);
@@ -276,7 +276,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     addAndMakeVisible (compRmsK);
     compRmsK.attach (ap.getParameter (ParamIDs::compRmsWindow));
-    setHint (compRmsK, "Comp RMS", "The compressor's RMS window (like RMS size in a console compressor). Longer = calmer level tracking, slower response. Separate from the gate's Smoothing.");
+    setHint (compRmsK, "RMS", "The compressor's RMS window (like RMS size in a console compressor). Longer = calmer level tracking, slower response. Separate from the gate's Smoothing.");
 
     addAndMakeVisible (compRel);
     compRel.attach (ap.getParameter (ParamIDs::compRelease));
@@ -297,44 +297,44 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
         startTimerHz (juce::roundToInt (hz));
     };
 
-    auto traceToggle = [this] (ui::LightToggle& t, bool& flag, const char* title, const char* hint)
+    // Legend chip states persist in the plugin state (like tailScale), so
+    // reopening the editor or switching views keeps the chosen lines.
+    auto traceToggle = [this] (ui::LightToggle& t, bool& flag, const char* prop, bool defaultOn,
+                               const char* title, const char* hint)
     {
-        t.setState (true);
+        flag = (bool) processor.apvts.state.getProperty (prop, defaultOn);
+        t.setState (flag);
         setHint (t, title, hint);
-        t.onClick = [this, &t, &flag] { flag = ! flag; t.setState (flag); repaint(); };
+        t.onClick = [this, &t, &flag, prop]
+        {
+            flag = ! flag;
+            t.setState (flag);
+            processor.apvts.state.setProperty (prop, flag, nullptr);
+            repaint();
+        };
         addAndMakeVisible (t);
     };
-    traceToggle (outTg, showOut, "Output",
+    traceToggle (outTg, showOut, "histOut", false, "Output",
                  "The plugin's actual output level (green) - what you hear after the cancellation and tail EQ.");
-    traceToggle (trigTg, showTrig, "Trigger",
+    traceToggle (trigTg, showTrig, "histTrig", true, "Trigger",
                  "The fast opening detector (bright) - the sidechain level that actually fires the gate.");
-    traceToggle (smoothTg, showSmooth, "Average",
+    traceToggle (smoothTg, showSmooth, "histAvg", false, "Average",
                  "The smoothed detector (blue) - Smoothing's averaged sidechain level; it closes the gate and is compared to the gate Threshold.");
-    traceToggle (offTg, showOff, "Dry",
+    traceToggle (offTg, showOff, "histDry", false, "Dry",
                  "The un-processed input level (orange) - what you would hear with the plugin bypassed.");
-    traceToggle (gateLnTg, showGateLn, "Gate thr",
-                 "The gate Threshold (red dashes) and its close level (dimmer dashes, Threshold minus Hysteresis).");
-    traceToggle (compLnTg, showCompLn, "Comp thr",
-                 "The compressor Threshold (gold dashes) and the full-tail level (fainter dashes, comp Threshold plus Tail range).");
+    traceToggle (gateLnTg, showGateLn, "histGateLn", true, "Gate thr",
+                 "The gate Threshold line (red dashes).");
+    traceToggle (compLnTg, showCompLn, "histCompLn", true, "Comp thr",
+                 "The compressor Threshold line (gold dashes).");
+    traceToggle (rangesTg, showRanges, "histRanges", false, "Ranges",
+                 "The two zone edges: the gate's close level (dim red, Threshold minus Hysteresis) and the full-tail level (dim gold, comp Threshold plus Tail range).");
     trigTg.setLedColour (pal->accent.interpolatedWith (pal->txt, 0.65f));
     gateLnTg.setLedColour (pal->warn);
     compLnTg.setLedColour (pal->gold);
+    rangesTg.setLedColour (pal->warn.interpolatedWith (pal->gold, 0.5f).withAlpha (0.8f));
 
     addAndMakeVisible (histFreeze);
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
-
-    dimAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
-        [this] (float v)
-        {
-            const float a = v > 0.5f ? 0.45f : 1.0f;
-            compThreshK.setAlpha (a);
-            ratioK.setAlpha (a);
-            compAtk.setAlpha (a);
-            compRmsK.setAlpha (a);
-            compRel.setAlpha (a);
-            lookahead.setAlpha (a);
-        });
-    dimAtt->sendInitialUpdate();
 
     hist.reserve (kHist);
     startTimerHz (90);
@@ -342,8 +342,8 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
 void GateStage::timerCallback()
 {
-    // Lane feeds: green follows the duck depth (how hard events are
-    // escaping the null), gold follows the tail envelope.
+    // Lane feeds are the compressor's own envelopes: green = the duck depth
+    // (how hard events are escaping the null), gold = the tail envelope.
     const float open01 = juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f);
     const float tail01 = juce::jlimit (0.0f, 1.0f,
                                        std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f));
@@ -352,7 +352,7 @@ void GateStage::timerCallback()
     {
         hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
                           processor.getDryDb(), processor.getOutputPeakDb(),
-                          open01, tail01, processor.getMidiForced() });
+                          open01, tail01 });
         if ((int) hist.size() > kHist)
             hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
     }
@@ -396,14 +396,14 @@ void GateStage::paint (juce::Graphics& g)
             if (s.t01 <= 0.004f && s.o01 <= 0.004f)
                 continue;
             const float x = cv.getRight() - (float) (n - i) * cw;
-            if (s.t01 > 0.004f)                          // tail: gold, envelope-true
+            if (s.t01 > 0.004f)                          // tail envelope: gold
             {
                 g.setColour (pal->tail.withAlpha (0.25f + 0.65f * s.t01));
                 g.fillRect (x, lane.getY(), cw + 0.6f, lane.getHeight());
             }
-            if (s.o01 > 0.004f)                          // gate / reduction on top
+            if (s.o01 > 0.004f)                          // duck depth on top
             {
-                g.setColour ((s.forced ? pal->accent : pal->open).withAlpha (0.30f + 0.70f * s.o01));
+                g.setColour (pal->open.withAlpha (0.30f + 0.70f * s.o01));
                 g.fillRect (x, lane.getY(), cw + 0.6f, lane.getHeight());
             }
         }
@@ -415,33 +415,34 @@ void GateStage::paint (juce::Graphics& g)
             auto* p = processor.apvts.getParameter (id);
             return p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0f;
         };
-        // Gate threshold (red) with its close level (threshold − hysteresis)
-        // beneath; comp threshold (gold) with the full-tail level
-        // (comp threshold + Tail range) above it.
+        // Threshold lines (gate red / comp gold); "Ranges" adds their zone
+        // edges — the close level (threshold − hysteresis) and the full-tail
+        // level (comp threshold + Tail range).
         {
             const float dash[2] = { 5.0f, 4.0f };
             const float dash2[2] = { 2.0f, 4.0f };
-            if (showCompLn)
+            if (showRanges)
             {
-                const float compThr = realOf (ParamIDs::compThreshold);
                 const float tr = realOf (ParamIDs::tailRange);
                 if (tr > 0.05f)
                 {
-                    const float ry = yFor (compThr + tr);
+                    const float ry = yFor (realOf (ParamIDs::compThreshold) + tr);
                     g.setColour (pal->gold.withAlpha (0.4f));
                     g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dash2, 2, 1.0f);
                 }
-                const float cy = yFor (compThr);
+                const float cy2 = yFor (realOf (ParamIDs::threshold) - realOf (ParamIDs::hysteresis));
+                g.setColour (pal->warn.withAlpha (0.45f));
+                g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
+            }
+            if (showCompLn)
+            {
+                const float cy = yFor (realOf (ParamIDs::compThreshold));
                 g.setColour (pal->gold.withAlpha (0.85f));
                 g.drawDashedLine ({ cv.getX(), cy, cv.getRight(), cy }, dash, 2, 1.2f);
             }
             if (showGateLn)
             {
-                const float thr = realOf (ParamIDs::threshold);
-                const float cy2 = yFor (thr - realOf (ParamIDs::hysteresis));
-                g.setColour (pal->warn.withAlpha (0.45f));
-                g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
-                const float ty = yFor (thr);
+                const float ty = yFor (realOf (ParamIDs::threshold));
                 g.setColour (pal->warn);
                 g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
             }
@@ -511,6 +512,17 @@ void GateStage::resized()
     lookahead.setBounds (krow2.removeFromLeft (sc (70)));
 
     r.removeFromLeft (sc (13));
+
+    // Dashed-line chips stack to the left of the canvas.
+    auto lineCol = r.removeFromLeft (sc (76));
+    lineCol.removeFromTop (sc (2));
+    gateLnTg.setBounds (lineCol.removeFromTop (sc (18)));
+    lineCol.removeFromTop (sc (4));
+    compLnTg.setBounds (lineCol.removeFromTop (sc (18)));
+    lineCol.removeFromTop (sc (4));
+    rangesTg.setBounds (lineCol.removeFromTop (sc (18)));
+    r.removeFromLeft (sc (6));
+
     auto scol = r.removeFromRight (sc (16));
     speedLabelArea = r.removeFromRight (sc (12));
     r.removeFromRight (sc (2));
@@ -518,11 +530,12 @@ void GateStage::resized()
     speedSlider.setBounds (scol.reduced (0, sc (2)));
     histFreeze.setBounds (canvasArea.getRight() - sc (24), canvasArea.getY() + sc (5), sc (19), sc (19));
 
-    // Legend chips overlaid along the canvas top, ending at the freeze button.
-    ui::LightToggle* chips[6] = { &outTg, &trigTg, &smoothTg, &offTg, &gateLnTg, &compLnTg };
-    const int chipW[6] = { 62, 60, 68, 48, 66, 70 };
+    // Audio-trace chips overlaid along the canvas top, ending at the freeze
+    // button.
+    ui::LightToggle* chips[4] = { &outTg, &trigTg, &smoothTg, &offTg };
+    const int chipW[4] = { 62, 60, 68, 48 };
     int x = histFreeze.getX() - sc (4);
-    for (int i = 5; i >= 0; --i)
+    for (int i = 3; i >= 0; --i)
     {
         x -= sc (chipW[i]);
         chips[i]->setBounds (x, canvasArea.getY() + sc (4), sc (chipW[i]), sc (18));

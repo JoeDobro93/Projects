@@ -201,7 +201,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                     juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 100.0f, pct));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::monitorMode, 1 }, "Monitor",
                     juce::StringArray { "Normal", "Sidechain", "Processing", "Delta" }, 0));
-    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::compBypass, 1 }, "Comp Bypass", false));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::compBypass, 1 }, "Gate Bypass", false));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::eqBypass, 1 }, "EQ Bypass", false));
 
     return { p.begin(), p.end() };

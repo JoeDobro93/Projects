@@ -1,5 +1,24 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.4.1 — LEGEND POLISH + GATE-ONLY BYPASS (2026-07):** legend chip
+> states persist in the plugin state (props histOut/histTrig/histAvg/
+> histDry/histGateLn/histCompLn/histRanges; defaults = Trigger + both
+> thresholds ONLY). New **"Ranges"** chip (off by default) owns the two
+> zone-edge dashes — close level (T − hysteresis, dim red) and full-tail
+> level (comp T + Tail range, dim gold); the Gate thr / Comp thr chips now
+> draw just their main threshold lines. The three dashed-line chips STACK
+> in a sc(76) column left of the canvas; the four audio chips stay overlaid
+> inline on the canvas top-right. Activity lane = the compressor's
+> envelopes only (Sample.forced + MIDI accent tint removed). Comp knob
+> "Comp RMS"→**"RMS"**. **TRIGGER Bypass is now gate-only**
+> (CompressorProcessor::process param renamed gateActive; feedLive =
+> gateOpen || !gateActive): the comp keeps ducking and cancelling —
+> equivalent to gate threshold at minimum; the old pin-duck/pin-tail
+> branches are gone, GateStage's comp-knob dimAtt deleted, host param
+> display name "Comp Bypass"→"Gate Bypass" (ID compBypass kept for state
+> compat). Tests: 61 (2 new: bypassed gate → 4:1 GR −3.7 on a tone the
+> gate would block; bleed under comp T still cancels while bypassed).
+
 > **v1.4.0 — EXTERNAL SIDECHAIN + HISTORY LEGEND (2026-07):** new
 > "Sidechain" stereo input bus (VST3/AU pin count changes — hosts may need
 > a plugin re-scan; layouts: main mono/stereo == out, key mono/stereo/off)

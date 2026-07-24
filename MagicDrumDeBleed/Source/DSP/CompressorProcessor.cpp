@@ -126,7 +126,7 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
 
 void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const double* detector,
                                    const double* detectorBroad,
-                                   int numSamples, bool applyGain, double* eqGateEnvOut,
+                                   int numSamples, bool gateActive, double* eqGateEnvOut,
                                    const unsigned char* forceOpen)
 {
     const int numChannels = juce::jmin (audio.getNumChannels(), (int) delays.size());
@@ -226,7 +226,10 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         // shut, it drains to silence within its window and the duck
         // releases — so nothing that isn't an event can ever push the copy
         // down, and everything that is fades out at the comp Release rate.
-        const double compMean = compRms.pushMeanSquare (gateOpen ? det : 0.0);
+        // Gate bypassed: the feed is always live (gate threshold at
+        // minimum, in effect) and the compressor alone decides.
+        const bool feedLive = gateOpen || ! gateActive;
+        const double compMean = compRms.pushMeanSquare (feedLive ? det : 0.0);
         const double compDb = 10.0 * std::log10 (compMean + 1.0e-30);
         const double overNow = compDb - compThresholdDb;
         const double targetDb = overNow > 0.0
@@ -235,27 +238,15 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         const bool openNow = overNow > 0.0;
 
         // ---- Smooth the envelope (attack towards reduction, release back to 0 dB) ----
-        if (applyGain)
         {
             const double coeff = (targetDb < currentGainDb) ? compAttackCoeff : compReleaseCoeff;
             currentGainDb += coeff * (targetDb - currentGainDb);
-        }
-        else
-        {
-            // Trigger bypassed: the duck is pinned fully engaged — the
-            // parallel copy is fully ducked, so no bleed is removed and the
-            // dry signal passes untouched.
-            currentGainDb = reductionDb;
         }
 
         // ---- EQ-gate envelope: engage (within lookahead), hold, release.
         // Keys on the comp threshold — the tail's hold starts counting the
         // moment the gated sidechain stops qualifying.
-        if (! applyGain)
-        {
-            eqGateEnv = 1.0;               // trigger bypassed: tail rings too
-        }
-        else if (openNow)
+        if (openNow)
         {
             // Partial engagement scaled by how far past the comp threshold
             // the event peaks (Tail Range / Tail Base); the env holds the

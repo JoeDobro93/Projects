@@ -195,10 +195,12 @@ public:
         envelope from `detector` (mono, un-delayed, already sidechain-filtered
         by the caller) and applies it to all channels.
 
-        applyGain == false implements the trigger-bypass: the lookahead
-        delay still runs (so path alignment and latency never change) but the
-        duck is pinned fully engaged, so no bleed is removed and the dry
-        signal passes untouched.
+        gateActive == false (the TRIGGER stage's Bypass) bypasses the GATE
+        STAGE ONLY: every sample counts as an event — the compressor's feed
+        stays live, exactly as if the gate threshold sat at minimum. The
+        compressor keeps ducking (and cancelling sub-threshold bleed)
+        normally, and the lookahead delay still runs so path alignment and
+        latency never change.
     */
     /*  eqGateEnv (optional): per-sample 0..1 envelope for the EQ gate — it
         engages (with the tail blend) while the gated sidechain is over the
@@ -216,7 +218,7 @@ public:
         pushes past the comp threshold. */
     void process (juce::AudioBuffer<double>& audio, const double* detector,
                   const double* detectorBroad,
-                  int numSamples, bool applyGain, double* eqGateEnv = nullptr,
+                  int numSamples, bool gateActive, double* eqGateEnv = nullptr,
                   const unsigned char* forceOpen = nullptr);
 
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.

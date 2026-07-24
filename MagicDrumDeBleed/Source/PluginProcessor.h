@@ -81,7 +81,7 @@ namespace ParamIDs
 
     inline constexpr const char* intensity    = "intensity";
     inline constexpr const char* monitorMode  = "monitorMode";
-    inline constexpr const char* compBypass   = "compBypass";
+    inline constexpr const char* compBypass   = "compBypass";   // GATE bypass (ID kept for state compat)
     inline constexpr const char* eqBypass     = "eqBypass";
 }
 
