@@ -87,9 +87,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
-    // ---- Gate stage (the event detector; hard close, no gain of its own) ----
+    // ---- Gate stage (the event detector; hard close, no gain of its own).
+    // The gate threshold ships at MINIMUM: out of the box every moment is
+    // an event and the compressor alone decides — pure comp behaviour for
+    // Simple-view users; raising it is an Advanced move. ----
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
-                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -40.0f, dB));
+                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -60.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
                     0, 10, 5, juce::AudioParameterIntAttributes()
                                 .withLabel ("ms")

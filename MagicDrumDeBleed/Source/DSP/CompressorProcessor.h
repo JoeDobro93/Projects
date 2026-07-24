@@ -158,6 +158,17 @@ public:
     // grPerOverDb at or above this means Full ratio: the binary −96 duck.
     static constexpr double kFullRatioSlope = 1.0e6;
 
+    /*  Anti-pop pre-ramp: the applied duck is read this far AHEAD of the
+        nominal margin delay and smoothed in the LINEAR gain domain, so the
+        escape amplitude fades in over ~kPreRampMs and completes exactly at
+        the nominal open point — slow low-frequency onsets (kicks) and
+        false triggers no longer step the null open mid-waveform, and the
+        attack is not dulled (full level lands at the same instant as
+        before). Costs no latency: it borrows spare margin
+        (totalDelay − lookahead), so at maximum Lookahead with Selectivity
+        off (margin 0) it gracefully shrinks to nothing. */
+    static constexpr double kPreRampMs = 3.0;
+
     void prepare (double sampleRate, int numChannels, int maxDelaySamples,
                   int maxMarginSamples = 0);
     void reset();
@@ -266,6 +277,12 @@ private:
     int marginSamples = 0, ringIdx = 0;
     int bypassRemaining = 0;
     int vetoBlockedSamples = 0;
+
+    // Anti-pop pre-ramp (see kPreRampMs): advanced ring read + linear-gain
+    // smoothing of the applied duck.
+    int preRampSamples = 0;
+    double rampCoeff = 1.0;
+    double smoothGain = 1.0;
 
     // EQ-gate envelope (0..1 linear)
     double eqGateEnv = 0.0;

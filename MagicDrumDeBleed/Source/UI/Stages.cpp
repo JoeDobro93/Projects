@@ -284,7 +284,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 
     addAndMakeVisible (lookahead);
     lookahead.attach (ap.getParameter (ParamIDs::lookahead));
-    setHint (lookahead, "Lookahead", "Decisions lead the audio by this much, so attacks are never clipped. This knob never changes the plugin's latency.");
+    setHint (lookahead, "Lookahead", "Decisions lead the audio by this much, so attacks are never clipped. This knob never changes the plugin's latency. The anti-pop attack ramp borrows the leftover window, so at maximum Lookahead it has no room and slow onsets may click again.");
 
     setHint (*this, "History", "Live history of the detector and output. The legend chips (top left) name the traces - click one to hide it. The GATE/COMP switch (top right) picks which stage's dashed lines show, and follows whichever threshold or range knob you touch. The strip along the bottom: green = escaping, gold = tail ringing.");
 

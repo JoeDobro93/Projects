@@ -74,6 +74,7 @@ void CompressorProcessor::reset()
     ringIdx = 0;
     bypassRemaining = 0;
     vetoBlockedSamples = 0;
+    smoothGain = 1.0;
     lastBlockGrDb = 0.0f;
 }
 
@@ -113,6 +114,12 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
     marginSamples = juce::jlimit (0, (int) gainRing.size(), newMarginSamples);
     for (auto& d : delays)
         d.setDelay (lookaheadSamples + marginSamples);
+
+    // Anti-pop pre-ramp: borrows spare margin (never latency). The linear
+    // smoother's time constant is a fifth of the ramp so the escape has
+    // faded ~99 % in by the nominal open point.
+    preRampSamples = juce::jmin ((int) std::lround (kPreRampMs * 0.001 * sr), marginSamples);
+    rampCoeff = preRampSamples > 0 ? 1.0 - std::exp (-5.0 / (double) preRampSamples) : 1.0;
 
     gateRms.setWindow (rmsWindowMs);
 
@@ -276,25 +283,43 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         // decisions still lead the audio by exactly the lookahead); a
         // veto-late open bypasses the ring for one window — applied fresh,
         // it recovers the head start the veto's settle time consumed.
+        // The GAIN is read preRampSamples AHEAD of the nominal delay and
+        // smoothed in the linear domain below — the anti-pop pre-ramp.
         double applyDb = currentGainDb;
         double applyEnv = eqGateEnv;
+        bool freshApply = marginSamples == 0;
         if (marginSamples > 0)
         {
-            const double gOld = gainRing[(size_t) ringIdx];
+            int rampIdx = ringIdx + preRampSamples;
+            if (rampIdx >= marginSamples)
+                rampIdx -= marginSamples;
+            const double gAdv = preRampSamples >= marginSamples ? currentGainDb
+                                                                : gainRing[(size_t) rampIdx];
             const double eOld = envRing[(size_t) ringIdx];
             gainRing[(size_t) ringIdx] = currentGainDb;
             envRing[(size_t) ringIdx] = eqGateEnv;
             if (++ringIdx >= marginSamples)
                 ringIdx = 0;
             if (bypassRemaining > 0)
+            {
                 --bypassRemaining;
+                freshApply = true;                  // emergency catch-up: no ramp
+            }
             else
             {
-                applyDb = gOld;
+                applyDb = gAdv;
                 applyEnv = eOld;
             }
         }
-        const double gain = std::pow (10.0, applyDb / 20.0);
+
+        // Linear-gain smoothing: the escape amplitude (1 − duck) fades in
+        // over the pre-ramp instead of stepping — a dB-domain ramp would
+        // still front-load the audible escape.
+        const double targetGain = std::pow (10.0, applyDb / 20.0);
+        if (freshApply)
+            smoothGain = targetGain;
+        else
+            smoothGain += rampCoeff * (targetGain - smoothGain);
         minGainDb = juce::jmin (minGainDb, (float) currentGainDb);
         if (eqGateEnvOut != nullptr)
             eqGateEnvOut[i] = applyEnv;
@@ -303,7 +328,7 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         for (int ch = 0; ch < numChannels; ++ch)
         {
             double* data = audio.getWritePointer (ch);
-            data[i] = delays[(size_t) ch].processSample (data[i]) * gain;
+            data[i] = delays[(size_t) ch].processSample (data[i]) * smoothGain;
         }
     }
 

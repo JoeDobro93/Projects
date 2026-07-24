@@ -1,5 +1,27 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.6.0 — ANTI-POP PRE-RAMP + COMP-FIRST DEFAULTS (2026-07):** kick
+> attacks and false triggers used to CLICK: the duck's 0.1 ms attack is a
+> step, and lookahead only relocates it — slow low-frequency onsets are
+> detected late, so the step lands mid-waveform on real amplitude. Fix
+> (`kPreRampMs 3.0`): the applied gain is read `preRampSamples` AHEAD of
+> the nominal margin delay (advanced ring read; clamped to marginSamples)
+> and smoothed in the **LINEAR gain domain** (`smoothGain`, τ = ramp/5 —
+> a dB-domain ramp would still front-load the audible escape, since
+> escape = 1 − 10^(dB/20)): the escape fades in over ~3 ms and completes
+> at the EXACT nominal open point — attack timing/punch unchanged, zero
+> added latency. It borrows spare margin (totalDelay − lookahead), so at
+> max Lookahead with Selectivity off it shrinks to nothing (Lookahead
+> hint says so). The veto-late flam bypass snaps the smoother (emergency
+> path stays instant); GR meter still reports the unsmoothed dB envelope.
+> Regression test: 80 Hz burst with an 80 ms rise over bleed — max
+> output step 0.0015 (= the signal's own slope; the old step measured
+> ~10× that), peak still 0.41. DEFAULTS: gate `threshold` now ships at
+> MINIMUM (−60) — a fresh instance is pure compressor behaviour, making
+> the Simple view comp-only for users who never open Advanced; the
+> Simple TRIGGER meter's draggable red line is now **compThreshold**.
+> Tests: 65.
+
 > **v1.5.1 — GHOST THRESHOLD (2026-07):** the INACTIVE stage of the
 > GATE/COMP line switch keeps its MAIN threshold visible as a faint ghost
 > (same {5,4} dash, alpha 0.25, 1.0 px, drawn FIRST so active lines paint

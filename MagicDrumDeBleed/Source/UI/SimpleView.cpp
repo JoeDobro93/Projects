@@ -149,12 +149,15 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
                         std::function<void()> onAdvancedView)
     : processor (proc),
       trigMeter ("TRIGGER", [&proc] { return proc.getDetectorRmsDb(); },
-                 proc.apvts.getParameter (ParamIDs::threshold)),
+                 proc.apvts.getParameter (ParamIDs::compThreshold)),
       grMeter ([&proc] { return proc.getGainReductionDb(); }),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); })
 {
-    setHint (trigMeter, "TRIGGER", "Detector level after the trigger filter. Drag the red line to set the Threshold.");
+    // Simple view is the pure-compressor face of the plugin (the gate
+    // threshold ships at minimum): the draggable line is the COMPRESSOR
+    // threshold — what decides how much escapes.
+    setHint (trigMeter, "TRIGGER", "Detector level after the trigger filter. Drag the red line to set the compressor's Threshold - hits escape the bleed removal by how far they rise past it.");
     addAndMakeVisible (trigMeter);
     setHint (grMeter, "GR", "How hard the hit is escaping the null (compression on the cancelling copy). Empty = bleed fully cancelled.");
     addAndMakeVisible (grMeter);
