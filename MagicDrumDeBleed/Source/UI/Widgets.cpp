@@ -733,7 +733,7 @@ void LightToggle::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat();
     const bool over = isMouseOverOrDragging();
 
-    const auto on = selColour (clr);
+    const auto on = ledOverride.isTransparent() ? selColour (clr) : ledOverride;
     const float led = scf (7.0f);
     auto lr = juce::Rectangle<float> (led, led).withCentre ({ r.getX() + scf (6.0f), r.getCentreY() });
     if (state)

@@ -135,7 +135,6 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
     float minGainDb = 0.0f;
     float maxRmsDb = -120.0f;
     float maxFastDb = -120.0f;
-    float maxDryDb = -120.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -151,10 +150,9 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         const bool falling = slowDbLag - rmsDb > kHystFallEpsDb;
         slowDbLag += hystLagCoeff * (rmsDb - slowDbLag);
 
-        // ---- Dry (raw input) level — the history's "Dry" trace ----
+        // ---- Broad (unfiltered sidechain) follower — the veto reference ----
         const double broad = detectorBroad[i];
         broadMeanSq += fastCoeff * (broad * broad - broadMeanSq);
-        maxDryDb = juce::jmax (maxDryDb, (float) (10.0 * std::log10 (broadMeanSq + 1.0e-30)));
 
         const bool forced = forceOpen != nullptr && forceOpen[i] != 0;
 
@@ -321,7 +319,6 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
     lastBlockGrDb = minGainDb;
     lastBlockRmsDb = maxRmsDb;
     lastBlockFastDb = maxFastDb;
-    lastBlockDryDb = maxDryDb;
 }
 
 } // namespace mdd

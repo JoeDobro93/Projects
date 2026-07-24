@@ -93,6 +93,23 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         [this] (float v) { midiBtn.setState (v > 0.5f); });
     midiAtt->sendInitialUpdate();
 
+    addAndMakeVisible (extScBtn);
+    setHint (extScBtn, "External sidechain", "The whole detector (Threshold, trigger filter, Selectivity, the trigger Learn) listens to the plugin's Sidechain input instead of this track - route a key signal to it in your DAW. Keep bands, their Learn buttons and the tail still work on this track's audio; Link to K1 is suspended while this is on.");
+    extScBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::scExternal);
+        extScAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    extScAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::scExternal),
+        [this] (float v)
+        {
+            extScBtn.setState (v > 0.5f);
+            // Focus and K1 live in different signal domains while the key
+            // drives the trigger — the link is suspended (still clickable).
+            linkBtn.setAlpha (v > 0.5f ? 0.45f : 1.0f);
+        });
+    extScAtt->sendInitialUpdate();
+
     addAndMakeVisible (focus);
     focus.attach (ap.getParameter (ParamIDs::scFreq));
     setHint (focus, "Focus", "Bandpass: the centre of the band the detector listens to. High/Low Pass: the cutoff frequency.");
@@ -137,10 +154,10 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     scEnableAtt->sendInitialUpdate();
 
     addAndMakeVisible (learnBtn);
-    setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the filter on this drum's dominant frequency. With Link to K1 on, K1 follows it too.");
+    setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the filter on the trigger signal's dominant frequency (the Sidechain input while Ext SC is on). With Link to K1 on, K1 follows it too.");
 
     addAndMakeVisible (linkBtn);
-    setHint (linkBtn, "Link to K1", "Locks the K1 keep band's frequency to the Focus frequency: turning either knob moves both, and Learn updates them together.");
+    setHint (linkBtn, "Link to K1", "Locks the K1 keep band's frequency to the Focus frequency: turning either knob moves both, and Learn updates them together. Suspended while Ext SC is on - the trigger listens to a different signal than the one being carved.");
     linkBtn.onClick = [this]
     {
         auto* p = processor.apvts.getParameter (ParamIDs::linkK1);
@@ -211,8 +228,11 @@ void TriggerStage::resized()
     smoothing.setBounds (sensKnobs.removeFromLeft (sc (64)));
     hystK.setBounds (sensKnobs.removeFromLeft (sc (64)));
     holdK.setBounds (sensKnobs.removeFromLeft (sc (64)));
-    midiBtn.setBounds (sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (64)),
-                                                   juce::jmin (sens.getHeight(), sc (24))));
+    auto mrow = sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (64 + 10 + 74)),
+                                            juce::jmin (sens.getHeight(), sc (24)));
+    midiBtn.setBounds (mrow.removeFromLeft (sc (64)));
+    mrow.removeFromLeft (sc (10));
+    extScBtn.setBounds (mrow);
 
     r.removeFromLeft (sc (6));
     dividerX = r.getX();
@@ -266,7 +286,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     lookahead.attach (ap.getParameter (ParamIDs::lookahead));
     setHint (lookahead, "Lookahead", "Decisions lead the audio by this much, so attacks are never clipped. This knob never changes the plugin's latency.");
 
-    setHint (*this, "History", "Live history. Green = the actual output escaping the null, bright trace = the fast level that fires the gate, blue = the smoothed detector, orange = the raw mic (Selectivity vetoes hits whose orange towers over the bright trace). Red dashes = gate Threshold (dimmer = its close level), gold dashes = Comp Threshold (faint gold = full-tail level). The strip along the bottom: green = escaping, gold = tail ringing.");
+    setHint (*this, "History", "Live history of the detector and output. The legend chips name every line - click one to hide its line. The strip along the bottom: green = escaping, gold = tail ringing.");
 
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
@@ -285,13 +305,20 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
         addAndMakeVisible (t);
     };
     traceToggle (outTg, showOut, "Output",
-                 "The plugin's actual output level (green trace) - what survives the cancellation, after the tail EQ.");
+                 "The plugin's actual output level (green) - what you hear after the cancellation and tail EQ.");
     traceToggle (trigTg, showTrig, "Trigger",
-                 "The fast opening detector (bright trace) - the level that actually fires the gate.");
-    traceToggle (smoothTg, showSmooth, "Smoothed",
-                 "The smoothed detector (blue) - Smoothing's averaged level; it closes the gate and is compared to the gate Threshold.");
-    traceToggle (offTg, showOff, "Off-band",
-                 "The raw, unfiltered mic level (orange) - everything the mic hears, before the trigger filter; what Selectivity compares against.");
+                 "The fast opening detector (bright) - the sidechain level that actually fires the gate.");
+    traceToggle (smoothTg, showSmooth, "Average",
+                 "The smoothed detector (blue) - Smoothing's averaged sidechain level; it closes the gate and is compared to the gate Threshold.");
+    traceToggle (offTg, showOff, "Dry",
+                 "The un-processed input level (orange) - what you would hear with the plugin bypassed.");
+    traceToggle (gateLnTg, showGateLn, "Gate thr",
+                 "The gate Threshold (red dashes) and its close level (dimmer dashes, Threshold minus Hysteresis).");
+    traceToggle (compLnTg, showCompLn, "Comp thr",
+                 "The compressor Threshold (gold dashes) and the full-tail level (fainter dashes, comp Threshold plus Tail range).");
+    trigTg.setLedColour (pal->accent.interpolatedWith (pal->txt, 0.65f));
+    gateLnTg.setLedColour (pal->warn);
+    compLnTg.setLedColour (pal->gold);
 
     addAndMakeVisible (histFreeze);
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
@@ -392,28 +419,32 @@ void GateStage::paint (juce::Graphics& g)
         // beneath; comp threshold (gold) with the full-tail level
         // (comp threshold + Tail range) above it.
         {
-            const float thr = realOf (ParamIDs::threshold);
             const float dash[2] = { 5.0f, 4.0f };
             const float dash2[2] = { 2.0f, 4.0f };
+            if (showCompLn)
             {
+                const float compThr = realOf (ParamIDs::compThreshold);
+                const float tr = realOf (ParamIDs::tailRange);
+                if (tr > 0.05f)
+                {
+                    const float ry = yFor (compThr + tr);
+                    g.setColour (pal->gold.withAlpha (0.4f));
+                    g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dash2, 2, 1.0f);
+                }
+                const float cy = yFor (compThr);
+                g.setColour (pal->gold.withAlpha (0.85f));
+                g.drawDashedLine ({ cv.getX(), cy, cv.getRight(), cy }, dash, 2, 1.2f);
+            }
+            if (showGateLn)
+            {
+                const float thr = realOf (ParamIDs::threshold);
                 const float cy2 = yFor (thr - realOf (ParamIDs::hysteresis));
                 g.setColour (pal->warn.withAlpha (0.45f));
                 g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
+                const float ty = yFor (thr);
+                g.setColour (pal->warn);
+                g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
             }
-            const float compThr = realOf (ParamIDs::compThreshold);
-            const float tr = realOf (ParamIDs::tailRange);
-            if (tr > 0.05f)
-            {
-                const float ry = yFor (compThr + tr);
-                g.setColour (pal->tail.withAlpha (0.4f));
-                g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dash2, 2, 1.0f);
-            }
-            const float cy = yFor (compThr);
-            g.setColour (pal->tail.withAlpha (0.85f));
-            g.drawDashedLine ({ cv.getX(), cy, cv.getRight(), cy }, dash, 2, 1.2f);
-            const float ty = yFor (thr);
-            g.setColour (pal->warn);
-            g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
         }
         juce::Path line, fill, fastLine, offLine, outLine;
         fill.startNewSubPath (cv.getRight() - (float) n * cw, plot.getBottom());
@@ -459,9 +490,6 @@ void GateStage::paint (juce::Graphics& g)
         }
     }
     g.setColour (pal->line); g.drawRoundedRectangle (cv, 4.0f, 1.0f);
-    g.setColour (pal->faint); g.setFont (font (10.5f));
-    g.drawText ("detector history", canvasArea.getX() + sc (8), canvasArea.getY() + sc (4), sc (140), sc (12),
-                juce::Justification::centredLeft);
 }
 
 void GateStage::resized()
@@ -470,7 +498,7 @@ void GateStage::resized()
     header.setBounds (r.removeFromTop (sc (20)));
     r.removeFromTop (sc (7));
 
-    // 2×3 knob grid: Comp Thresh · Ratio · Attack / Comp RMS · Release · Lookahead
+    // 2×3 knob grid: Threshold · Ratio · Attack / Comp RMS · Release · Lookahead
     auto knobs = r.removeFromLeft (sc (210));
     knobs.removeFromTop (sc (2));
     auto krow1 = knobs.removeFromTop (sc (84));
@@ -483,17 +511,22 @@ void GateStage::resized()
     lookahead.setBounds (krow2.removeFromLeft (sc (70)));
 
     r.removeFromLeft (sc (13));
-    auto ctop = r.removeFromTop (sc (18));              // trace toggles above the chart
-    outTg.setBounds (ctop.removeFromLeft (sc (70)));
-    trigTg.setBounds (ctop.removeFromLeft (sc (62)));
-    smoothTg.setBounds (ctop.removeFromLeft (sc (78)));
-    offTg.setBounds (ctop.removeFromLeft (sc (56)));
     auto scol = r.removeFromRight (sc (16));
     speedLabelArea = r.removeFromRight (sc (12));
     r.removeFromRight (sc (2));
     canvasArea = r;
     speedSlider.setBounds (scol.reduced (0, sc (2)));
     histFreeze.setBounds (canvasArea.getRight() - sc (24), canvasArea.getY() + sc (5), sc (19), sc (19));
+
+    // Legend chips overlaid along the canvas top, ending at the freeze button.
+    ui::LightToggle* chips[6] = { &outTg, &trigTg, &smoothTg, &offTg, &gateLnTg, &compLnTg };
+    const int chipW[6] = { 62, 60, 68, 48, 66, 70 };
+    int x = histFreeze.getX() - sc (4);
+    for (int i = 5; i >= 0; --i)
+    {
+        x -= sc (chipW[i]);
+        chips[i]->setBounds (x, canvasArea.getY() + sc (4), sc (chipW[i]), sc (18));
+    }
 }
 
 //==============================================================================

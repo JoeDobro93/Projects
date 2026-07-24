@@ -140,6 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                     juce::NormalisableRange<float> (6.0f, 24.0f, 6.0f), 12.0f,
                     juce::AudioParameterFloatAttributes().withLabel ("dB/oct")
                         .withStringFromValueFunction ([] (float v, int) { return juce::String ((int) v) + " dB/oct"; })));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::scExternal, 1 }, "External Sidechain", false));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::learnCeiling, 1 }, "Learn Ceiling",
                     logHzRange (200.0f, 2000.0f), 1000.0f, hz));
     p.push_back (std::make_unique<AudioParameterBool>  (ParameterID { ParamIDs::linkK1, 1 }, "Link to K1", true));
@@ -210,7 +211,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     : AudioProcessor (BusesProperties()
                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                        .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", createParameterLayout())
 {
     auto raw = [this] (const juce::String& id) { return apvts.getRawParameterValue (id); };
@@ -232,6 +234,7 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pScQ          = raw (ParamIDs::scQ);
     pScType       = raw (ParamIDs::scType);
     pScSlope      = raw (ParamIDs::scSlope);
+    pScExternal   = raw (ParamIDs::scExternal);
     pLearnCeiling = raw (ParamIDs::learnCeiling);
     pHpfOn        = raw (ParamIDs::hpfOn);
     pHpfFreq      = raw (ParamIDs::hpfFreq);
@@ -282,6 +285,12 @@ void MagicDrumDeBleedAudioProcessor::parameterChanged (const juce::String& id, f
             p->setValueNotifyingHost (p->convertTo0to1 (real));
     };
 
+    // While the external sidechain drives the trigger, Focus and K1 live in
+    // different signal domains (key vs this track) — the link is suspended:
+    // the toggle stays as set, but neither snap nor mirror runs.
+    if (pScExternal->load() > 0.5f)
+        return;
+
     if (id == ParamIDs::linkK1)
     {
         // Turning the link on snaps K1 onto the current Focus frequency.
@@ -308,8 +317,17 @@ bool MagicDrumDeBleedAudioProcessor::isBusesLayoutSupported (const BusesLayout& 
 
     if (in != out)
         return false;
+    if (in != juce::AudioChannelSet::mono() && in != juce::AudioChannelSet::stereo())
+        return false;
 
-    return in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo();
+    // Key input: mono, stereo, or off (host's choice).
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto& sc = layouts.getChannelSet (true, 1);
+        if (! sc.isDisabled() && sc != juce::AudioChannelSet::mono() && sc != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 //==============================================================================
@@ -321,13 +339,14 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
     marginSamples = (int) std::lround (kEnvMarginMs * 0.001 * sampleRate);
     currentTotalDelay = -1;
 
-    const int numCh = juce::jlimit (1, 2, getTotalNumInputChannels());
+    const int numCh = juce::jlimit (1, 2, getMainBusNumInputChannels());
 
     compressor.prepare (sampleRate, numCh, baseDelaySamples + marginSamples,
                         baseDelaySamples + marginSamples);
     eq.prepare (sampleRate, numCh);
     scFilter.prepare (sampleRate);
     learnAnalyzer.prepare (sampleRate);
+    scLearnAnalyzer.prepare (sampleRate);
 
     dryDelays.resize ((size_t) numCh);
     for (auto& d : dryDelays)
@@ -340,10 +359,18 @@ void MagicDrumDeBleedAudioProcessor::prepareToPlay (double sampleRate, int sampl
     preEqBuffer.setSize (numCh, block);
     detectorRaw.assign ((size_t) block, 0.0);
     detectorFiltered.assign ((size_t) block, 0.0);
+    scRaw.assign ((size_t) block, 0.0);
+    scActiveBlock = false;
+    extScActive.store (false);
     forceMask.assign ((size_t) block, 0);
     std::fill (std::begin (heldKeys), std::end (heldKeys), false);
     heldCount = 0;
     eqGateEnvBuffer.assign ((size_t) block, 0.0);
+
+    // Dry display follower: ~1.7 ms one-pole, matching the detector traces'
+    // default responsiveness.
+    dryDispMeanSq = 0.0;
+    dryDispCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.00167 * sampleRate));
 
     intensitySmoothed.reset (sampleRate, 0.05);
     intensitySmoothed.setCurrentAndTargetValue (pIntensity->load() * 0.01);
@@ -545,12 +572,40 @@ void MagicDrumDeBleedAudioProcessor::buildForceMask (const juce::MidiBuffer& mid
     midiForcedFlag.store (any ? 1.0f : 0.0f);
 }
 
+template <typename SampleType>
+void MagicDrumDeBleedAudioProcessor::extractSidechain (juce::AudioBuffer<SampleType>& buffer, int n)
+{
+    scActiveBlock = false;
+    if (pScExternal->load() > 0.5f && getBusCount (true) > 1)
+    {
+        auto bus = getBusBuffer (buffer, true, 1);
+        const int ch = bus.getNumChannels();
+        // Guard against hosts passing fewer channels than the layout claims.
+        if (ch > 0 && buffer.getNumChannels() >= getMainBusNumInputChannels() + ch)
+        {
+            if ((int) scRaw.size() < n)
+                scRaw.resize ((size_t) n, 0.0);
+            const double inv = 1.0 / (double) ch;
+            for (int i = 0; i < n; ++i)
+            {
+                double sum = 0.0;
+                for (int c = 0; c < ch; ++c)
+                    sum += (double) bus.getReadPointer (c)[i];
+                scRaw[(size_t) i] = sum * inv;
+            }
+            scActiveBlock = true;
+        }
+    }
+    extScActive.store (scActiveBlock);
+}
+
 void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
 
     const int n   = buffer.getNumSamples();
-    const int nCh = juce::jmin (buffer.getNumChannels(), conversionBuffer.getNumChannels());
+    const int nCh = juce::jmin (getMainBusNumInputChannels(), buffer.getNumChannels(),
+                                conversionBuffer.getNumChannels());
 
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, n);
@@ -570,6 +625,7 @@ void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<float>& buf
     }
 
     buildForceMask (midi, n);
+    extractSidechain (buffer, n);
     juce::AudioBuffer<double> view (conversionBuffer.getArrayOfWritePointers(), nCh, n);
     processInternal (view);
 
@@ -594,7 +650,10 @@ void MagicDrumDeBleedAudioProcessor::processBlock (juce::AudioBuffer<double>& bu
         return;
 
     buildForceMask (midi, n);
-    processInternal (buffer);
+    extractSidechain (buffer, n);
+    juce::AudioBuffer<double> view (buffer.getArrayOfWritePointers(),
+                                    juce::jmin (getMainBusNumInputChannels(), buffer.getNumChannels()), n);
+    processInternal (view);
 }
 
 void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>& buffer)
@@ -619,33 +678,47 @@ void MagicDrumDeBleedAudioProcessor::processInternal (juce::AudioBuffer<double>&
 
     updateParametersForBlock();
 
-    // ---- 1. Detector: mono mix of the un-delayed input ----
+    // ---- 1. Detectors: mono mix of the un-delayed MAIN input, plus the
+    // Dry display trace (the main level — what bypassed would sound like).
+    // With the external sidechain active the trigger/veto detectors run on
+    // the KEY (scRaw) instead; the main mix still feeds the Dry trace,
+    // spectrum and keep-band Learn.
     const double invCh = 1.0 / (double) nCh;
+    float dryDispMax = -120.0f;
     for (int i = 0; i < n; ++i)
     {
         double sum = 0.0;
         for (int ch = 0; ch < nCh; ++ch)
             sum += buffer.getReadPointer (ch)[i];
-        detectorRaw[(size_t) i] = sum * invCh;
+        const double mono = sum * invCh;
+        detectorRaw[(size_t) i] = mono;
+        dryDispMeanSq += dryDispCoeff * (mono * mono - dryDispMeanSq);
+        dryDispMax = juce::jmax (dryDispMax, (float) (10.0 * std::log10 (dryDispMeanSq + 1.0e-30)));
     }
+    dryDb.store (dryDispMax);
+
+    const double* detectorKey = scActiveBlock ? scRaw.data() : detectorRaw.data();
 
     if (learnAnalyzer.isCapturing())
+    {
         learnAnalyzer.pushSamples (detectorRaw.data(), n);
+        if (scActiveBlock)
+            scLearnAnalyzer.pushSamples (scRaw.data(), n);
+    }
 
     for (int i = 0; i < n; ++i)
-        detectorFiltered[(size_t) i] = scEnabledCached ? scFilter.processSample (detectorRaw[(size_t) i])
-                                                       : detectorRaw[(size_t) i];
+        detectorFiltered[(size_t) i] = scEnabledCached ? scFilter.processSample (detectorKey[i])
+                                                       : detectorKey[i];
 
     // ---- 2. Parallel path: delay (lookahead) ▸ gate ▸ EQ ----
     for (int ch = 0; ch < nCh; ++ch)
         parallelBuffer.copyFrom (ch, 0, buffer, ch, 0, n);
 
-    compressor.process (parallelBuffer, detectorFiltered.data(), detectorRaw.data(), n, ! compBypassCached,
+    compressor.process (parallelBuffer, detectorFiltered.data(), detectorKey, n, ! compBypassCached,
                         eqGateEnvBuffer.data(), forceMask.data());
     grDb.store (compressor.getCurrentGainReductionDb());
     detectorRmsDb.store (compressor.getCurrentDetectorRmsDb());
     fastDetectorDb.store (compressor.getCurrentFastDetectorDb());
-    dryDb.store (compressor.getCurrentDryDb());
 
     // ---- 3. Dry path: exactly the same integer-sample delay (always ticks) ----
     for (int ch = 0; ch < nCh; ++ch)
@@ -820,13 +893,23 @@ int MagicDrumDeBleedAudioProcessor::readSpectrumSamples (float* dest, int maxSam
 double MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyse()
 {
     learnAnalyzer.stopCapture();
-    return learnAnalyzer.analyse (pLearnCeiling->load());
+    scLearnAnalyzer.stopCapture();
+    // Trigger learn listens to whatever the trigger listens to.
+    return (extScActive.load() ? scLearnAnalyzer : learnAnalyzer).analyse (pLearnCeiling->load());
 }
 
 std::vector<mdd::LearnAnalyzer::Resonance> MagicDrumDeBleedAudioProcessor::finishLearnAndAnalyseResonances()
 {
     learnAnalyzer.stopCapture();
+    scLearnAnalyzer.stopCapture();
+    // Keep bands always come from the signal being processed.
     return learnAnalyzer.analyseResonances (1000.0);
+}
+
+double MagicDrumDeBleedAudioProcessor::sidechainFundamentalAfterLearn()
+{
+    scLearnAnalyzer.stopCapture();
+    return scLearnAnalyzer.analyse (pLearnCeiling->load());
 }
 
 //==============================================================================

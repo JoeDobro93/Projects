@@ -42,9 +42,11 @@ private:
     ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
-    ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" }, midiBtn { "MIDI" };
+    ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" }, midiBtn { "MIDI" },
+                    extScBtn { "Ext SC" };
     eqids::LearnButton learnBtn { processor };
-    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt;
+    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt,
+                                               extScAtt;
     void updateSelectivityDim();
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
     bool filterOn = true;
@@ -62,14 +64,19 @@ private:
 
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 2, "COMPRESSOR", 1 };
-    ui::Knob compThreshK { "Comp Thresh", ui::Knob::openClr }, ratioK { "Ratio", ui::Knob::openClr },
+    ui::Knob compThreshK { "Threshold", ui::Knob::openClr }, ratioK { "Ratio", ui::Knob::openClr },
              compAtk { "Attack", ui::Knob::openClr }, compRmsK { "Comp RMS", ui::Knob::openClr },
              compRel { "Release", ui::Knob::openClr }, lookahead { "Lookahead", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
+    // Legend chips overlaid on the history canvas — LED = the line's colour,
+    // click to hide that line. Two extra chips cover the dashed threshold
+    // line pairs (gate T + close level; comp T + full-tail level).
     ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Trigger" },
-                    smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr };
+                    smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr },
+                    gateLnTg { "Gate thr" }, compLnTg { "Comp thr" };
     ui::SnowButton histFreeze;
-    bool showOut = true, showTrig = true, showSmooth = true, showOff = true;
+    bool showOut = true, showTrig = true, showSmooth = true, showOff = true,
+         showGateLn = true, showCompLn = true;
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
     struct Sample { float det, fast, off, out, o01, t01; bool forced; };

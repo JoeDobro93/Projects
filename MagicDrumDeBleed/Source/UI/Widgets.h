@@ -107,6 +107,7 @@ public:
     std::function<void()> onClick;
     void setText (juce::String l)              { label = std::move (l); repaint(); }
     void setColourId (Knob::ColourId c)        { clr = c; repaint(); }
+    void setLedColour (juce::Colour c)         { ledOverride = c; repaint(); }   // exact colour (legend chips)
     void setState (bool on);
     bool getState() const                      { return state; }
     void paint (juce::Graphics& g) override;
@@ -114,6 +115,7 @@ public:
 private:
     juce::String label;
     Knob::ColourId clr;
+    juce::Colour ledOverride;                  // transparent = use clr
     bool state = false;
 };
 

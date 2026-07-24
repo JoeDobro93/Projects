@@ -230,10 +230,6 @@ public:
     // fires the gate; the history view overlays it on the smoothed trace.
     float getCurrentFastDetectorDb() const noexcept    { return lastBlockFastDb; }
 
-    // Highest raw (unfiltered) input level of the last block — the "Dry"
-    // trace in the history view.
-    float getCurrentDryDb() const noexcept             { return lastBlockDryDb; }
-
 private:
     double sr = 44100.0;
 
@@ -288,7 +284,6 @@ private:
     float lastBlockGrDb = 0.0f;
     float lastBlockRmsDb = -120.0f;
     float lastBlockFastDb = -120.0f;
-    float lastBlockDryDb = -120.0f;
 };
 
 } // namespace mdd

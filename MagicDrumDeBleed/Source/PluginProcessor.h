@@ -55,8 +55,9 @@ namespace ParamIDs
     inline constexpr const char* scQ          = "scQ";
     inline constexpr const char* scType       = "scType";    // 0 HP, 1 LP, 2 BP
     inline constexpr const char* scSlope      = "scSlope";   // 6/12/18/24 dB/oct (HP/LP only)
+    inline constexpr const char* scExternal   = "scExternal"; // detector = the Sidechain input bus
     inline constexpr const char* learnCeiling = "learnCeiling";
-    inline constexpr const char* linkK1       = "linkK1";    // K1 freq follows Focus
+    inline constexpr const char* linkK1       = "linkK1";    // K1 freq follows Focus (suspended on ext SC)
 
     inline constexpr const char* hpfOn        = "hpfOn";
     inline constexpr const char* hpfFreq      = "hpfFreq";
@@ -139,11 +140,25 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     // ---- Learn (called from the UI / message thread) ----
-    void   startLearn()                 { learnAnalyzer.startCapture(); }
+    // Two capture streams run together: the MAIN input (keep-band learns —
+    // the signal being processed) and, while the external sidechain is
+    // active, the KEY input (trigger-filter learns).
+    void   startLearn()                 { learnAnalyzer.startCapture(); scLearnAnalyzer.startCapture(); }
     bool   isLearning() const           { return learnAnalyzer.isCapturing(); }
-    double finishLearnAndAnalyse();     // stops capture, returns detected Hz or -1
-    // Stops capture, returns the LP<1 kHz resonance centres (loudest first).
+    // Trigger learn: stops capture, returns the detected Hz (from the KEY
+    // when the external sidechain is active, else the main input) or -1.
+    double finishLearnAndAnalyse();
+    // Band learns: stops capture, returns the MAIN input's LP<1 kHz
+    // resonance centres (loudest first) — never the sidechain.
     std::vector<mdd::LearnAnalyzer::Resonance> finishLearnAndAnalyseResonances();
+    // After a finish...(): the KEY capture's fundamental (or -1). Lets the
+    // Simple view / Learn all train the trigger filter on the key while the
+    // keep bands come from the main input.
+    double sidechainFundamentalAfterLearn();
+
+    // True while the detector actually runs on the Sidechain input bus
+    // (parameter on AND the host supplies the bus).
+    bool isExternalSidechainActive() const  { return extScActive.load(); }
 
     // ---- Metering / analysis feeds for the UI ----
     float getGainReductionDb() const    { return grDb.load(); }
@@ -187,11 +202,18 @@ private:
     void updateOutputPeak (const juce::AudioBuffer<double>& buffer, int numChannels, int numSamples);
     void pushSpectrumSamples (const double* mono, int numSamples);
 
+    // Mono-mixes the Sidechain input bus into scRaw for this block (sets
+    // scActiveBlock / extScActive). Falls back to the main input when the
+    // parameter is off or the host provides no bus.
+    template <typename SampleType>
+    void extractSidechain (juce::AudioBuffer<SampleType>& buffer, int numSamples);
+
     // DSP blocks
     mdd::CompressorProcessor    compressor;
     mdd::EQProcessor            eq;
     mdd::SidechainFilter        scFilter;
-    mdd::LearnAnalyzer          learnAnalyzer;
+    mdd::LearnAnalyzer          learnAnalyzer;    // captures the MAIN input
+    mdd::LearnAnalyzer          scLearnAnalyzer;  // captures the KEY input
     std::vector<mdd::MonoDelay> dryDelays;
 
     // Work buffers (allocated in prepareToPlay)
@@ -200,6 +222,13 @@ private:
     juce::AudioBuffer<double> dryBuffer;
     juce::AudioBuffer<double> preEqBuffer;        // parallel path before the EQ (gate blend)
     std::vector<double> detectorRaw, detectorFiltered, eqGateEnvBuffer;
+    std::vector<double> scRaw;                    // mono key input (external sidechain)
+    bool scActiveBlock = false;
+    std::atomic<bool> extScActive { false };
+
+    // Dry display trace: the MAIN input's level (what bypassed would sound
+    // like) — independent of the detector, which may be the key input.
+    double dryDispMeanSq = 0.0, dryDispCoeff = 1.0;
 
     juce::SmoothedValue<double> intensitySmoothed;
 
@@ -225,7 +254,7 @@ private:
 
     // Cached raw parameter pointers
     std::atomic<float> *pThreshold, *pLookahead, *pRmsWindow, *pHold;
-    std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pLearnCeiling;
+    std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pScExternal, *pLearnCeiling;
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;

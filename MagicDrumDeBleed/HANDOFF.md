@@ -1,5 +1,38 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.4.0 — EXTERNAL SIDECHAIN + HISTORY LEGEND (2026-07):** new
+> "Sidechain" stereo input bus (VST3/AU pin count changes — hosts may need
+> a plugin re-scan; layouts: main mono/stereo == out, key mono/stereo/off)
+> + `scExternal` bool param (default off, in the preset PRESERVED set) with
+> an **Ext SC** LightToggle beside MIDI. While on AND the host supplies the
+> bus (`extScActive` atomic; falls back to internal when the bus is
+> missing/short): the ENTIRE detector — gate threshold, trigger filter,
+> Selectivity veto (broad reference = raw key), comp RMS feed, TRIGGER
+> meter, Trigger/Average history traces, "Trigger signal" monitor — runs
+> on the mono-mixed key (`extractSidechain` template fills `scRaw` per
+> block, before processInternal). The audio path, spectrum, tail and Dry
+> trace stay on the main input — Dry now has its own ~1.7 ms follower in
+> the PluginProcessor (CompressorProcessor::getCurrentDryDb deleted; its
+> broad follower remains veto-only). **Link to K1 is SUSPENDED while ext
+> SC is on** (parameterChanged early-returns; toggle stays clickable but
+> greyed 0.45) — key and track are different signal domains. **Learn
+> routing**: two LearnAnalyzers capture simultaneously (main +
+> scLearnAnalyzer); trigger Learn analyses the KEY when active (and skips
+> its K1 update); band/K learns always analyse MAIN;
+> Simple Learn / Learn all set Focus from the key
+> (`sidechainFundamentalAfterLearn`, skipped silently if the key learned
+> nothing) with keep bands from MAIN. prepareToPlay now sizes off
+> getMainBusNumInputChannels. UI: comp stage knob renamed
+> "Comp Thresh"→**"Threshold"**; the trace-toggle row above the history is
+> gone — six **legend chips overlay the canvas top-right** (LightToggle
+> gains setLedColour): Output/Trigger/Average/Dry + "Gate thr" (red
+> dashes + close level) + "Comp thr" (now pal->gold, distinct from the
+> Dry orange; + full-tail line) — each click-toggles its line
+> (showGateLn/showCompLn); "detector history" caption removed. Tests: 59
+> (7 new: bus layout, key triggers while main quiet passes the null, SC
+> off ignores key, silent key ignores loud main, learn split
+> main-313/key-400, link suspended/resumes).
+
 > **v1.3.0 — UNIFIED ENGINE (2026-07):** the Gate/Comp mode switch is gone;
 > one engine does everything. Signal flow: the **gate** (Threshold, Smoothing,
 > Hysteresis, Hold, Selectivity, MIDI — hard close, no release, no gain of its

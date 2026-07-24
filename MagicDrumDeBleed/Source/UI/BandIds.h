@@ -170,12 +170,14 @@ private:
 
         if (learnBands <= 0)
         {
+            // Trigger learn: analyses whatever the trigger listens to (the
+            // key input while the external sidechain is active).
             const double f = proc.finishLearnAndAnalyse();
             if (f <= 0.0) { fail(); return; }
 
             setRealValue (proc, ParamIDs::scFreq, (float) f);
             auto* link = proc.apvts.getParameter (ParamIDs::linkK1);
-            if (link != nullptr && link->getValue() > 0.5f)
+            if (! proc.isExternalSidechainActive() && link != nullptr && link->getValue() > 0.5f)
             {
                 auto* on = proc.apvts.getParameter (ParamIDs::notchOn (0));
                 const bool wasOn = on != nullptr && on->getValue() > 0.5f;
@@ -189,11 +191,21 @@ private:
             return;
         }
 
+        // Keep bands always come from the signal being processed; Focus
+        // trains on the key input while the external sidechain is active
+        // (skipped silently when the key had nothing to learn).
         const auto res = proc.finishLearnAndAnalyseResonances();
         const auto slot = assignResonanceSlots (proc, res, -1);
         if (slot[0] <= 0.0) { fail(); return; }
 
-        setRealValue (proc, ParamIDs::scFreq, (float) slot[0]);
+        if (proc.isExternalSidechainActive())
+        {
+            const double f = proc.sidechainFundamentalAfterLearn();
+            if (f > 0.0)
+                setRealValue (proc, ParamIDs::scFreq, (float) f);
+        }
+        else
+            setRealValue (proc, ParamIDs::scFreq, (float) slot[0]);
         for (int b = 0; b < juce::jmin (5, learnBands); ++b)
             if (slot[(size_t) b] > 0.0)
                 applyResonanceToBand (proc, b, slot[(size_t) b]);
@@ -302,7 +314,8 @@ inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const pres
 {
     static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::compThreshold,
                                                ParamIDs::contrast, ParamIDs::hysteresis,
-                                               ParamIDs::midiTrigger, ParamIDs::compRatio };
+                                               ParamIDs::midiTrigger, ParamIDs::compRatio,
+                                               ParamIDs::scExternal };
     for (auto* p : proc.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (! preserved.contains (ranged->paramID))
