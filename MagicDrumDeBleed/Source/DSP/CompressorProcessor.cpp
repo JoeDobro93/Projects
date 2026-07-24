@@ -15,6 +15,21 @@ namespace
     constexpr double kHystFallEpsDb  = 0.15;
 }
 
+void WindowedRms::setWindow (double windowMs)
+{
+    if (exactlyEqual (windowMs, currentWindowMs))
+        return;
+
+    currentWindowMs = windowMs;
+    const int newLength = juce::jlimit (1, (int) buffer.size(),
+                                        (int) std::lround (windowMs * 0.001 * sr));
+    if (newLength != length)
+    {
+        length = newLength;
+        reset();
+    }
+}
+
 void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxDelaySamples,
                                    int maxMarginSamples)
 {
@@ -27,10 +42,8 @@ void CompressorProcessor::prepare (double sampleRate, int numChannels, int maxDe
     gainRing.assign ((size_t) juce::jmax (1, maxMarginSamples), 0.0);
     envRing.assign ((size_t) juce::jmax (1, maxMarginSamples), 0.0);
 
-    // Worst-case RMS window is 100 ms.
-    rmsBuffer.assign ((size_t) juce::jmax (1, (int) std::ceil (0.1 * sr) + 1), 0.0);
-    currentRmsWindowMs = -1.0;
-    setRmsWindow (10.0);
+    gateRms.prepare (sampleRate);
+    compRms.prepare (sampleRate);
     hystLagCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, kHystLagSeconds * sr));
     pkRelCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, 0.012 * sr));
 
@@ -42,10 +55,8 @@ void CompressorProcessor::reset()
     for (auto& d : delays)
         d.reset();
 
-    std::fill (rmsBuffer.begin(), rmsBuffer.end(), 0.0);
-    rmsSum = 0.0;
-    rmsIndex = 0;
-    rmsRefreshCounter = 0;
+    gateRms.reset();
+    compRms.reset();
 
     fastMeanSq = 0.0;
     broadMeanSq = 0.0;
@@ -66,10 +77,12 @@ void CompressorProcessor::reset()
     lastBlockGrDb = 0.0f;
 }
 
-void CompressorProcessor::setCompParameters (bool enabled, double grPerOverDb, double attackMs, double releaseMs)
+void CompressorProcessor::setCompParameters (double newCompThresholdDb, double grPerOverDb,
+                                             double rmsWindowMs, double attackMs, double releaseMs)
 {
-    compMode = enabled;
+    compThresholdDb = newCompThresholdDb;
     compGrPerDb = grPerOverDb;
+    compRms.setWindow (rmsWindowMs);
     compAttackCoeff  = 1.0 - std::exp (-1.0 / juce::jmax (1.0, attackMs  * 0.001 * sr));
     compReleaseCoeff = 1.0 - std::exp (-1.0 / juce::jmax (1.0, releaseMs * 0.001 * sr));
 }
@@ -86,40 +99,9 @@ void CompressorProcessor::setEqGateParameters (double holdMs, double releaseMs,
     eqGateReleaseCoeff = 1.0 - std::exp (-6.9078 / relSamples);
 }
 
-void CompressorProcessor::setRmsWindow (double windowMs)
-{
-    if (exactlyEqual (windowMs, currentRmsWindowMs))
-        return;
-
-    currentRmsWindowMs = windowMs;
-    const int newLength = juce::jlimit (1, (int) rmsBuffer.size(),
-                                        (int) std::lround (windowMs * 0.001 * sr));
-    if (newLength != rmsLength)
-    {
-        rmsLength = newLength;
-        // Window length changed: clear and start accumulating fresh. A brief
-        // detector dip on a manual parameter tweak is inaudible.
-        std::fill (rmsBuffer.begin(), rmsBuffer.end(), 0.0);
-        rmsSum = 0.0;
-        rmsIndex = 0;
-        rmsRefreshCounter = 0;
-    }
-}
-
-void CompressorProcessor::rebuildRmsSum()
-{
-    // Periodically recompute the running sum exactly to stop floating-point
-    // drift from accumulating over hours of processing.
-    double sum = 0.0;
-    for (int i = 0; i < rmsLength; ++i)
-        sum += rmsBuffer[(size_t) i];
-    rmsSum = sum;
-}
-
 void CompressorProcessor::setParameters (double newThresholdDb, double newReductionDb,
                                          int newLookaheadSamples, int newMarginSamples,
-                                         double rmsWindowMs,
-                                         double holdMs, double releaseMs,
+                                         double rmsWindowMs, double holdMs,
                                          double newHysteresisDb, double newContrastDb)
 {
     thresholdDb = newThresholdDb;
@@ -132,7 +114,7 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
     for (auto& d : delays)
         d.setDelay (lookaheadSamples + marginSamples);
 
-    setRmsWindow (rmsWindowMs);
+    gateRms.setWindow (rmsWindowMs);
 
     // Fast opening detector tracks the Smoothing knob so raising Smoothing
     // still steadies the open decision, but never slower than a few ms.
@@ -140,14 +122,6 @@ void CompressorProcessor::setParameters (double newThresholdDb, double newReduct
     fastCoeff = 1.0 - std::exp (-1.0 / fastTauSamples);
 
     holdSamples = (int) std::lround (holdMs * 0.001 * sr);
-
-    // Attack: exponential ramp fast enough to hit the reduction target within
-    // the lookahead window (5 time constants ≈ full settle).
-    const double attackTauSamples = juce::jmax (1.0, (double) lookaheadSamples / 5.0);
-    attackCoeff = 1.0 - std::exp (-1.0 / attackTauSamples);
-
-    const double releaseTauSamples = juce::jmax (1.0, releaseMs * 0.001 * sr);
-    releaseCoeff = 1.0 - std::exp (-1.0 / releaseTauSamples);
 }
 
 void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const double* detector,
@@ -165,19 +139,9 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
 
     for (int i = 0; i < numSamples; ++i)
     {
-        // ---- RMS detector (un-delayed sidechain) ----
+        // ---- Gate RMS detector (un-delayed, UNGATED sidechain) ----
         const double det = detector[i];
-        rmsSum += det * det - rmsBuffer[(size_t) rmsIndex];
-        rmsBuffer[(size_t) rmsIndex] = det * det;
-        if (++rmsIndex >= rmsLength)
-            rmsIndex = 0;
-        if (++rmsRefreshCounter >= rmsLength)
-        {
-            rmsRefreshCounter = 0;
-            rebuildRmsSum();
-        }
-
-        const double meanSquare = juce::jmax (0.0, rmsSum) / (double) rmsLength;
+        const double meanSquare = gateRms.pushMeanSquare (det);
         const double rmsDb = 10.0 * std::log10 (meanSquare + 1.0e-30);
         maxRmsDb = juce::jmax (maxRmsDb, (float) rmsDb);
 
@@ -187,142 +151,119 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         const bool falling = slowDbLag - rmsDb > kHystFallEpsDb;
         slowDbLag += hystLagCoeff * (rmsDb - slowDbLag);
 
-        // ---- Dry (raw input) level — the history's "Dry" trace, both modes ----
+        // ---- Dry (raw input) level — the history's "Dry" trace ----
         const double broad = detectorBroad[i];
         broadMeanSq += fastCoeff * (broad * broad - broadMeanSq);
         maxDryDb = juce::jmax (maxDryDb, (float) (10.0 * std::log10 (broadMeanSq + 1.0e-30)));
 
         const bool forced = forceOpen != nullptr && forceOpen[i] != 0;
-        double targetDb;
-        double envAttack = attackCoeff, envRelease = releaseCoeff;
-        double overNow = 0.0;
-        bool openNow;
 
-        if (compMode)
+        // ---- Contrast (Selectivity) veto: a hit may only OPEN the gate if
+        // the focused band dominates the OFF-BAND remainder of the mic
+        // (energy subtraction of the two same-speed followers, so no extra
+        // filters). Bleed from another drum is loud at ITS frequency, so
+        // the off-band level towers over the band — regardless of absolute
+        // level — while a soft on-target hit is quiet everywhere BUT the
+        // band. BOTH follower inputs are peak-held (instant attack, ~12 ms
+        // release) and subtracted AFTER the hold: for a pure in-band hit the
+        // two peaks match, so the trigger filter's own ring-up (band lags
+        // broad by ~2Q/omega) collapses to the floor instead of reading as
+        // off-band energy that vetoes soft on-target hits — while ripple on
+        // low-frequency bleed still can't blink the veto off mid-event
+        // (both holds ride their ripple tops together).
+        //
+        // The decision then LATCHES per event: hard off-drum hits grow
+        // in-band content late (sympathetic snare buzz, 2nd harmonics), so
+        // an event that STARTS off-band stays vetoed until it either fades
+        // or the band convincingly takes over (a real hit landing on top).
+        // At the knob's maximum the veto is off.
+        broadPkSq = broadMeanSq > broadPkSq
+                        ? broadMeanSq
+                        : broadPkSq + pkRelCoeff * (broadMeanSq - broadPkSq);
+        fastPkSq = fastMeanSq > fastPkSq
+                       ? fastMeanSq
+                       : fastPkSq + pkRelCoeff * (fastMeanSq - fastPkSq);
+        const double offSq = juce::jmax (broadPkSq - fastPkSq, broadPkSq * 0.001);
+        const double offDb = 10.0 * std::log10 (offSq + 1.0e-30);
+        bool contrastOk = true;
+        if (contrastDb < 23.75)
         {
-            // ---- Compressor mode: a compressor on the parallel copy (the
-            // classic parallel bleed trick). Standard ratios squeeze the
-            // copy toward the threshold (grPerOverDb = 1−1/R), so hits
-            // escape the null partially attenuated; Mirror (−1:1 negative
-            // ratio, grPerOverDb 2) pushes it below — near-full escape.
-            // Sub-threshold bleed always cancels. MIDI force = full duck.
-            // Gate-only machinery (veto latch, hold, hysteresis) stays
-            // parked; each mode's envelope obeys its own knobs.
-            vetoLatch = false;
-            gateOpen = false;
-            holdCounter = 0;
-            const double over = rmsDb - thresholdDb;
-            overNow = over;
-            targetDb = forced ? reductionDb
-                              : over > 0.0 ? juce::jmax (reductionDb, -compGrPerDb * over)
-                                           : 0.0;
-            envAttack = compAttackCoeff;
-            envRelease = compReleaseCoeff;
-            openNow = forced || over > 0.0;
+            const double excess = offDb - fastDb;
+            if (! vetoLatch)
+                vetoLatch = excess > contrastDb && offDb > thresholdDb - 6.0;
+            else if (excess < contrastDb - 6.0 || offDb < thresholdDb - 12.0)
+                vetoLatch = false;
+            contrastOk = ! vetoLatch && excess <= contrastDb;
         }
         else
+            vetoLatch = false;
+
+        // ---- Gate state: open fast, close slow with hysteresis, hard shut.
+        // A MIDI note (forceOpen) is authoritative: no threshold, no veto.
+        const bool levelQualifies = juce::jmax (fastDb, rmsDb) > thresholdDb;
+        if (! forced && levelQualifies && ! contrastOk)
+            ++vetoBlockedSamples;                       // veto is eating head start
+        else if (! levelQualifies)
+            vetoBlockedSamples = 0;
+        if (forced || (contrastOk && levelQualifies))
         {
-            // ---- Contrast (Selectivity) veto: a hit may only OPEN the gate if
-            // the focused band dominates the OFF-BAND remainder of the mic
-            // (energy subtraction of the two same-speed followers, so no extra
-            // filters). Bleed from another drum is loud at ITS frequency, so
-            // the off-band level towers over the band — regardless of absolute
-            // level — while a soft on-target hit is quiet everywhere BUT the
-            // band. BOTH follower inputs are peak-held (instant attack, ~12 ms
-            // release) and subtracted AFTER the hold: for a pure in-band hit the
-            // two peaks match, so the trigger filter's own ring-up (band lags
-            // broad by ~2Q/omega) collapses to the floor instead of reading as
-            // off-band energy that vetoes soft on-target hits — while ripple on
-            // low-frequency bleed still can't blink the veto off mid-event
-            // (both holds ride their ripple tops together).
-            //
-            // The decision then LATCHES per event: hard off-drum hits grow
-            // in-band content late (sympathetic snare buzz, 2nd harmonics), so
-            // an event that STARTS off-band stays vetoed until it either fades
-            // or the band convincingly takes over (a real hit landing on top).
-            // At the knob's maximum the veto is off.
-            broadPkSq = broadMeanSq > broadPkSq
-                            ? broadMeanSq
-                            : broadPkSq + pkRelCoeff * (broadMeanSq - broadPkSq);
-            fastPkSq = fastMeanSq > fastPkSq
-                           ? fastMeanSq
-                           : fastPkSq + pkRelCoeff * (fastMeanSq - fastPkSq);
-            const double offSq = juce::jmax (broadPkSq - fastPkSq, broadPkSq * 0.001);
-            const double offDb = 10.0 * std::log10 (offSq + 1.0e-30);
-            bool contrastOk = true;
-            if (contrastDb < 23.75)
-            {
-                const double excess = offDb - fastDb;
-                if (! vetoLatch)
-                    vetoLatch = excess > contrastDb && offDb > thresholdDb - 6.0;
-                else if (excess < contrastDb - 6.0 || offDb < thresholdDb - 12.0)
-                    vetoLatch = false;
-                contrastOk = ! vetoLatch && excess <= contrastDb;
-            }
-            else
-                vetoLatch = false;
-
-            // ---- Gate state: open fast, close slow with hysteresis. A MIDI
-            // note (forceOpen) is authoritative: no threshold, no veto. ----
-            const bool levelQualifies = juce::jmax (fastDb, rmsDb) > thresholdDb;
-            if (! forced && levelQualifies && ! contrastOk)
-                ++vetoBlockedSamples;                       // veto is eating head start
-            else if (! levelQualifies)
-                vetoBlockedSamples = 0;
-            if (forced || (contrastOk && levelQualifies))
-            {
-                if (! gateOpen && ! forced && vetoBlockedSamples > 0)
-                    bypassRemaining = marginSamples;        // veto-late open: apply NOW
-                vetoBlockedSamples = 0;
-                gateOpen = true;
-                holdCounter = holdSamples;
-            }
-            else if (gateOpen)
-            {
-                if (rmsDb > thresholdDb - hysteresisDb && falling)
-                    holdCounter = holdSamples;  // sustain through the hit's decay
-                else if (holdCounter > 0)
-                    --holdCounter;
-                else
-                    gateOpen = false;
-            }
-
-            // No partial states in gate mode: gain moves only through a full
-            // open/hold/release cycle. (A soft knee here used to pre-open on
-            // onsets; it could pop when a Selectivity latch cleared mid-decay.)
-            targetDb = gateOpen ? reductionDb : 0.0;
-            openNow = gateOpen;
+            if (! gateOpen && ! forced && vetoBlockedSamples > 0)
+                bypassRemaining = marginSamples;        // veto-late open: apply NOW
+            vetoBlockedSamples = 0;
+            gateOpen = true;
+            holdCounter = holdSamples;
         }
+        else if (gateOpen)
+        {
+            if (rmsDb > thresholdDb - hysteresisDb && falling)
+                holdCounter = holdSamples;  // sustain through the hit's decay
+            else if (holdCounter > 0)
+                --holdCounter;
+            else
+                gateOpen = false;
+        }
+
+        // ---- Compressor stage: the duck, keyed by the GATED sidechain.
+        // While the gate is open the comp RMS hears the filtered detector;
+        // shut, it drains to silence within its window and the duck
+        // releases — so nothing that isn't an event can ever push the copy
+        // down, and everything that is fades out at the comp Release rate.
+        const double compMean = compRms.pushMeanSquare (gateOpen ? det : 0.0);
+        const double compDb = 10.0 * std::log10 (compMean + 1.0e-30);
+        const double overNow = compDb - compThresholdDb;
+        const double targetDb = overNow > 0.0
+                                    ? juce::jmax (reductionDb, -compGrPerDb * overNow)
+                                    : 0.0;
+        const bool openNow = overNow > 0.0;
 
         // ---- Smooth the envelope (attack towards reduction, release back to 0 dB) ----
         if (applyGain)
         {
-            const double coeff = (targetDb < currentGainDb) ? envAttack : envRelease;
+            const double coeff = (targetDb < currentGainDb) ? compAttackCoeff : compReleaseCoeff;
             currentGainDb += coeff * (targetDb - currentGainDb);
         }
         else
         {
-            // Trigger bypassed: the gate is forced permanently OPEN — the
+            // Trigger bypassed: the duck is pinned fully engaged — the
             // parallel copy is fully ducked, so no bleed is removed and the
             // dry signal passes untouched.
             currentGainDb = reductionDb;
         }
 
-        // ---- EQ-gate envelope: instant engage (within lookahead), hold, release.
-        // Keys on the mode's open state — gate mode: the gate itself; comp
-        // mode: slow RMS above threshold (or MIDI force) — so the tail's
-        // hold starts counting the moment the hit stops qualifying.
+        // ---- EQ-gate envelope: engage (within lookahead), hold, release.
+        // Keys on the comp threshold — the tail's hold starts counting the
+        // moment the gated sidechain stops qualifying.
         if (! applyGain)
         {
             eqGateEnv = 1.0;               // trigger bypassed: tail rings too
         }
         else if (openNow)
         {
-            // Comp mode: partial engagement scaled by how far past the
-            // threshold the event peaks (Tail Range / Tail Base); the env
-            // holds the event's maximum. Gate mode / MIDI force: full.
+            // Partial engagement scaled by how far past the comp threshold
+            // the event peaks (Tail Range / Tail Base); the env holds the
+            // event's maximum.
             double engage = 1.0;
-            if (compMode && ! forced && tailRangeDb > 0.05)
+            if (tailRangeDb > 0.05)
                 engage = juce::jlimit (0.0, 1.0,
                                        tailBase01 + (1.0 - tailBase01) * (overNow / tailRangeDb));
             eqGateEnv = juce::jmax (eqGateEnv, engage);
@@ -331,9 +272,9 @@ void CompressorProcessor::process (juce::AudioBuffer<double>& audio, const doubl
         else if (eqGateHoldCounter > 0)
         {
             // Hold at the level the event REACHED — pinning 1.0 here would
-            // undo the comp-mode partial engagement the moment the signal
-            // dropped below the threshold (the bug behind "the TAIL meter
-            // shoots to 100% no matter what Tail range/base are set to").
+            // undo the partial engagement the moment the signal dropped
+            // below the threshold (the bug behind "the TAIL meter shoots to
+            // 100% no matter what Tail range/base are set to").
             --eqGateHoldCounter;
         }
         else

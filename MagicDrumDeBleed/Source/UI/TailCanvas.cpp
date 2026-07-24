@@ -156,42 +156,6 @@ void TailCanvas::buildGoldCurve()
         curveHdB[i] = hDbAt (curveF[i]);
 }
 
-double TailCanvas::keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount)
-{
-    juce::RangedAudioParameter *onP[7], *freqP[7], *qP[7] {}, *gainP[7] {}, *shapeP[7];
-    for (int b = 0; b < 7; ++b)
-    {
-        onP[b]    = proc.apvts.getParameter (eqids::onId (b));
-        freqP[b]  = proc.apvts.getParameter (eqids::freqId (b));
-        shapeP[b] = proc.apvts.getParameter (eqids::shapeId (b));
-        if (b >= 2)
-        {
-            qP[b]    = proc.apvts.getParameter (eqids::qId (b));
-            gainP[b] = proc.apvts.getParameter (eqids::gainId (b));
-        }
-    }
-    const double sr = proc.getSampleRate() > 0.0 ? proc.getSampleRate() : 48000.0;
-    double sum = 0.0;
-    for (int i = 0; i <= 80; ++i)
-    {
-        const double f = 20.0 * std::pow (1000.0, i / 80.0);
-        double re, im;
-        chainH (onP, freqP, qP, gainP, shapeP, f, sr, re, im);
-        const double kr = 1.0 - amount * re, ki = amount * im;
-        sum += kr * kr + ki * ki;
-    }
-    return std::sqrt (sum / 81.0);
-}
-
-int TailCanvas::gateState (MagicDrumDeBleedAudioProcessor& proc, float& open01, float& tail01)
-{
-    open01 = juce::jlimit (0.0f, 1.0f, proc.getGainReductionDb() / -96.0f);
-    tail01 = juce::jlimit (0.0f, 1.0f, std::pow (10.0f, proc.getEqGateReductionDb() / 20.0f));
-    const double amount = proc.getIntensity01();
-    const bool keepAudible = keepAvg (proc, amount) > (1.0 - amount) + 0.02;
-    return open01 > 0.5f ? 2 : (tail01 > 0.12f && keepAudible ? 1 : 0);
-}
-
 //==============================================================================
 juce::Rectangle<float> TailCanvas::plotArea() const
 {

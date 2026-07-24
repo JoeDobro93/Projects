@@ -1,47 +1,57 @@
 #pragma once
 
 /*
-    CompressorProcessor — the fixed-reduction gate at the heart of the
-    parallel null-cancellation path.
+    CompressorProcessor — the unified duck engine at the heart of the
+    parallel null-cancellation path (v1.3: one engine, no modes).
 
-    This is NOT a ratio compressor. When the detector exceeds the threshold,
-    a fixed gain reduction (reductionDb) is applied to the audio, regardless
-    of how far above threshold the detector is. The envelope is smoothed by
-    an attack ramp sized to the lookahead, a hold timer and a release ramp.
+    Two stages run in series on the sidechain:
 
-    Detection (v2.2) uses a fast/slow split so marginal hits neither click
-    nor cut short:
-      - OPEN on a fast RMS (~rmsWindow/6, 0.5-3 ms) OR the slow RMS
-        crossing the threshold — ghost notes and low-frequency kicks are
-        caught near their true onset, preserving the lookahead margin.
-        Opening can additionally require the band to dominate the unfiltered
-        sidechain (the Selectivity contrast veto) so off-frequency bleed
-        can't trigger it.
-      - CLOSE on the slow RMS only, with hysteresis (the Hysteresis knob):
-        once open, the gate sustains while the level is still falling through
-        the zone below the threshold, so a barely-over hit rings out through
-        its own decay like a loud one. The sustain requires a falling level,
-        so bleed parked steadily inside the zone releases normally.
-    Gain only ever moves through a full open -> hold -> release cycle; there
-    is deliberately no partial/soft-knee state (v1.0.1: a partial opening
-    with no gate cycle audibly popped on vetoed tom hits).
+    1. GATE — the event detector. The filtered detector must qualify as an
+       event before the compressor is allowed to hear anything:
+         - OPEN on a fast RMS (~rmsWindow/6, 0.5-3 ms) OR the slow RMS
+           crossing the gate threshold, optionally vetoed by the
+           Selectivity contrast test (the focused band must dominate the
+           off-band remainder of the mic at the event's onset — the veto
+           LATCHES per event so off-drum hits stay vetoed even when their
+           sympathetic buzz later leaks into the band).
+         - CLOSE on the slow RMS only, with hysteresis: once open, the
+           gate sustains while the level is still FALLING through the zone
+           below the threshold (a barely-over hit rings out through its own
+           decay), plus the additive Hold time. Closing is HARD — the gate
+           has no release and applies no gain of its own.
+         - A MIDI note (forceOpen) opens it unconditionally.
+       Its only job is deciding WHEN the sidechain is live.
 
-    COMPRESSOR MODE (setCompParameters, v1.1): replaces the binary gate with
-    a continuous over-threshold compressor on the parallel copy — the
-    classic parallel bleed trick. GR target = −grPerOverDb × (slow RMS dB
-    over threshold), clamped at the full reduction. Standard ratios R map
-    to grPerOverDb = 1−1/R (the copy is squeezed toward the threshold, so
-    hits escape the null partially attenuated — the classic sound); the
-    negative ratios −N:1 use grPerOverDb = 1+N, pushing the copy N dB
-    BELOW the threshold per dB over — the extreme, most gate-like end.
-    Its own attack/release envelope and its own Smoothing state;
-    Selectivity/hysteresis/hold are gate-mode-only; MIDI force = full duck.
-    The tail (EQ-gate) keys on "slow RMS above threshold" in this mode.
+    2. COMPRESSOR — the duck. The gated sidechain (filtered detector while
+       the gate is open, silence while closed) feeds the compressor's own
+       windowed RMS (the Comp RMS knob). GR target =
+       −grPerOverDb × (dB over the comp threshold), clamped at the full
+       reduction: standard ratios R map to grPerOverDb = 1−1/R (the copy is
+       squeezed toward the threshold — hits escape the null partially
+       attenuated, the classic parallel bleed trick); the negative ratios
+       −N:1 use 1+N, pushing the copy N dB BELOW the threshold per dB over;
+       Full (grPerOverDb ≥ kFullRatioSlope) is the binary-gate law — any
+       amount over ducks the full −96 dB. The comp's attack/release
+       envelope is the ONLY gain smoothing in the engine: when the gate
+       slams shut the sidechain dies, the RMS drains within its window and
+       the duck releases at the comp Release rate — the release role of the
+       classic gate, performed in the audio domain.
+
+    The comp threshold is independent of the gate threshold: gate low +
+    comp higher = the old compressor behaviour; both matched + Full ratio =
+    the old gate. In between, quiet events that pass the gate escape the
+    null only as far as the ratio law lets them — false triggers just over
+    the line stay nearly cancelled.
+
+    The tail (EQ-gate) keys on the comp threshold too: a hit peaking `over`
+    dB past it engages the tail at base + (1−base)·over/range, capped at 1
+    (range < 0.05 = always full), and the envelope holds the event's
+    maximum before the hold/fade cycle.
 
     Lookahead: the audio passing through this processor is delayed by the
-    lookahead amount; the detector is analysed *un-delayed*, so the gain
-    reduction has already reached its target by the time the transient
-    arrives at the output of the internal delay line.
+    lookahead amount; the detector is analysed *un-delayed*, so the duck
+    has already reached its target by the time the transient arrives at
+    the output of the internal delay line.
 
     All state and maths are double precision.
 */
@@ -89,14 +99,71 @@ private:
     int delaySamples = 0;
 };
 
+// Boxcar mean-square detector: circular buffer of squared samples with a
+// running sum, rebuilt exactly once per window so floating-point drift
+// can't accumulate over hours of processing. Worst-case window is 100 ms.
+class WindowedRms
+{
+public:
+    void prepare (double sampleRate)
+    {
+        sr = sampleRate;
+        buffer.assign ((size_t) juce::jmax (1, (int) std::ceil (0.1 * sr) + 1), 0.0);
+        currentWindowMs = -1.0;
+        setWindow (10.0);
+        reset();
+    }
+
+    void reset()
+    {
+        std::fill (buffer.begin(), buffer.end(), 0.0);
+        sum = 0.0;
+        index = 0;
+        refreshCounter = 0;
+    }
+
+    // Window length changes clear the buffer and start accumulating fresh —
+    // a brief detector dip on a manual parameter tweak is inaudible.
+    void setWindow (double windowMs);
+
+    inline double pushMeanSquare (double x) noexcept
+    {
+        const double sq = x * x;
+        sum += sq - buffer[(size_t) index];
+        buffer[(size_t) index] = sq;
+        if (++index >= length)
+            index = 0;
+        if (++refreshCounter >= length)
+        {
+            refreshCounter = 0;
+            double exact = 0.0;
+            for (int i = 0; i < length; ++i)
+                exact += buffer[(size_t) i];
+            sum = exact;
+        }
+        return juce::jmax (0.0, sum) / (double) length;
+    }
+
+private:
+    std::vector<double> buffer { 1, 0.0 };
+    double sum = 0.0;
+    int length = 1, index = 0, refreshCounter = 0;
+    double currentWindowMs = -1.0;
+    double sr = 44100.0;
+};
+
 class CompressorProcessor
 {
 public:
+    // grPerOverDb at or above this means Full ratio: the binary −96 duck.
+    static constexpr double kFullRatioSlope = 1.0e6;
+
     void prepare (double sampleRate, int numChannels, int maxDelaySamples,
                   int maxMarginSamples = 0);
     void reset();
 
-    /*  marginSamples: the audio is delayed lookahead + margin, and the gain/
+    /*  Gate-stage parameters (the event detector).
+        marginSamples: the audio is delayed lookahead + margin, and the gain/
         tail envelopes are applied margin samples LATE — so decisions still
         lead the audio by exactly the lookahead. A gate opening that was held
         back by the Selectivity veto (level qualified, veto said no) applies
@@ -106,34 +173,36 @@ public:
         (and the plugin's reported latency) never moves with any knob. */
     void setParameters (double thresholdDb, double reductionDb, int lookaheadSamples,
                         int marginSamples,
-                        double rmsWindowMs, double holdMs, double releaseMs,
+                        double rmsWindowMs, double holdMs,
                         double hysteresisDb, double contrastDb);
 
-    /*  EQ-gate envelope timing (shares the detector/threshold/lookahead).
-        tailRangeDb/tailBase01 (comp mode only): a hit peaking `over` dB past
-        the threshold engages the tail at base + (1−base)·over/range, capped
-        at 1 — false triggers just over the line no longer ring the full
-        tail. The envelope holds the event's MAX engagement, then fades from
-        there. range < 0.05 or gate mode = always full (legacy). */
+    /*  EQ-gate envelope timing. tailRangeDb/tailBase01: a hit peaking `over`
+        dB past the COMP threshold engages the tail at
+        base + (1−base)·over/range, capped at 1 — false triggers just over
+        the line no longer ring the full tail. The envelope holds the
+        event's MAX engagement, then fades from there. range < 0.05 =
+        always full (legacy). */
     void setEqGateParameters (double holdMs, double releaseMs,
                               double tailRangeDb = 0.0, double tailBase01 = 1.0);
 
-    // Compressor mode: continuous −grPerOverDb·overDb reduction of the
-    // parallel path (own attack/release). While off, the gate runs unchanged.
-    void setCompParameters (bool enabled, double grPerOverDb, double attackMs, double releaseMs);
+    /*  Compressor-stage parameters (the duck): its own absolute threshold,
+        the ratio law's slope (see kFullRatioSlope), its own RMS window and
+        the attack/release envelope — the engine's only gain smoothing. */
+    void setCompParameters (double compThresholdDb, double grPerOverDb,
+                            double rmsWindowMs, double attackMs, double releaseMs);
 
     /*  Delays `audio` in place by the lookahead amount, computes the gain
         envelope from `detector` (mono, un-delayed, already sidechain-filtered
         by the caller) and applies it to all channels.
 
-        applyGain == false implements the compressor-bypass: the lookahead
+        applyGain == false implements the trigger-bypass: the lookahead
         delay still runs (so path alignment and latency never change) but the
-        gain stays at 0 dB and the envelope state is kept released.
+        duck is pinned fully engaged, so no bleed is removed and the dry
+        signal passes untouched.
     */
-    /*  eqGateEnv (optional): per-sample 0..1 envelope for the EQ gate — 1
-        while the detector is above threshold (fast attack inside the
-        lookahead window), then holds and releases towards 0. Driven by the
-        exact same RMS detector as the main gate.
+    /*  eqGateEnv (optional): per-sample 0..1 envelope for the EQ gate — it
+        engages (with the tail blend) while the gated sidechain is over the
+        comp threshold, then holds and releases towards 0.
     */
     /*  detectorBroad: the same sidechain BEFORE the trigger filter — the
         contrast (Selectivity) veto compares the filtered band against it, so
@@ -141,9 +210,10 @@ public:
         open the gate. Pass the filtered signal again when unavailable.
 
         forceOpen (optional): per-sample non-zero = a MIDI note is holding the
-        gate open. Treated exactly like a detector crossing (same hold and
-        release once it clears) and overrides threshold AND the contrast
-        veto — manual events are authoritative. */
+        GATE open (no threshold, no veto; hold and hysteresis then run as
+        normal once it clears). The compressor still tracks the real level —
+        a forced-open passage only escapes the null as far as the signal
+        pushes past the comp threshold. */
     void process (juce::AudioBuffer<double>& audio, const double* detector,
                   const double* detectorBroad,
                   int numSamples, bool applyGain, double* eqGateEnv = nullptr,
@@ -152,8 +222,8 @@ public:
     // Most negative gain value (dB) seen during the last process() call — for the GR meter.
     float getCurrentGainReductionDb() const noexcept   { return lastBlockGrDb; }
 
-    // Highest detector RMS (dB) seen during the last process() call — for the
-    // input meter, directly comparable to the threshold.
+    // Highest gate (slow) detector RMS (dB) seen during the last process()
+    // call — for the input meter, directly comparable to the gate threshold.
     float getCurrentDetectorRmsDb() const noexcept     { return lastBlockRmsDb; }
 
     // Highest fast (opening) detector level of the last block — what actually
@@ -165,24 +235,19 @@ public:
     float getCurrentDryDb() const noexcept             { return lastBlockDryDb; }
 
 private:
-    void setRmsWindow (double windowMs);
-    void rebuildRmsSum();
-
     double sr = 44100.0;
 
     std::vector<MonoDelay> delays;          // one per channel
 
-    // Slow RMS detector (circular buffer of squared samples + running sum);
-    // window = the Smoothing knob. Governs closing and the meter.
-    std::vector<double> rmsBuffer;
-    double rmsSum = 0.0;
-    int rmsLength = 1, rmsIndex = 0, rmsRefreshCounter = 0;
-    double currentRmsWindowMs = -1.0;
+    // Gate slow RMS (the Smoothing knob) — governs closing and the meter —
+    // and the compressor's own RMS fed by the GATED sidechain (Comp RMS).
+    WindowedRms gateRms, compRms;
 
-    // Fast RMS detector (single-pole mean-square) — opening only. The broad
-    // twin runs on the unfiltered sidechain for the contrast veto. Both are
-    // peak-held (instant attack, shared release) BEFORE the off-band
-    // subtraction, so a hit's own bandpass ring-up can't read as off-band.
+    // Fast RMS detector (single-pole mean-square) — gate opening only. The
+    // broad twin runs on the unfiltered sidechain for the contrast veto.
+    // Both are peak-held (instant attack, shared release) BEFORE the
+    // off-band subtraction, so a hit's own bandpass ring-up can't read as
+    // off-band.
     double fastMeanSq = 0.0, fastCoeff = 1.0;
     double broadMeanSq = 0.0;
     double broadPkSq = 0.0, fastPkSq = 0.0;      // peak-held inputs of the veto reference
@@ -192,7 +257,7 @@ private:
     // Lagged copy of the slow level (dB) — the hysteresis falling test.
     double slowDbLag = -120.0, hystLagCoeff = 1.0;
 
-    // Envelope
+    // Gate state + the duck envelope
     double currentGainDb = 0.0;
     int holdCounter = 0;
     bool gateOpen = false;
@@ -210,15 +275,14 @@ private:
     double eqGateReleaseCoeff = 1.0;
     double tailRangeDb = 0.0, tailBase01 = 1.0;
 
-    // Compressor mode
-    bool   compMode = false;
-    double compGrPerDb = 0.95;
+    // Compressor stage
+    double compThresholdDb = -52.0;
+    double compGrPerDb = 0.99;
     double compAttackCoeff = 1.0, compReleaseCoeff = 1.0;
 
-    // Cached parameters
+    // Cached gate parameters
     double thresholdDb = -20.0, reductionDb = -24.0;
     int lookaheadSamples = 0, holdSamples = 0;
-    double attackCoeff = 1.0, releaseCoeff = 1.0;
     double hysteresisDb = 8.0, contrastDb = 24.0;
 
     float lastBlockGrDb = 0.0f;

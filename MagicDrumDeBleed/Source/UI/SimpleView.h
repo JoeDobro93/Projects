@@ -1,5 +1,5 @@
 #pragma once
-/*  SimpleView — stripped-back: TRIGGER meter (draggable threshold), GATE,
+/*  SimpleView — stripped-back: TRIGGER meter (draggable threshold), GR,
     AMOUNT fader, OUT meter; Resonance (= Focus) with Learn under it,
     Reso Amt (= K1 ring level) and Tail hold; Kick/Snare/Toms preset row,
     and an Advanced View button. */
@@ -23,8 +23,7 @@ public:
 private:
     MagicDrumDeBleedAudioProcessor& processor;
     ui::LevelMeter trigMeter;
-    ui::GateMeter gateMeter;
-    ui::GrMeter grMeter;                                // comp mode: replaces GATE
+    ui::GrMeter grMeter;                                // duck depth = escape
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
@@ -32,12 +31,10 @@ private:
              tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr };
     eqids::LearnButton learnBtn { processor, 3 };       // fills the lowest 3 bands it can
     ui::LightToggle midiTg { "MIDI" };
-    ui::TextSwitch modeSw { "COMP", "GATE" };
     class DrumButton;
     std::unique_ptr<juce::Button> presetBtns[4];
     juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
-    std::unique_ptr<juce::ParameterAttachment> amtAtt, midiAtt, modeAtt;
-    bool compOn = false;
+    std::unique_ptr<juce::ParameterAttachment> amtAtt, midiAtt;
     int amountX = 0, amountY = 0;
     juce::Rectangle<int> divider;
 

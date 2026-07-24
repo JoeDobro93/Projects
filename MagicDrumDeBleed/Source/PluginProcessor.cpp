@@ -87,7 +87,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
 
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
-    // ---- Compressor ----
+    // ---- Gate stage (the event detector; hard close, no gain of its own) ----
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::threshold, 1 }, "Threshold",
                     juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -40.0f, dB));
     p.push_back (std::make_unique<AudioParameterInt>   (ParameterID { ParamIDs::lookahead, 1 }, "Lookahead",
@@ -102,10 +102,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hold, 1 }, "Hold",
                         logRange (5.0f, 40.0f, 200.0f, true), 7.0f, msInt));
     }
-    {
-        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::release, 1 }, "Release",
-                        logRange (5.0f, 60.0f, 200.0f, true), 5.0f, msInt));
-    }
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::hysteresis, 1 }, "Hysteresis",
                     juce::NormalisableRange<float> (0.0f, 24.0f), 8.0f, dB));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::midiTrigger, 1 }, "MIDI Trigger", true));
@@ -116,10 +112,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                         .withStringFromValueFunction ([] (float v, int)
                         { return v >= 23.75f ? juce::String ("Off") : juce::String (v, 1) + " dB"; })));
 
-    // ---- Compressor mode (parallel over-threshold compressor) ----
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::compMode, 1 }, "Comp Mode", true));
+    // ---- Compressor stage (the duck, keyed by the gated sidechain) ----
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compThreshold, 1 }, "Comp Threshold",
+                    juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -52.0f, dB));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::compRatio, 1 }, "Ratio",
-                    juce::StringArray { "4:1", "10:1", "20:1", "100:1", "-1:1", "-2:1" }, 3));
+                    juce::StringArray { "4:1", "10:1", "20:1", "100:1", "-1:1", "-2:1", "Full" }, 3));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compAttack, 1 }, "Comp Attack",
                     logRange (0.1f, 2.0f, 30.0f), 0.1f, ms));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::compRelease, 1 }, "Comp Release",
@@ -222,11 +219,10 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pLookahead    = raw (ParamIDs::lookahead);
     pRmsWindow    = raw (ParamIDs::rmsWindow);
     pHold         = raw (ParamIDs::hold);
-    pRelease      = raw (ParamIDs::release);
     pHysteresis   = raw (ParamIDs::hysteresis);
     pContrast     = raw (ParamIDs::contrast);
     pMidiTrigger  = raw (ParamIDs::midiTrigger);
-    pCompMode     = raw (ParamIDs::compMode);
+    pCompThreshold = raw (ParamIDs::compThreshold);
     pCompRatio    = raw (ParamIDs::compRatio);
     pCompAttack   = raw (ParamIDs::compAttack);
     pCompRelease  = raw (ParamIDs::compRelease);
@@ -367,10 +363,8 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 {
     // ---- Lookahead / total delay. The knob never changes latency (the
     // ring absorbs total − lookahead); the ONLY thing that does is engaging
-    // Selectivity in gate mode, which adds the flam-recovery margin. Comp
-    // mode never carries the margin. ----
-    const bool compModeOn = pCompMode->load() > 0.5f;
-    const bool selectivityOn = ! compModeOn && pContrast->load() < 23.75f;
+    // Selectivity, which adds the flam-recovery margin. ----
+    const bool selectivityOn = pContrast->load() < 23.75f;
     const int lookaheadMs = (int) pLookahead->load();
     const int lookahead = juce::jlimit (0, maxLookaheadSamples,
                                         (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));
@@ -384,21 +378,23 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
     }
     currentLookaheadSamples = lookahead;
 
-    // ---- Compressor / sidechain (each mode has its own Smoothing state) ----
+    // ---- Gate + compressor stages / sidechain ----
     compressor.setParameters (pThreshold->load(), kReductionDb, lookahead,
                               totalDelay - lookahead,
-                              compModeOn ? pCompRmsWindow->load() : pRmsWindow->load(),
-                              pHold->load(), pRelease->load(),
+                              pRmsWindow->load(), pHold->load(),
                               pHysteresis->load(), pContrast->load());
     compressor.setEqGateParameters (pEqGateHold->load(), pEqGateRelease->load(),
                                     pTailRange->load(), pTailBase->load() * 0.01f);
     {
-        // GR per dB over threshold: standard ratios reduce by 1-1/R (copy
-        // squeezed toward the threshold); the negative ratios -N:1 reduce by
-        // 1+N, pushing the copy N dB BELOW the threshold per dB over.
-        static constexpr double kGrPerDb[6] = { 0.75, 0.90, 0.95, 0.99, 2.0, 3.0 };
-        compressor.setCompParameters (compModeOn,
-                                      kGrPerDb[juce::jlimit (0, 5, (int) pCompRatio->load())],
+        // GR per dB over the comp threshold: standard ratios reduce by 1-1/R
+        // (copy squeezed toward the threshold); the negative ratios -N:1
+        // reduce by 1+N, pushing the copy N dB BELOW the threshold per dB
+        // over; Full is the binary-gate law (any amount over = full duck).
+        static constexpr double kGrPerDb[7] = { 0.75, 0.90, 0.95, 0.99, 2.0, 3.0,
+                                                mdd::CompressorProcessor::kFullRatioSlope };
+        compressor.setCompParameters (pCompThreshold->load(),
+                                      kGrPerDb[juce::jlimit (0, 6, (int) pCompRatio->load())],
+                                      pCompRmsWindow->load(),
                                       pCompAttack->load(), pCompRelease->load());
     }
     eqGateOnCached = pEqGateOn->load() > 0.5f;

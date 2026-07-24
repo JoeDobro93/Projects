@@ -35,20 +35,19 @@ private:
     StageHeader header { 1, "TRIGGER", 0 };
     juce::TextButton bypassBtn { "Bypass" };
     ui::LevelMeter trigMeter;
-    ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" }, focus { "Focus" }, width { "Width" },
-             contrastK { "Selectivity" };
+    // The complete gate lives here: sensitivity row + hysteresis/hold + MIDI.
+    ui::Knob threshold { "Threshold" }, smoothing { "Smoothing" },
+             hystK { "Hysteresis" }, holdK { "Hold" },
+             focus { "Focus" }, width { "Width" }, contrastK { "Selectivity" };
     ui::LightSelector typeSel { { { "High Pass", ui::LightSelector::iconHP },
                                   { "Low Pass",  ui::LightSelector::iconLP },
                                   { "Bandpass",  ui::LightSelector::iconBP } } };
     ui::LightToggle enableBtn { "Enabled" }, linkBtn { "Link to K1" }, midiBtn { "MIDI" };
-    ui::TextSwitch modeSw { "COMP", "GATE" };
     eqids::LearnButton learnBtn { processor };
-    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt,
-                                               compModeAtt;
+    std::unique_ptr<juce::ParameterAttachment> typeAtt, bypassAtt, scEnableAtt, linkAtt, midiAtt;
     void updateSelectivityDim();
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
-    juce::Rectangle<int> modeLabelArea;
-    bool filterOn = true, compOn = false;
+    bool filterOn = true;
 };
 
 //==============================================================================
@@ -61,30 +60,22 @@ public:
 private:
     void timerCallback() override;
 
-    void applyMode (bool comp);
-
     MagicDrumDeBleedAudioProcessor& processor;
-    StageHeader header { 2, "GATE", 1 };
-    ui::Knob lookahead { "Lookahead", ui::Knob::openClr }, hold { "Hold", ui::Knob::openClr },
-             release { "Release", ui::Knob::openClr }, hystK { "Hysteresis", ui::Knob::openClr };
-    // Compressor-mode knobs share the grid slots (visibility follows the mode)
-    ui::Knob ratioK { "Ratio", ui::Knob::openClr }, compAtk { "Attack", ui::Knob::openClr },
-             compRel { "Release", ui::Knob::openClr };
+    StageHeader header { 2, "COMPRESSOR", 1 };
+    ui::Knob compThreshK { "Comp Thresh", ui::Knob::openClr }, ratioK { "Ratio", ui::Knob::openClr },
+             compAtk { "Attack", ui::Knob::openClr }, compRmsK { "Comp RMS", ui::Knob::openClr },
+             compRel { "Release", ui::Knob::openClr }, lookahead { "Lookahead", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
-    ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Input" },
+    ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Trigger" },
                     smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr };
     ui::SnowButton histFreeze;
     bool showOut = true, showTrig = true, showSmooth = true, showOff = true;
 
     std::unique_ptr<juce::ParameterAttachment> dimAtt;  // dulls knobs on bypass
-    std::unique_ptr<juce::ParameterAttachment> modeAtt;
-    bool compOn = false;
-    struct Sample { float det, fast, off, out, gr01, o01, t01; int state; bool forced; };
+    struct Sample { float det, fast, off, out, o01, t01; bool forced; };
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
-    juce::Rectangle<int> canvasArea, stateArea, speedLabelArea;
-    float open01 = 0.0f, tail01 = 0.0f;
-    int state = 0;
+    juce::Rectangle<int> canvasArea, speedLabelArea;
 };
 
 //==============================================================================
@@ -131,11 +122,10 @@ private:
     ui::Knob tailHold { "Tail hold", ui::Knob::tailClr }, tailFade { "Tail fade", ui::Knob::tailClr },
              tailRangeK { "Tail range", ui::Knob::tailClr }, tailBaseK { "Tail base", ui::Knob::tailClr };
     ui::PercentMeter tailMeter;
-    std::unique_ptr<juce::ParameterAttachment> compModeAtt;
     void updateDim();
     int sel = 0;
     int bandLabelsY = 0, shapeX = 0, scaleLabelY = 0;
-    bool eqByp = false, tgOn = true, compOn = false;
+    bool eqByp = false, tgOn = true;
 };
 
 //==============================================================================
@@ -150,11 +140,10 @@ private:
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
-    ui::GateMeter gateMeter;
-    ui::GrMeter grMeter;                                // comp mode: replaces GATE
+    ui::GrMeter grMeter;                                // duck depth = escape
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
-    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, modeAtt, contrastAtt;
-    void updateLatencyText();
+    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, contrastAtt;
+    void updateLatencyText (float contrastDb);
     juce::String latencyText;
     int latencyY = 0;
     int listenY = 0, amountX = 0, amountY = 0;

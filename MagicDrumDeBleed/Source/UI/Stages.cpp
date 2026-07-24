@@ -57,6 +57,8 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
             const float a = v > 0.5f ? 0.45f : 1.0f;
             threshold.setAlpha (a);
             smoothing.setAlpha (a);
+            hystK.setAlpha (a);
+            holdK.setAlpha (a);
             midiBtn.setAlpha (a);
         });
     bypassAtt->sendInitialUpdate();
@@ -66,14 +68,22 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
 
     addAndMakeVisible (threshold);
     threshold.attach (ap.getParameter (ParamIDs::threshold));
-    setHint (threshold, "Threshold", "The level a hit must exceed to open the gate. Anything quieter is treated as bleed and cancelled.");
+    setHint (threshold, "Threshold", "The level a hit must exceed to count as an event. Anything quieter never reaches the compressor and is cancelled as bleed.");
 
     addAndMakeVisible (smoothing);
     smoothing.attach (ap.getParameter (ParamIDs::rmsWindow));
-    setHint (smoothing, "Smoothing", "How much the detector averages. Opening always uses a fast detector so attacks are never clipped; Smoothing mainly steadies when the gate closes and rejects short spikes of bleed.");
+    setHint (smoothing, "Smoothing", "How much the gate's detector averages. Opening always uses a fast detector so attacks are never clipped; Smoothing mainly steadies when the gate closes and rejects short spikes of bleed.");
+
+    addAndMakeVisible (hystK);
+    hystK.attach (ap.getParameter (ParamIDs::hysteresis));
+    setHint (hystK, "Hysteresis", "The gate only closes once the detector has fallen this far below the Threshold (dimmer dashed line in the history) while still falling. Bigger = marginal hits ring out longer.");
+
+    addAndMakeVisible (holdK);
+    holdK.attach (ap.getParameter (ParamIDs::hold));
+    setHint (holdK, "Hold", "Minimum time the gate keeps the compressor's feed alive after a hit stops qualifying.");
 
     addAndMakeVisible (midiBtn);
-    setHint (midiBtn, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note (hold and release then run as normal) - the manual repair path for hits the detector misses. Any note, any channel.");
+    setHint (midiBtn, "MIDI trigger", "Notes routed to this track force the gate open for the length of the note (hold then runs as normal) - the manual repair path for hits the detector misses. The compressor still tracks the real level, so only what rises past the Comp Threshold escapes. Any note, any channel.");
     midiBtn.onClick = [this]
     {
         auto* p = processor.apvts.getParameter (ParamIDs::midiTrigger);
@@ -95,7 +105,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     contrastK.attach (ap.getParameter (ParamIDs::contrast));
     contrastK.setReversed (true);          // Off (24) = empty arc; stricter = fuller
     setHint (contrastK, "Selectivity",
-             juce::String::fromUTF8 ("Tom-proofing: a hit only opens the gate if the focused band beats the OFF-BAND rest of the mic (orange trace in the history) by at least this margin at its onset \xe2\x80\x94 and a hit that starts as another drum stays vetoed even when its buzz later leaks into the band. Dial DOWN from Off until other drums stop triggering; on-frequency ghost notes still pass. Engaging it adds 10 ms of latency (the attack-recovery margin)."));
+             juce::String::fromUTF8 ("Tom-proofing: a hit only counts as an event if the focused band beats the OFF-BAND rest of the mic (orange trace in the history) by at least this margin at its onset \xe2\x80\x94 and a hit that starts as another drum stays vetoed even when its buzz later leaks into the band. Dial DOWN from Off until other drums stop triggering; on-frequency ghost notes still pass. Engaging it adds 10 ms of latency (the attack-recovery margin)."));
 
     addAndMakeVisible (typeSel);
     setHint (typeSel, "Trigger Filter Type",
@@ -126,28 +136,6 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
         });
     scEnableAtt->sendInitialUpdate();
 
-    // Mode switch: COMP (left, default) / GATE. Lives here so the mode is
-    // set where the detector is configured; the Gate pane retitles itself.
-    setHint (modeSw, "Mode", "COMP = a continuous high-ratio compressor on the cancelling copy (smoother, level-tracking). GATE = binary open/close with hold and hysteresis. Each mode remembers its own knob settings.");
-    modeSw.onChange = [this] (bool left) { compModeAtt->setValueAsCompleteGesture (left ? 1.0f : 0.0f); };
-    addAndMakeVisible (modeSw);
-
-    // Selectivity is gate-only (dims in Comp mode); Smoothing is a separate
-    // parameter per mode so switching back and forth keeps both states.
-    compModeAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compMode),
-        [this] (float v)
-        {
-            compOn = v > 0.5f;
-            modeSw.setLeftActive (compOn, false);
-            smoothing.attach (processor.apvts.getParameter (compOn ? ParamIDs::compRmsWindow
-                                                                   : ParamIDs::rmsWindow));
-            setHint (smoothing, "Smoothing",
-                     compOn ? "The compressor's RMS window (like RMS size in a console compressor). Longer = calmer level tracking, slower response. Separate from gate mode's Smoothing."
-                            : "How much the detector averages. Opening always uses a fast detector so attacks are never clipped; Smoothing mainly steadies when the gate closes and rejects short spikes of bleed. Separate from comp mode's Smoothing.");
-            updateSelectivityDim();
-        });
-    compModeAtt->sendInitialUpdate();
-
     addAndMakeVisible (learnBtn);
     setHint (learnBtn, "Learn", "Listens for up to 3 seconds and parks the filter on this drum's dominant frequency. With Link to K1 on, K1 follows it too.");
 
@@ -165,7 +153,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
 
 void TriggerStage::updateSelectivityDim()
 {
-    contrastK.setAlpha (filterOn && ! compOn ? 1.0f : 0.45f);
+    contrastK.setAlpha (filterOn ? 1.0f : 0.45f);
 }
 
 void TriggerStage::updateWidthKnob()
@@ -195,13 +183,10 @@ void TriggerStage::paint (juce::Graphics& g)
     g.setColour (pal->line);   g.drawRoundedRectangle (r, 5.0f, 1.0f);
 
     g.setColour (pal->faint);
-    g.setFont (font (8.5f, true));
-    g.drawText ("MODE", modeLabelArea.withTrimmedRight (sc (6)), juce::Justification::centredRight);
     g.setFont (font (9.5f, true));
-    g.drawText ("SENSITIVITY", sensLabelX, sc (34), sc (160), sc (12), juce::Justification::centredLeft);
+    g.drawText ("GATE", sensLabelX, sc (34), sc (160), sc (12), juce::Justification::centredLeft);
     if (! filterOn) g.setColour (pal->faint.withAlpha (0.45f));
     g.drawText ("TRIGGER FILTER", filtLabelX, sc (34), sc (400), sc (12), juce::Justification::centredLeft);
-    g.setColour (pal->faint);
     g.setColour (pal->line);
     g.fillRect (dividerX, sc (32), 1, getHeight() - sc (42));
 }
@@ -210,42 +195,45 @@ void TriggerStage::resized()
 {
     auto r = getLocalBounds().reduced (sc (11), sc (8));
     auto head = r.removeFromTop (sc (20));
-    bypassBtn.setBounds (head.removeFromRight (sc (64)).reduced (0, 0));
-    head.removeFromRight (sc (10));
-    modeSw.setBounds (head.removeFromRight (sc (76)));
-    modeLabelArea = head.removeFromRight (sc (40));
+    bypassBtn.setBounds (head.removeFromRight (sc (64)));
     header.setBounds (head);
     r.removeFromTop (sc (4));
 
     trigMeter.setBounds (r.removeFromLeft (sc (36)));
     r.removeFromLeft (sc (13));
 
+    // The full gate: Threshold · Smoothing · Hysteresis · Hold, MIDI below.
     sensLabelX = r.getX();
-    auto sens = r.removeFromLeft (sc (150));
+    auto sens = r.removeFromLeft (sc (256));
     sens.removeFromTop (sc (14));
     auto sensKnobs = sens.removeFromTop (sc (84));
-    threshold.setBounds (sensKnobs.removeFromLeft (sc (70)));
-    smoothing.setBounds (sensKnobs.removeFromLeft (sc (70)));
+    threshold.setBounds (sensKnobs.removeFromLeft (sc (64)));
+    smoothing.setBounds (sensKnobs.removeFromLeft (sc (64)));
+    hystK.setBounds (sensKnobs.removeFromLeft (sc (64)));
+    holdK.setBounds (sensKnobs.removeFromLeft (sc (64)));
     midiBtn.setBounds (sens.withSizeKeepingCentre (juce::jmin (sens.getWidth(), sc (64)),
                                                    juce::jmin (sens.getHeight(), sc (24))));
 
     r.removeFromLeft (sc (6));
     dividerX = r.getX();
-    r.removeFromLeft (sc (7));
-    filtLabelX = r.getX();
-    r.removeFromTop (sc (14));
+
+    // Filter group anchored to the right edge; slack stays beside the divider.
+    const int filtW = sc (96) + sc (11) + sc (70) * 3 + sc (11) + sc (110);
+    auto filt = r.removeFromRight (juce::jmin (r.getWidth() - sc (7), filtW));
+    filtLabelX = filt.getX();
+    filt.removeFromTop (sc (14));
 
     // button stack (Enabled / Link to K1 / Learn) left, knobs middle, type right
-    auto stack = r.removeFromLeft (sc (96));
+    auto stack = filt.removeFromLeft (sc (96));
     enableBtn.setBounds (stack.getX(), stack.getY(),           stack.getWidth(), sc (24));
     linkBtn.setBounds   (stack.getX(), stack.getY() + sc (27), stack.getWidth(), sc (24));
     learnBtn.setBounds  (stack.getX(), stack.getY() + sc (54), stack.getWidth(), sc (24));
-    r.removeFromLeft (sc (11));
-    focus.setBounds (r.removeFromLeft (sc (70)));
-    width.setBounds (r.removeFromLeft (sc (70)));
-    contrastK.setBounds (r.removeFromLeft (sc (70)));
-    r.removeFromLeft (sc (11));
-    typeSel.setBounds (r.removeFromLeft (sc (110)).withHeight (sc (78)));
+    filt.removeFromLeft (sc (11));
+    focus.setBounds (filt.removeFromLeft (sc (70)));
+    width.setBounds (filt.removeFromLeft (sc (70)));
+    contrastK.setBounds (filt.removeFromLeft (sc (70)));
+    filt.removeFromLeft (sc (11));
+    typeSel.setBounds (filt.removeFromLeft (sc (110)).withHeight (sc (78)));
 }
 
 //==============================================================================
@@ -253,34 +241,32 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
 {
     addAndMakeVisible (header);
     auto& ap = processor.apvts;
-    addAndMakeVisible (lookahead);
-    lookahead.attach (ap.getParameter (ParamIDs::lookahead));
-    setHint (lookahead, "Lookahead", "The gate opens this far BEFORE the transient arrives, so attacks are never clipped. This knob never changes the plugin's latency.");
-    addAndMakeVisible (hold);
-    hold.attach (ap.getParameter (ParamIDs::hold));
-    setHint (hold, "Hold", "Minimum time the gate stays fully open after a hit.");
-    addAndMakeVisible (release);
-    release.attach (ap.getParameter (ParamIDs::release));
-    setHint (release, "Release", juce::String::fromUTF8 ("How quickly the gate closes after Hold. Too short chops the drum \xe2\x80\x94 the TAIL stage then takes over."));
 
-    setHint (*this, "History", "Live history. Blue = smoothed detector, bright trace = fast opening detector, orange trace = off-band level (what Selectivity compares against: your drum puts the bright trace ON TOP of the orange, other drums the reverse). Red dashes = Threshold, dimmer dashes = the close level. Background = gate state.");
-
-    addAndMakeVisible (hystK);
-    hystK.attach (ap.getParameter (ParamIDs::hysteresis));
-    setHint (hystK, "Hysteresis", "The gate only closes once the detector has fallen this far below the Threshold (second dashed line) while still falling. Bigger = marginal hits ring out longer.");
+    addAndMakeVisible (compThreshK);
+    compThreshK.attach (ap.getParameter (ParamIDs::compThreshold));
+    setHint (compThreshK, "Comp Threshold", "The compressor's own threshold (gold dashed line), independent of the gate Threshold. Events the gate lets through escape the null by how far they rise past THIS level — set it low to let ghost notes breathe, or match the gate Threshold for the classic hard-gate feel.");
 
     addAndMakeVisible (ratioK);
     ratioK.attach (ap.getParameter (ParamIDs::compRatio));
-    setHint (ratioK, "Ratio", "Compression ratio on the cancelling copy. Standard ratios squeeze it toward the Threshold — hits escape the null partially attenuated (the classic trick; 100:1 ≈ limiter). Mirror is a negative ratio (−1:1): every dB over pushes the cancelling copy a dB UNDER the threshold, so hits escape nearly untouched — the most gate-like setting.");
+    setHint (ratioK, "Ratio", "How hard events escape per dB over the Comp Threshold. Standard ratios squeeze the cancelling copy toward the threshold (100:1 ≈ limiter); −1:1 / −2:1 push it BELOW, letting hits escape nearly untouched; Full ducks the copy completely for anything over — the binary-gate law.");
+
     addAndMakeVisible (compAtk);
     compAtk.attach (ap.getParameter (ParamIDs::compAttack));
-    setHint (compAtk, "Attack", "How fast the compressor clamps down once a hit crosses the Threshold - the speed the hit opens. Lookahead gives it a head start.");
+    setHint (compAtk, "Attack", "How fast the compressor clamps down once the gated feed crosses the Comp Threshold - the speed a hit opens. Lookahead gives it a head start.");
+
+    addAndMakeVisible (compRmsK);
+    compRmsK.attach (ap.getParameter (ParamIDs::compRmsWindow));
+    setHint (compRmsK, "Comp RMS", "The compressor's RMS window (like RMS size in a console compressor). Longer = calmer level tracking, slower response. Separate from the gate's Smoothing.");
+
     addAndMakeVisible (compRel);
     compRel.attach (ap.getParameter (ParamIDs::compRelease));
-    setHint (compRel, "Release", "How fast bleed removal re-engages as the hit falls back under the Threshold.");
+    setHint (compRel, "Release", "How fast bleed removal re-engages as the level falls — and the fade-out you hear when the gate slams shut, since the feed dies and the duck releases from wherever it was. This is the old gate Release, performed by the compressor.");
 
-    modeAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compMode),
-        [this] (float v) { applyMode (v > 0.5f); });
+    addAndMakeVisible (lookahead);
+    lookahead.attach (ap.getParameter (ParamIDs::lookahead));
+    setHint (lookahead, "Lookahead", "Decisions lead the audio by this much, so attacks are never clipped. This knob never changes the plugin's latency.");
+
+    setHint (*this, "History", "Live history. Green = the actual output escaping the null, bright trace = the fast level that fires the gate, blue = the smoothed detector, orange = the raw mic (Selectivity vetoes hits whose orange towers over the bright trace). Red dashes = gate Threshold (dimmer = its close level), gold dashes = Comp Threshold (faint gold = full-tail level). The strip along the bottom: green = escaping, gold = tail ringing.");
 
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
@@ -303,9 +289,9 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     traceToggle (trigTg, showTrig, "Trigger",
                  "The fast opening detector (bright trace) - the level that actually fires the gate.");
     traceToggle (smoothTg, showSmooth, "Smoothed",
-                 "The smoothed detector (blue) - Smoothing's averaged level; it closes the gate and is compared to the Threshold.");
+                 "The smoothed detector (blue) - Smoothing's averaged level; it closes the gate and is compared to the gate Threshold.");
     traceToggle (offTg, showOff, "Off-band",
-                 "Everything OUTSIDE the trigger filter's band (orange) - what Selectivity compares against.");
+                 "The raw, unfiltered mic level (orange) - everything the mic hears, before the trigger filter; what Selectivity compares against.");
 
     addAndMakeVisible (histFreeze);
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
@@ -314,60 +300,32 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
         [this] (float v)
         {
             const float a = v > 0.5f ? 0.45f : 1.0f;
-            lookahead.setAlpha (a);
-            hold.setAlpha (a);
-            release.setAlpha (a);
-            hystK.setAlpha (a);
+            compThreshK.setAlpha (a);
             ratioK.setAlpha (a);
             compAtk.setAlpha (a);
+            compRmsK.setAlpha (a);
             compRel.setAlpha (a);
+            lookahead.setAlpha (a);
         });
     dimAtt->sendInitialUpdate();
-    modeAtt->sendInitialUpdate();
 
     hist.reserve (kHist);
     startTimerHz (90);
 }
 
-void GateStage::applyMode (bool comp)
-{
-    compOn = comp;
-    header.setTitle (comp ? "COMPRESSOR" : "GATE");
-    hold.setVisible (! comp);
-    hystK.setVisible (! comp);
-    release.setVisible (! comp);
-    ratioK.setVisible (comp);
-    compAtk.setVisible (comp);
-    compRel.setVisible (comp);
-
-    trigTg.setVisible (! comp);
-    smoothTg.setText (comp ? "Input" : "Average");
-    if (comp)
-    {
-        setHint (smoothTg, "Input", "The smoothed detector level (blue) the compressor responds to - compared against the Threshold.");
-        setHint (*this, "History", "Live history. Green = the actual output escaping the null, blue = the smoothed input driving the compressor, orange = the raw mic. Red dashes = Threshold. The strip along the bottom shows activity: green = reduction engaged (hit passing), gold = tail ringing.");
-    }
-    else
-    {
-        setHint (smoothTg, "Average", "The smoothed input (blue) - Smoothing's averaged level; it closes the gate and is compared to the Threshold.");
-        setHint (*this, "History", "Live history. Green = the actual output, bright trace = the fast level that fires the gate, blue = averaged input, orange = the raw mic (Selectivity vetoes hits whose orange towers over the bright trace). Red dashes = Threshold, dimmer dashes = the close level. The strip along the bottom shows the gate: green = open, gold = tail.");
-    }
-    setHint (trigTg, "Input", "The fast input level (bright trace) - the level that actually fires the gate.");
-    setHint (offTg, "Dry", "The raw, unfiltered mic level (orange) - everything the mic hears, before the trigger filter.");
-    resized();
-    repaint();
-}
-
 void GateStage::timerCallback()
 {
-    state = TailCanvas::gateState (processor, open01, tail01);
+    // Lane feeds: green follows the duck depth (how hard events are
+    // escaping the null), gold follows the tail envelope.
+    const float open01 = juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f);
+    const float tail01 = juce::jlimit (0.0f, 1.0f,
+                                       std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f));
 
     if (! histFreeze.getToggleState())
     {
         hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
                           processor.getDryDb(), processor.getOutputPeakDb(),
-                          juce::jlimit (0.0f, 1.0f, -processor.getGainReductionDb() / 48.0f),
-                          open01, tail01, state, processor.getMidiForced() });
+                          open01, tail01, processor.getMidiForced() });
         if ((int) hist.size() > kHist)
             hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
     }
@@ -425,31 +383,34 @@ void GateStage::paint (juce::Graphics& g)
         g.setColour (pal->line.withAlpha (0.7f));
         g.drawHorizontalLine ((int) (lane.getY() - 1.0f), cv.getX() + 1.0f, cv.getRight() - 1.0f);
         auto yFor = [&] (float db) { return plot.getBottom() - juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f) * plot.getHeight(); };
-        // threshold dashes + the close level (threshold - hysteresis) beneath
-        if (auto* tp = processor.apvts.getParameter (ParamIDs::threshold))
+        auto realOf = [&] (const char* id) -> float
         {
-            const float thr = tp->convertFrom0to1 (tp->getValue());
+            auto* p = processor.apvts.getParameter (id);
+            return p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0f;
+        };
+        // Gate threshold (red) with its close level (threshold − hysteresis)
+        // beneath; comp threshold (gold) with the full-tail level
+        // (comp threshold + Tail range) above it.
+        {
+            const float thr = realOf (ParamIDs::threshold);
             const float dash[2] = { 5.0f, 4.0f };
-            if (auto* hp = processor.apvts.getParameter (ParamIDs::hysteresis); hp != nullptr && ! compOn)
+            const float dash2[2] = { 2.0f, 4.0f };
             {
-                const float cy2 = yFor (thr - hp->convertFrom0to1 (hp->getValue()));
+                const float cy2 = yFor (thr - realOf (ParamIDs::hysteresis));
                 g.setColour (pal->warn.withAlpha (0.45f));
-                const float dash2[2] = { 2.0f, 4.0f };
                 g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
             }
-            // comp mode: the Tail-range line — full tail engagement level
-            if (compOn)
-                if (auto* trp = processor.apvts.getParameter (ParamIDs::tailRange))
-                {
-                    const float tr = trp->convertFrom0to1 (trp->getValue());
-                    if (tr > 0.05f)
-                    {
-                        const float ry = yFor (thr + tr);
-                        g.setColour (pal->tail.withAlpha (0.55f));
-                        const float dashT[2] = { 2.0f, 4.0f };
-                        g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dashT, 2, 1.0f);
-                    }
-                }
+            const float compThr = realOf (ParamIDs::compThreshold);
+            const float tr = realOf (ParamIDs::tailRange);
+            if (tr > 0.05f)
+            {
+                const float ry = yFor (compThr + tr);
+                g.setColour (pal->tail.withAlpha (0.4f));
+                g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dash2, 2, 1.0f);
+            }
+            const float cy = yFor (compThr);
+            g.setColour (pal->tail.withAlpha (0.85f));
+            g.drawDashedLine ({ cv.getX(), cy, cv.getRight(), cy }, dash, 2, 1.2f);
             const float ty = yFor (thr);
             g.setColour (pal->warn);
             g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
@@ -472,27 +433,25 @@ void GateStage::paint (juce::Graphics& g)
         fill.closeSubPath();
         if (showSmooth)
         {
-            if (! compOn) { g.setColour (pal->accent.withAlpha (0.22f)); g.fillPath (fill); }
+            g.setColour (pal->accent.withAlpha (0.22f));
+            g.fillPath (fill);
             g.setColour (pal->accent);
-            g.strokePath (line, juce::PathStrokeType (compOn ? 1.1f : 1.4f));
+            g.strokePath (line, juce::PathStrokeType (1.4f));
         }
-        // raw mic level (Dry) — in gate mode also the Selectivity reference
+        // raw mic level (Dry) — also the Selectivity reference
         // (tune by eye: your drum lifts the bright trace above it)
         if (showOff)
         {
             g.setColour (pal->tail.withAlpha (0.6f));
             g.strokePath (offLine, juce::PathStrokeType (0.9f));
         }
-        // gate mode only: the fast opening detector — what fires the gate
-        if (showTrig && ! compOn)
+        // the fast opening detector — what fires the gate
+        if (showTrig)
         {
             g.setColour (pal->accent.interpolatedWith (pal->txt, 0.65f).withAlpha (0.85f));
             g.strokePath (fastLine, juce::PathStrokeType (0.9f));
         }
-        // comp mode: the OUTPUT layer in front — what escapes the null.
-        // Fill deepens with gain reduction and turns gold as the tail takes
-        // over (GR released, tail envelope still ringing).
-        // the actual output level (post-EQ) — both modes, in front
+        // the actual output level (post-EQ) — in front: what escapes the null
         if (showOut)
         {
             g.setColour (pal->open);
@@ -503,43 +462,6 @@ void GateStage::paint (juce::Graphics& g)
     g.setColour (pal->faint); g.setFont (font (10.5f));
     g.drawText ("detector history", canvasArea.getX() + sc (8), canvasArea.getY() + sc (4), sc (140), sc (12),
                 juce::Justification::centredLeft);
-
-    // ---- state box (gate mode only; comp mode gives the room to the chart) ----
-    if (compOn || stateArea.isEmpty())
-        return;
-    auto sb = stateArea.toFloat();
-    auto chip = sb.removeFromTop (scf (30.0f));
-    const juce::Colour chipBg = state == 2 ? pal->open : state == 1 ? pal->tail : pal->panel2;
-    g.setColour (chipBg); g.fillRoundedRectangle (chip, 4.0f);
-    if (state == 0) { g.setColour (pal->line); g.drawRoundedRectangle (chip, 4.0f, 1.0f); }
-    g.setColour (state == 0 ? pal->faint : pal->bg);
-    g.setFont (font (13.0f, true));
-    g.drawText (state == 2 ? "OPEN" : state == 1 ? "TAIL" : "CLOSED", chip.toNearestInt(), juce::Justification::centred);
-
-    sb.removeFromTop (scf (5.0f));
-    static const char* notes[3] = { "Bleed is being cancelled \xe2\x80\x94 the track is quiet.",
-                                    "Only your keep bands are ringing through.",
-                                    "Full drum passing through, untouched." };
-    g.setColour (pal->dim);
-    g.setFont (font (10.5f));
-    g.drawFittedText (juce::String::fromUTF8 (notes[state]), sb.removeFromTop (scf (28.0f)).toNearestInt(),
-                      juce::Justification::centredTop, 2);
-
-    auto barRow = [&] (float v, juce::Colour c, const char* l, const char* rlab)
-    {
-        sb.removeFromTop (scf (4.0f));
-        auto bar = sb.removeFromTop (scf (9.0f));
-        g.setColour (pal->panel2); g.fillRoundedRectangle (bar, 3.0f);
-        g.setColour (pal->line);   g.drawRoundedRectangle (bar, 3.0f, 1.0f);
-        g.setColour (c);
-        if (v > 0.01f) g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * v), 3.0f);
-        auto leg = sb.removeFromTop (scf (11.0f));
-        g.setColour (pal->faint); g.setFont (font (9.0f));
-        g.drawText (l, leg.toNearestInt(), juce::Justification::centredLeft);
-        g.drawText (rlab, leg.toNearestInt(), juce::Justification::centredRight);
-    };
-    barRow (open01, pal->open, "closed", "gate open");
-    barRow (tail01, pal->tail, "silent", "tail ringing");
 }
 
 void GateStage::resized()
@@ -548,33 +470,22 @@ void GateStage::resized()
     header.setBounds (r.removeFromTop (sc (20)));
     r.removeFromTop (sc (7));
 
-    auto knobs = r.removeFromLeft (sc (140));
+    // 2×3 knob grid: Comp Thresh · Ratio · Attack / Comp RMS · Release · Lookahead
+    auto knobs = r.removeFromLeft (sc (210));
     knobs.removeFromTop (sc (2));
     auto krow1 = knobs.removeFromTop (sc (84));
-    lookahead.setBounds (krow1.removeFromLeft (sc (70)));
-    const auto slot2 = krow1.removeFromLeft (sc (70));
-    hystK.setBounds (slot2);
-    ratioK.setBounds (slot2);
+    compThreshK.setBounds (krow1.removeFromLeft (sc (70)));
+    ratioK.setBounds (krow1.removeFromLeft (sc (70)));
+    compAtk.setBounds (krow1.removeFromLeft (sc (70)));
     auto krow2 = knobs;
-    const auto slot3 = krow2.removeFromLeft (sc (70));
-    hold.setBounds (slot3);
-    compAtk.setBounds (slot3);
-    const auto slot4 = krow2.removeFromLeft (sc (70));
-    release.setBounds (slot4);
-    compRel.setBounds (slot4);
+    compRmsK.setBounds (krow2.removeFromLeft (sc (70)));
+    compRel.setBounds (krow2.removeFromLeft (sc (70)));
+    lookahead.setBounds (krow2.removeFromLeft (sc (70)));
 
     r.removeFromLeft (sc (13));
-    if (compOn)
-        stateArea = {};                     // comp mode: the chart takes the room
-    else
-    {
-        stateArea = r.removeFromRight (sc (124));
-        r.removeFromRight (sc (8));
-    }
     auto ctop = r.removeFromTop (sc (18));              // trace toggles above the chart
     outTg.setBounds (ctop.removeFromLeft (sc (70)));
-    if (! compOn)
-        trigTg.setBounds (ctop.removeFromLeft (sc (62)));
+    trigTg.setBounds (ctop.removeFromLeft (sc (62)));
     smoothTg.setBounds (ctop.removeFromLeft (sc (78)));
     offTg.setBounds (ctop.removeFromLeft (sc (56)));
     auto scol = r.removeFromRight (sc (16));
@@ -725,15 +636,10 @@ TailStage::TailStage (MagicDrumDeBleedAudioProcessor& proc)
 
     addAndMakeVisible (tailRangeK);
     tailRangeK.attach (ap.getParameter (ParamIDs::tailRange));
-    setHint (tailRangeK, "Tail range", "Comp mode: how far past the Threshold a hit must peak for the tail to engage fully. Quieter events start their hold/fade from a proportional blend, so false triggers just over the line no longer ring the whole tail. 0 = always full.");
+    setHint (tailRangeK, "Tail range", "How far past the Comp Threshold a hit must peak for the tail to engage fully. Quieter events start their hold/fade from a proportional blend, so false triggers just over the line no longer ring the whole tail. 0 = always full.");
     addAndMakeVisible (tailBaseK);
     tailBaseK.attach (ap.getParameter (ParamIDs::tailBase));
-    setHint (tailBaseK, "Tail base", "Comp mode: the tail blend for a hit exactly AT the Threshold - the bottom of the ramp that reaches 100% at Tail range.");
-
-    // Tail range/base only act in Comp mode - dim them like a bypass in Gate.
-    compModeAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compMode),
-        [this] (float v) { compOn = v > 0.5f; updateDim(); });
-    compModeAtt->sendInitialUpdate();
+    setHint (tailBaseK, "Tail base", "The tail blend for a hit exactly AT the Comp Threshold - the bottom of the ramp that reaches 100% at Tail range.");
 
     addAndMakeVisible (tailMeter);
     setHint (tailMeter, "TAIL", "How much of the tail is currently ringing through.");
@@ -851,8 +757,8 @@ void TailStage::updateDim()
     // when the tail gate is off (they only time the gated tail).
     const float band = eqByp ? 0.45f : 1.0f;
     const float tail = (eqByp || ! tgOn) ? 0.45f : 1.0f;
-    tailRangeK.setAlpha ((eqByp || ! tgOn || ! compOn) ? 0.45f : 1.0f);
-    tailBaseK.setAlpha ((eqByp || ! tgOn || ! compOn) ? 0.45f : 1.0f);
+    tailRangeK.setAlpha (tail);
+    tailBaseK.setAlpha (tail);
     for (int b = 0; b < 7; ++b)
     {
         bandBtns[b].setAlpha (band);
@@ -971,7 +877,6 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
     : processor (proc),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); }),
-      gateMeter ([&proc] (float& o, float& t) { return TailCanvas::gateState (proc, o, t); }),
       grMeter ([&proc] { return proc.getGainReductionDb(); })
 {
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed. 100% = digital silence between hits. 0% = the plugin does nothing. This is the classic gate 'Range' control.");
@@ -985,18 +890,8 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
 
     setHint (outMeter, "OUT", "Plugin output level.");
     addAndMakeVisible (outMeter);
-    setHint (gateMeter, "GATE", juce::String::fromUTF8 ("Follows the gate state: green = open (drum passing), amber = tail ringing out and fading, empty = closed \xe2\x80\x94 bleed cancelled."));
-    addAndMakeVisible (gateMeter);
     setHint (grMeter, "GR", juce::String::fromUTF8 ("Compression on the cancelling copy, down to \xe2\x88\x92" "48 dB \xe2\x80\x94 depth means the hit is escaping the null. Empty = no reduction, bleed fully cancelled."));
-    addChildComponent (grMeter);
-    modeAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::compMode),
-        [this] (float v)
-        {
-            gateMeter.setVisible (v <= 0.5f);
-            grMeter.setVisible (v > 0.5f);
-            updateLatencyText();
-        });
-    modeAtt->sendInitialUpdate();
+    addAndMakeVisible (grMeter);
 
     static const char* names[3] = { "Output", "Removed bleed", "Trigger signal" };
     static const char* hints[3] = { "Normal plugin output.",
@@ -1028,16 +923,17 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
     monAtt->sendInitialUpdate();
 
     // Latency readout: base window, + the flam-recovery margin only while
-    // Selectivity is engaged in gate mode.
+    // Selectivity is engaged. Uses the attachment's value, not the raw
+    // atomic: listeners run newest-first, so on a change this callback
+    // fires BEFORE the APVTS raw-value updater and would read stale state.
     contrastAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::contrast),
-        [this] (float) { updateLatencyText(); });
-    updateLatencyText();
+        [this] (float v) { updateLatencyText (v); });
+    updateLatencyText (proc.apvts.getRawParameterValue (ParamIDs::contrast)->load());
 }
 
-void RightRail::updateLatencyText()
+void RightRail::updateLatencyText (float contrastDb)
 {
-    const bool comp = processor.apvts.getRawParameterValue (ParamIDs::compMode)->load() > 0.5f;
-    const bool sel = ! comp && processor.apvts.getRawParameterValue (ParamIDs::contrast)->load() < 23.75f;
+    const bool sel = contrastDb < 23.75f;
     latencyText = juce::String (MagicDrumDeBleedAudioProcessor::kMaxLookaheadMs
                                 + (sel ? MagicDrumDeBleedAudioProcessor::kEnvMarginMs : 0)) + " ms latency";
     repaint();
@@ -1089,9 +985,7 @@ void RightRail::resized()
     row.removeFromLeft (sc (8));
     outMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (sc (7));
-    const auto meterCell = row.removeFromLeft (mw);
-    gateMeter.setBounds (meterCell);
-    grMeter.setBounds (meterCell);
+    grMeter.setBounds (row.removeFromLeft (mw));
 }
 
 //==============================================================================

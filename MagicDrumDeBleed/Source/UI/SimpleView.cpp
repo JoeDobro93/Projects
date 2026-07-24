@@ -1,5 +1,4 @@
 #include "SimpleView.h"
-#include "TailCanvas.h"
 
 using namespace ui;
 
@@ -151,17 +150,14 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     : processor (proc),
       trigMeter ("TRIGGER", [&proc] { return proc.getDetectorRmsDb(); },
                  proc.apvts.getParameter (ParamIDs::threshold)),
-      gateMeter ([&proc] (float& o, float& t) { return TailCanvas::gateState (proc, o, t); }),
       grMeter ([&proc] { return proc.getGainReductionDb(); }),
       fader (proc.apvts.getParameter (ParamIDs::intensity)),
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); })
 {
     setHint (trigMeter, "TRIGGER", "Detector level after the trigger filter. Drag the red line to set the Threshold.");
     addAndMakeVisible (trigMeter);
-    setHint (gateMeter, "GATE", "Green = open (drum passing), amber = tail fading, empty = closed.");
-    addAndMakeVisible (gateMeter);
     setHint (grMeter, "GR", "How hard the hit is escaping the null (compression on the cancelling copy). Empty = bleed fully cancelled.");
-    addChildComponent (grMeter);
+    addAndMakeVisible (grMeter);
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed.");
     addAndMakeVisible (fader);
     amountVal.setJustificationType (juce::Justification::centred);
@@ -199,30 +195,13 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     midiAtt->sendInitialUpdate();
     addAndMakeVisible (midiTg);
 
-    setHint (modeSw, "Mode", "COMP = continuous high-ratio compression of the cancelling copy - smoother and level-tracking. GATE = binary open/close.");
-    modeSw.onChange = [this] (bool left) { modeAtt->setValueAsCompleteGesture (left ? 1.0f : 0.0f); };
-    modeAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::compMode),
-        [this] (float v)
-        {
-            compOn = v > 0.5f;
-            modeSw.setLeftActive (compOn, false);
-            trigMeter.setCaption (compOn ? "INPUT" : "TRIGGER");
-            setHint (trigMeter, compOn ? "INPUT" : "TRIGGER",
-                     compOn ? "Input level after the trigger filter - what the compressor responds to. Drag the red line to set the Threshold."
-                            : "Detector level after the trigger filter. Drag the red line to set the Threshold.");
-            gateMeter.setVisible (! compOn);
-            grMeter.setVisible (compOn);
-        });
-    modeAtt->sendInitialUpdate();
-    addAndMakeVisible (modeSw);
-
     static const char* presetNames[4] = { "Default", "Kick", "Snare", "Toms" };
     for (int i = 0; i < 4; ++i)
     {
         presetBtns[i] = std::make_unique<DrumButton> ((DrumButton::Kind) i, presetNames[i]);
         presetBtns[i]->setButtonText (presetNames[i]);
         setHint (*presetBtns[i], presetNames[i],
-                 "Load the " + juce::String (presetNames[i]) + " starting point. Threshold, Selectivity, Hysteresis, MIDI and the Gate/Comp mode are kept.");
+                 "Load the " + juce::String (presetNames[i]) + " starting point. Both Thresholds, Ratio, Selectivity, Hysteresis and MIDI are kept.");
         presetBtns[i]->onClick = [this, i]
         {
             for (auto& fp : presets::kFactoryPresets)
@@ -321,10 +300,9 @@ void SimpleView::resized()
     krow.removeFromLeft (kgap);
     auto c4 = krow.removeFromLeft (kw);
     tailFade.setBounds (c4.withTrimmedBottom (sc (28)));
-    modeSw.setBounds (c2.getX(), learnY, c3.getRight() - c2.getX(), sc (24));
     midiTg.setBounds (c4.getX(), learnY, kw, sc (24));
 
-    // meter row: TRIGGER · GATE · AMOUNT · OUT spread across the content
+    // meter row: TRIGGER · GR · AMOUNT · OUT spread across the content
     // width so its bounding box matches the knobs below
     const int mw = sc (46), fw = sc (62);
     const int mgap = (contentW - mw * 3 - fw) / 3;
@@ -332,9 +310,7 @@ void SimpleView::resized()
 
     trigMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (mgap);
-    const auto gmCell = row.removeFromLeft (mw);
-    gateMeter.setBounds (gmCell);
-    grMeter.setBounds (gmCell);
+    grMeter.setBounds (row.removeFromLeft (mw));
     row.removeFromLeft (mgap);
     auto fcol = row.removeFromLeft (fw);
     amountX = fcol.getX();

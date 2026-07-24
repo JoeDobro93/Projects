@@ -295,14 +295,14 @@ private:
 };
 
 /*  Apply a factory preset: reset everything except the per-mic calibration
-    (Threshold, Selectivity, Hysteresis, MIDI trigger — those depend on the
-    track, not the drum), then set the preset's values. Shared by the
-    PresetBrowser and the Simple view. */
+    (both Thresholds, Ratio, Selectivity, Hysteresis, MIDI trigger — those
+    depend on the track, not the drum), then set the preset's values.
+    Shared by the PresetBrowser and the Simple view. */
 inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
 {
-    static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::contrast,
-                                               ParamIDs::hysteresis, ParamIDs::midiTrigger,
-                                               ParamIDs::compMode, ParamIDs::compRatio };
+    static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::compThreshold,
+                                               ParamIDs::contrast, ParamIDs::hysteresis,
+                                               ParamIDs::midiTrigger, ParamIDs::compRatio };
     for (auto* p : proc.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (! preserved.contains (ranged->paramID))
@@ -312,7 +312,6 @@ inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const pres
     setRealValue (proc, ParamIDs::scQ,           pr.scQ);
     setRealValue (proc, ParamIDs::lookahead,     (float) pr.lookaheadMs);
     setRealValue (proc, ParamIDs::hold,          pr.holdMs);
-    setRealValue (proc, ParamIDs::release,       pr.releaseMs);
     setRealValue (proc, ParamIDs::notchOn (0),   pr.k1On ? 1.0f : 0.0f);
     setRealValue (proc, ParamIDs::notchFreq (0), pr.k1FreqHz);
     setRealValue (proc, ParamIDs::notchQ (0),    pr.k1Q);

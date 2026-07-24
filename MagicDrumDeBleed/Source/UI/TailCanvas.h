@@ -30,13 +30,6 @@ public:
     // frequency stays put — knobs still move it.
     void setFreqLock (bool b)         { freqLock = b; }
 
-    // Broadband average of |1 − amount·H| — the keepAudible() feed (spec §3).
-    static double keepAvg (MagicDrumDeBleedAudioProcessor& proc, double amount);
-
-    // Shared OPEN/TAIL/CLOSED state (0 closed, 1 tail, 2 open) — used by the
-    // Gate stage chip, the rail GATE meter and the Simple view.
-    static int gateState (MagicDrumDeBleedAudioProcessor& proc, float& open01, float& tail01);
-
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;

@@ -31,23 +31,24 @@
 
 namespace ParamIDs
 {
+    // Gate stage: the event detector. It decides WHEN the compressor's
+    // sidechain is live — it applies no gain of its own (hard close).
     inline constexpr const char* threshold    = "threshold";
     inline constexpr const char* lookahead    = "lookahead";
     inline constexpr const char* rmsWindow    = "rmsWindow";
     inline constexpr const char* hold         = "hold";
-    inline constexpr const char* release      = "release";
     inline constexpr const char* hysteresis   = "hysteresis";  // close this far below threshold (dB)
     inline constexpr const char* contrast     = "contrast";    // selectivity: max off-band excess (dB)
     inline constexpr const char* midiTrigger  = "midiTrigger"; // notes force the gate open
 
-    // Compressor mode: continuous over-threshold ducking of the parallel
-    // path instead of the binary gate. Its knobs are separate parameters so
-    // each mode remembers its own settings.
-    inline constexpr const char* compMode     = "compMode";
-    inline constexpr const char* compRatio    = "compRatio";   // choice: 4:1..100:1, -1:1, -2:1
+    // Compressor stage: the duck on the parallel copy, keyed by the GATED
+    // sidechain. Its own absolute threshold and RMS window; its release is
+    // the engine's only fade — the classic gate release, in audio domain.
+    inline constexpr const char* compThreshold = "compThreshold";
+    inline constexpr const char* compRatio    = "compRatio";   // choice: 4:1..100:1, -1:1, -2:1, Full
     inline constexpr const char* compAttack   = "compAttack";
     inline constexpr const char* compRelease  = "compRelease";
-    inline constexpr const char* compRmsWindow = "compRmsWindow";   // comp mode's own Smoothing
+    inline constexpr const char* compRmsWindow = "compRmsWindow";
 
     inline constexpr const char* scEnable     = "scEnable";
     inline constexpr const char* scFreq       = "scFreq";
@@ -90,9 +91,8 @@ public:
     // Total plugin delay never moves with the Lookahead knob: the knob
     // repositions decisions inside a fixed window and the envelope ring
     // absorbs the remainder. Base window = max Lookahead; engaging
-    // Selectivity in gate mode adds the flam-recovery margin (the ONLY
-    // thing that changes latency, and only when crossing that boundary).
-    // Comp mode never carries the margin.
+    // Selectivity adds the flam-recovery margin (the ONLY thing that
+    // changes latency, and only when crossing that boundary).
     static constexpr int kMaxLookaheadMs = 10;
     static constexpr int kEnvMarginMs    = 10;
 
@@ -224,14 +224,14 @@ private:
     mdd::BandParams soloCachedParams;
 
     // Cached raw parameter pointers
-    std::atomic<float> *pThreshold, *pLookahead, *pRmsWindow, *pHold, *pRelease;
+    std::atomic<float> *pThreshold, *pLookahead, *pRmsWindow, *pHold;
     std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pLearnCeiling;
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
     std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease, *pTailRange, *pTailBase;
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
-    std::atomic<float> *pCompMode, *pCompRatio, *pCompAttack, *pCompRelease, *pCompRmsWindow;
+    std::atomic<float> *pCompThreshold, *pCompRatio, *pCompAttack, *pCompRelease, *pCompRmsWindow;
     void buildForceMask (const juce::MidiBuffer& midi, int numSamples);
     std::vector<unsigned char> forceMask;
     bool heldKeys[128] = {};                 // set, not a counter: self-heals lost note-offs

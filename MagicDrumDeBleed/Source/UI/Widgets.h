@@ -118,24 +118,6 @@ private:
 };
 
 //==============================================================================
-/*  Two-position mode switch: a pill holding both labels; the sliding thumb
-    covers — and names — the ACTIVE side. Optional small caption above. */
-class TextSwitch : public juce::Component
-{
-public:
-    TextSwitch (juce::String leftLabel, juce::String rightLabel);
-    std::function<void (bool leftActive)> onChange;
-    void setCaption (juce::String c)           { caption = std::move (c); repaint(); }
-    void setLeftActive (bool left, bool notify);
-    bool isLeftActive() const                  { return leftActive; }
-    void paint (juce::Graphics& g) override;
-    void mouseUp (const juce::MouseEvent&) override;
-private:
-    juce::String lLab, rLab, caption;
-    bool leftActive = true;
-};
-
-//==============================================================================
 /*  Tiny pill switch: dark knob left = off, highlighted knob right = on. */
 class MiniSwitch : public juce::Component
 {
@@ -209,26 +191,9 @@ private:
 };
 
 //==============================================================================
-/*  GATE meter: mirrors the gate state chip. OPEN = green fill, TAIL = tail
-    colour at the fading tail level, CLOSED = empty. `get` fills state
-    (0 closed, 1 tail, 2 open), open01 and tail01. */
-class GateMeter : public juce::Component, private juce::Timer
-{
-public:
-    using Getter = std::function<int (float& open01, float& tail01)>;
-    explicit GateMeter (Getter get);
-    void paint (juce::Graphics& g) override;
-private:
-    void timerCallback() override;
-    Getter get;
-    int state = 0;
-    float open01 = 0.0f, tail01 = 0.0f;
-};
-
-//==============================================================================
-/*  GR meter (compressor mode): how hard the cancelling copy is compressed,
-    0 at the top down to −48 dB (anything deeper is visually clipped). Green
-    fill from the top — depth here means the hit is escaping the null. */
+/*  GR meter: how hard the cancelling copy is compressed, 0 at the top down
+    to −48 dB (anything deeper is visually clipped). Green fill from the
+    top — depth here means the hit is escaping the null. */
 class GrMeter : public juce::Component, private juce::Timer
 {
 public:

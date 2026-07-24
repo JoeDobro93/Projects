@@ -1,5 +1,41 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.3.0 — UNIFIED ENGINE (2026-07):** the Gate/Comp mode switch is gone;
+> one engine does everything. Signal flow: the **gate** (Threshold, Smoothing,
+> Hysteresis, Hold, Selectivity, MIDI — hard close, no release, no gain of its
+> own) decides WHEN the sidechain is live; the gated filtered detector feeds
+> the **compressor's own windowed RMS** (`compRmsWindow`), and the duck =
+> −grPerOverDb·(compRMS − **compThreshold**) with the comp's attack/release —
+> the engine's ONLY gain smoothing. When the gate slams shut the feed dies,
+> the RMS drains within its window and the duck fades at the comp Release
+> rate (the old gate Release role, in the audio domain). Ratio gains a 7th
+> choice **"Full"** (`kFullRatioSlope 1e6` = binary −96 duck — the old gate
+> law). New param `compThreshold` (−60..0, default −52, in the preset
+> PRESERVED set); **deleted params: `release` (gate) and `compMode`** (old
+> saved states still load; unknown IDs are ignored). Legacy equivalences:
+> old gate = Full ratio + compThreshold at minimum (duck rides the gate;
+> note compT = gateT instead truncates the hysteresis ring-out at the
+> threshold); old comp = gate threshold at minimum. Tail keys on the COMP
+> threshold (range/base blend unchanged, never dims); MIDI opens the gate
+> only — the comp still tracks level, so ghosts escape by how far they rise
+> past compT and MIDI in silence ducks nothing. Latency: margin =
+> Selectivity engaged (contrast < 23.75), regardless of anything else.
+> `WindowedRms` extracted (gate + comp detectors share it). UI: TRIGGER =
+> complete gate (Threshold/Smoothing/Hysteresis/Hold @64px cells + MIDI
+> below, filter block right-anchored); stage 2 = **COMPRESSOR** (2×3 grid
+> Comp Thresh/Ratio/Attack // Comp RMS/Release/Lookahead, state box gone,
+> history absorbs the width; red gate-T + dimmer close-level dashes, gold
+> comp-T + faint full-tail dashes, all four traces always on); GR meter
+> permanent in rail + Simple (GateMeter, TextSwitch, TailCanvas::gateState/
+> keepAvg deleted); AdvancedView kMinW 940→**1000**. Presets: releaseMs
+> field dropped. Fixed latent bug: parameter listeners run newest-first,
+> so an attachment callback that re-reads `getRawParameterValue` sees the
+> PRE-change value (the APVTS raw updater registers first = runs last) —
+> the rail latency text now uses the callback's own value. Tests: legacy-gate emulation = Full + compT −60 + W 1 ms;
+> new coverage: Full law, under-gateT/over-compT cancels (the signature),
+> comp-Release fade window, MIDI ghost-repair (+MIDI passes / −MIDI
+> cancels / silence ducks nothing).
+
 > **v2.3 UI/QoL round (2026-07):** threshold default −40. **Ring level is now
 > 0–20 units** (param `notch*Gain` range 0..20, default 9.8; internal cut =
 > `mdd::ringToGainDb(u) = −2.4·u` — converted at every BandParams build site,

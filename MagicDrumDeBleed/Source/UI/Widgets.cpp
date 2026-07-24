@@ -454,51 +454,6 @@ void LevelMeter::mouseUp (const juce::MouseEvent&)
 }
 
 //==============================================================================
-GateMeter::GateMeter (Getter g) : get (std::move (g))
-{
-    startTimerHz (30);
-}
-
-void GateMeter::timerCallback()
-{
-    state = get (open01, tail01);
-    repaint();
-}
-
-void GateMeter::paint (juce::Graphics& g)
-{
-    auto r = getLocalBounds().toFloat();
-    g.setFont (font (9.0f, true));
-    g.setColour (pal->faint);
-    auto cr = r.removeFromTop (scf (13.0f));
-    g.drawSingleLineText ("GATE", (int) cr.getCentreX(), (int) cr.getBottom() - sc (3),
-                          juce::Justification::horizontallyCentred);
-
-    auto vr = r.removeFromBottom (scf (13.0f));
-    g.setFont (font (9.5f));
-    g.setColour (state == 2 ? pal->open : state == 1 ? pal->tail : pal->faint);
-    g.drawText (state == 2 ? "OPEN" : state == 1 ? "TAIL" : juce::String::fromUTF8 ("\xe2\x80\x94"),
-                vr, juce::Justification::centred);
-
-    auto bar = r;
-    g.setColour (pal->panel2); g.fillRoundedRectangle (bar, 3.0f);
-    g.setColour (pal->line);   g.drawRoundedRectangle (bar, 3.0f, 1.0f);
-    for (int t = 1; t < 5; ++t)
-        g.drawHorizontalLine ((int) (bar.getY() + bar.getHeight() * (float) t / 5.0f),
-                              bar.getX() + 1, bar.getRight() - 1);
-
-    const float v = state == 2 ? open01 : state == 1 ? tail01 : 0.0f;
-    const float h = juce::jlimit (0.0f, 1.0f, v) * bar.getHeight();
-    if (h > 1.0f)
-    {
-        const auto c = state == 2 ? pal->open : pal->tail;
-        g.setGradientFill (juce::ColourGradient (c.darker (0.4f), 0, bar.getBottom(),
-                                                 c, 0, bar.getY(), false));
-        g.fillRect (juce::Rectangle<float> (bar.getX() + 1, bar.getBottom() - h, bar.getWidth() - 2, h - 1));
-    }
-}
-
-//==============================================================================
 GrMeter::GrMeter (std::function<float()> g) : getDb (std::move (g))
 {
     startTimerHz (30);
@@ -803,60 +758,6 @@ void LightToggle::mouseUp (const juce::MouseEvent& e)
 {
     if (getLocalBounds().contains (e.getPosition()) && onClick)
         onClick();
-}
-
-//==============================================================================
-TextSwitch::TextSwitch (juce::String l, juce::String r) : lLab (std::move (l)), rLab (std::move (r))
-{
-    setRepaintsOnMouseActivity (true);
-}
-
-void TextSwitch::setLeftActive (bool left, bool notify)
-{
-    if (leftActive != left)
-    {
-        leftActive = left;
-        repaint();
-        if (notify && onChange)
-            onChange (leftActive);
-    }
-}
-
-void TextSwitch::paint (juce::Graphics& g)
-{
-    auto r = getLocalBounds().toFloat();
-    if (caption.isNotEmpty() && r.getHeight() >= scf (26.0f))
-    {
-        g.setColour (pal->faint);
-        g.setFont (font (8.0f, true));
-        g.drawText (caption, r.removeFromTop (scf (10.0f)), juce::Justification::centred);
-    }
-    auto pill = r.withSizeKeepingCentre (r.getWidth(), juce::jmin (r.getHeight(), scf (20.0f)));
-    const float rad = pill.getHeight() * 0.5f;
-    g.setColour (pal->panel2);
-    g.fillRoundedRectangle (pill, rad);
-    g.setColour (pal->line);
-    g.drawRoundedRectangle (pill, rad, 1.0f);
-
-    auto thumb = pill.reduced (scf (1.5f));
-    thumb = leftActive ? thumb.removeFromLeft (thumb.getWidth() * 0.5f)
-                       : thumb.removeFromRight (thumb.getWidth() * 0.5f);
-    g.setColour (leftActive ? pal->open : pal->accent);
-    g.fillRoundedRectangle (thumb, thumb.getHeight() * 0.5f);
-
-    g.setFont (font (9.5f, true));
-    const auto lHalf = pill.withTrimmedRight (pill.getWidth() * 0.5f);
-    const auto rHalf = pill.withTrimmedLeft (pill.getWidth() * 0.5f);
-    g.setColour (leftActive ? pal->bg : pal->dim);
-    g.drawText (lLab, lHalf.toNearestInt(), juce::Justification::centred);
-    g.setColour (leftActive ? pal->dim : pal->bg);
-    g.drawText (rLab, rHalf.toNearestInt(), juce::Justification::centred);
-}
-
-void TextSwitch::mouseUp (const juce::MouseEvent& e)
-{
-    if (getLocalBounds().contains (e.getPosition()))
-        setLeftActive (! leftActive, true);
 }
 
 //==============================================================================
