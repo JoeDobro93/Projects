@@ -219,6 +219,23 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     setHint (themeBtn, "Theme", "Switch between the dark and light theme.");
     themeBtn.onClick = [cb = std::move (onThemeToggle)] { if (cb) cb(); };
     addAndMakeVisible (themeBtn);
+
+    setHint (bypassBtn, "Bypass", "Bypass the whole plugin, click-free and latency-preserving (like Amount at 0), so A/B comparisons stay time-aligned.");
+    bypassBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::globalBypass);
+        bypassAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    bypassAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::globalBypass),
+        [this] (float v)
+        {
+            const bool on = v > 0.5f;
+            bypassBtn.setColour (juce::TextButton::buttonColourId,  on ? pal->btnOn : pal->btn);
+            bypassBtn.setColour (juce::TextButton::textColourOffId, on ? pal->btnOnText : pal->dim);
+            bypassBtn.repaint();
+        });
+    bypassAtt->sendInitialUpdate();
+    addAndMakeVisible (bypassBtn);
 }
 
 void SimpleView::paint (juce::Graphics& g)
@@ -246,6 +263,8 @@ void SimpleView::resized()
     auto bar = full.removeFromTop (sc (46));
     bar.reduce (sc (12), sc (8));
     themeBtn.setBounds (bar.removeFromRight (sc (56)));
+    bar.removeFromRight (sc (6));
+    bypassBtn.setBounds (bar.removeFromRight (sc (48)));
     auto r = full.reduced (sc (12));
     r.removeFromTop (sc (2));
 

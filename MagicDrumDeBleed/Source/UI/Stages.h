@@ -53,14 +53,24 @@ private:
 };
 
 //==============================================================================
-class GateStage : public juce::Component, private juce::Timer
+class GateStage : public juce::Component, private juce::Timer,
+                  private juce::AudioProcessorParameter::Listener
 {
 public:
     explicit GateStage (MagicDrumDeBleedAudioProcessor& proc);
+    ~GateStage() override;
     void paint (juce::Graphics& g) override;
     void resized() override;
 private:
     void timerCallback() override;
+
+    // Auto-follow for the GATE/COMP line switch: a user gesture on any of
+    // the four threshold/range knobs flips the history to that stage's
+    // lines. Hosts never send gestures for automation, so only real
+    // touches switch the view.
+    void parameterValueChanged (int, float) override {}
+    void parameterGestureChanged (int parameterIndex, bool gestureIsStarting) override;
+    void setLinesComp (bool comp);
 
     MagicDrumDeBleedAudioProcessor& processor;
     StageHeader header { 2, "COMPRESSOR", 1 };
@@ -68,16 +78,15 @@ private:
              compAtk { "Attack", ui::Knob::openClr }, compRmsK { "RMS", ui::Knob::openClr },
              compRel { "Release", ui::Knob::openClr }, lookahead { "Lookahead", ui::Knob::openClr };
     ui::MiniSlider speedSlider { 0.5f, true };          // history scroll speed
-    // Legend chips — LED = the line's colour, click to hide that line, state
-    // persisted in the plugin state. The audio traces sit in a row overlaid
-    // on the canvas; the dashed-line chips stack to the canvas's left
-    // (thresholds, plus "Ranges" = close level + full-tail level).
+    // Trace legend chips (top-left overlay; LED = trace colour, click to
+    // hide, persisted) + the GATE/COMP dashed-line switch (top-right).
     ui::LightToggle outTg { "Output", ui::Knob::openClr }, trigTg { "Trigger" },
-                    smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr },
-                    gateLnTg { "Gate thr" }, compLnTg { "Comp thr" }, rangesTg { "Ranges" };
+                    smoothTg { "Average" }, offTg { "Dry", ui::Knob::tailClr };
+    ui::TextSwitch lineSw { "GATE", "COMP" };
     ui::SnowButton histFreeze;
-    bool showOut = false, showTrig = true, showSmooth = false, showOff = false,
-         showGateLn = true, showCompLn = true, showRanges = false;
+    bool showOut = false, showTrig = true, showSmooth = false, showOff = false;
+    bool linesComp = false;                             // which line pair shows
+    juce::RangedAudioParameter* lineParams[4] = {};     // thr, hyst, compThr, tailRange
     struct Sample { float det, fast, off, out, o01, t01; };
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
@@ -143,12 +152,13 @@ public:
     void resized() override;
 private:
     MagicDrumDeBleedAudioProcessor& processor;
+    juce::TextButton bypassBtn { "Bypass" };            // global, latency-preserving
     ui::AmountFader fader;
     juce::Label amountVal;
     ui::LevelMeter outMeter;
     ui::GrMeter grMeter;                                // duck depth = escape
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
-    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, contrastAtt;
+    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, contrastAtt, bypassAtt;
     void updateLatencyText (float contrastDb);
     juce::String latencyText;
     int latencyY = 0;

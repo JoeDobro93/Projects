@@ -761,6 +761,56 @@ void LightToggle::mouseUp (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+TextSwitch::TextSwitch (juce::String l, juce::String r) : lLab (std::move (l)), rLab (std::move (r))
+{
+    setRepaintsOnMouseActivity (true);
+}
+
+void TextSwitch::setLeftActive (bool left, bool notify)
+{
+    if (leftActive != left)
+    {
+        leftActive = left;
+        repaint();
+        if (notify && onChange)
+            onChange (leftActive);
+    }
+}
+
+void TextSwitch::paint (juce::Graphics& g)
+{
+    auto pill = getLocalBounds().toFloat();
+    pill = pill.withSizeKeepingCentre (pill.getWidth(), juce::jmin (pill.getHeight(), scf (20.0f)));
+    const float rad = pill.getHeight() * 0.5f;
+    g.setColour (pal->panel2);
+    g.fillRoundedRectangle (pill, rad);
+    g.setColour (pal->line);
+    g.drawRoundedRectangle (pill, rad, 1.0f);
+
+    auto thumb = pill.reduced (scf (1.5f));
+    thumb = leftActive ? thumb.removeFromLeft (thumb.getWidth() * 0.5f)
+                       : thumb.removeFromRight (thumb.getWidth() * 0.5f);
+    const auto lc = lClr.isTransparent() ? pal->open : lClr;
+    const auto rc = rClr.isTransparent() ? pal->accent : rClr;
+    g.setColour (leftActive ? lc : rc);
+    g.fillRoundedRectangle (thumb, thumb.getHeight() * 0.5f);
+
+    g.setFont (font (9.5f, true));
+    const auto lHalf = pill.withTrimmedRight (pill.getWidth() * 0.5f);
+    const auto rHalf = pill.withTrimmedLeft (pill.getWidth() * 0.5f);
+    g.setColour (leftActive ? pal->bg : pal->dim);
+    g.drawText (lLab, lHalf.toNearestInt(), juce::Justification::centred);
+    g.setColour (leftActive ? pal->dim : pal->bg);
+    g.drawText (rLab, rHalf.toNearestInt(), juce::Justification::centred);
+}
+
+void TextSwitch::mouseUp (const juce::MouseEvent& e)
+{
+    if (getLocalBounds().contains (e.getPosition()))
+        setLeftActive (! leftActive, true);
+}
+
+//==============================================================================
 MiniSwitch::MiniSwitch (juce::String l) : label (std::move (l)) {}
 
 void MiniSwitch::setState (bool on, bool notify)

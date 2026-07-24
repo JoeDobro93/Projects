@@ -120,6 +120,29 @@ private:
 };
 
 //==============================================================================
+/*  Two-position switch: a pill holding both labels; the sliding thumb
+    covers — and names — the ACTIVE side. Thumb colours are settable per
+    side (the history line switch uses warn/gold to match its lines). */
+class TextSwitch : public juce::Component
+{
+public:
+    TextSwitch (juce::String leftLabel, juce::String rightLabel);
+    std::function<void (bool leftActive)> onChange;
+    void setThumbColours (juce::Colour left, juce::Colour right)
+    {
+        lClr = left; rClr = right; repaint();
+    }
+    void setLeftActive (bool left, bool notify);
+    bool isLeftActive() const                  { return leftActive; }
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent&) override;
+private:
+    juce::String lLab, rLab;
+    juce::Colour lClr, rClr;                   // transparent = open/accent defaults
+    bool leftActive = true;
+};
+
+//==============================================================================
 /*  Tiny pill switch: dark knob left = off, highlighted knob right = on. */
 class MiniSwitch : public juce::Component
 {

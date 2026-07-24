@@ -203,6 +203,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MagicDrumDeBleedAudioProcess
                     juce::StringArray { "Normal", "Sidechain", "Processing", "Delta" }, 0));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::compBypass, 1 }, "Gate Bypass", false));
     p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::eqBypass, 1 }, "EQ Bypass", false));
+    p.push_back (std::make_unique<AudioParameterBool>   (ParameterID { ParamIDs::globalBypass, 1 }, "Bypass", false));
 
     return { p.begin(), p.end() };
 }
@@ -262,6 +263,7 @@ MagicDrumDeBleedAudioProcessor::MagicDrumDeBleedAudioProcessor()
     pMonitorMode = raw (ParamIDs::monitorMode);
     pCompBypass  = raw (ParamIDs::compBypass);
     pEqBypass    = raw (ParamIDs::eqBypass);
+    pGlobalBypass = raw (ParamIDs::globalBypass);
 
     spectrumFifoBuffer.resize (kSpectrumFifoSize, 0.0f);
 
@@ -454,8 +456,12 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
         eq.setBandParameters (mdd::EQProcessor::kFirstNotch + i, nb);
     }
 
-    // ---- Output / monitoring ----
-    intensitySmoothed.setTargetValue (juce::jlimit (0.0, 1.0, (double) pIntensity->load() * 0.01));
+    // ---- Output / monitoring. Global bypass = Amount forced to 0 through
+    // the same smoother (click-free), with the engine and latency running —
+    // the output becomes the time-aligned dry signal. ----
+    intensitySmoothed.setTargetValue (pGlobalBypass->load() > 0.5f
+                                          ? 0.0
+                                          : juce::jlimit (0.0, 1.0, (double) pIntensity->load() * 0.01));
     monitorModeCached = (int) pMonitorMode->load();
     compBypassCached  = pCompBypass->load() > 0.5f;
     eqBypassCached    = pEqBypass->load() > 0.5f;

@@ -1,5 +1,29 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.5.0 — GLOBAL BYPASS + GATE/COMP LINE SWITCH (2026-07):** new
+> `globalBypass` bool param ("Bypass"): whole-plugin bypass that keeps the
+> engine AND latency running — implemented as Amount forced to 0 through
+> the existing intensity smoother (click-free, time-aligned A/B; GR meter
+> keeps tracking). Buttons: RightRail top + Simple toolbar (48px, fits at
+> kMinW 330 beside the logo). History rework: the v1.4.1 left chip column
+> is gone (canvas back to full width) — the three dashed-line chips are
+> replaced by a **GATE/COMP TextSwitch** overlaid top-right (TextSwitch
+> restored in Widgets, now with settable thumb colours = warn/gold): GATE
+> shows gate Threshold + close level, COMP shows comp Threshold +
+> full-tail level, persisted as state prop `histLinesComp` (old
+> histGateLn/histCompLn/histRanges props are stale/ignored). **Auto-follow**:
+> GateStage is an AudioProcessorParameter::Listener on threshold/
+> hysteresis/compThreshold/tailRange — a parameterGestureChanged START
+> (only plugin-UI gestures fire these; host automation and preset loads
+> never do — applyFactoryPreset's reset loop uses plain
+> setValueNotifyingHost) flips the switch to that stage via
+> callAsync+SafePointer, so the touched knob's line is always the one on
+> screen. Audio-trace chips moved to a top-LEFT overlay row. Average
+> trace: new palette colour `avg` (0xff9b7de8 violet), thin stroke, the
+> blue area fill is gone. Tests: 64 (3 new: bypass passes bleed untouched
+> at 480 latency, engine still tracks GR while bypassed, cancellation
+> resumes after).
+
 > **v1.4.1 — LEGEND POLISH + GATE-ONLY BYPASS (2026-07):** legend chip
 > states persist in the plugin state (props histOut/histTrig/histAvg/
 > histDry/histGateLn/histCompLn/histRanges; defaults = Trigger + both

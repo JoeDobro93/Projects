@@ -33,8 +33,8 @@ private:
     ui::LightToggle midiTg { "MIDI" };
     class DrumButton;
     std::unique_ptr<juce::Button> presetBtns[4];
-    juce::TextButton advancedBtn { "Advanced View" }, themeBtn;
-    std::unique_ptr<juce::ParameterAttachment> amtAtt, midiAtt;
+    juce::TextButton advancedBtn { "Advanced View" }, themeBtn, bypassBtn { "Bypass" };
+    std::unique_ptr<juce::ParameterAttachment> amtAtt, midiAtt, bypassAtt;
     int amountX = 0, amountY = 0;
     juce::Rectangle<int> divider;
 

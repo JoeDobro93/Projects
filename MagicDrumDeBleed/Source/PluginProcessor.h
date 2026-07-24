@@ -83,6 +83,10 @@ namespace ParamIDs
     inline constexpr const char* monitorMode  = "monitorMode";
     inline constexpr const char* compBypass   = "compBypass";   // GATE bypass (ID kept for state compat)
     inline constexpr const char* eqBypass     = "eqBypass";
+    // Whole-plugin bypass that keeps the engine AND the latency running
+    // (smooth A/B): internally Amount is forced to 0, so the output is the
+    // time-aligned dry signal.
+    inline constexpr const char* globalBypass = "globalBypass";
 }
 
 class MagicDrumDeBleedAudioProcessor : public juce::AudioProcessor,
@@ -257,7 +261,7 @@ private:
     std::atomic<float> *pScEnable, *pScFreq, *pScQ, *pScType, *pScSlope, *pScExternal, *pLearnCeiling;
     std::atomic<float> *pHpfOn, *pHpfFreq, *pHpfSlope, *pLpfOn, *pLpfFreq, *pLpfSlope;
     std::atomic<float> *pNotchOn[5], *pNotchFreq[5], *pNotchQ[5], *pNotchGain[5], *pNotchShape[5];
-    std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass;
+    std::atomic<float> *pIntensity, *pMonitorMode, *pCompBypass, *pEqBypass, *pGlobalBypass;
     std::atomic<float> *pEqGateOn, *pEqGateHold, *pEqGateRelease, *pTailRange, *pTailBase;
     std::atomic<float> *pHysteresis, *pContrast, *pMidiTrigger;
     std::atomic<float> *pCompThreshold, *pCompRatio, *pCompAttack, *pCompRelease, *pCompRmsWindow;

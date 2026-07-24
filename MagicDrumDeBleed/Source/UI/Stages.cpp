@@ -286,7 +286,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     lookahead.attach (ap.getParameter (ParamIDs::lookahead));
     setHint (lookahead, "Lookahead", "Decisions lead the audio by this much, so attacks are never clipped. This knob never changes the plugin's latency.");
 
-    setHint (*this, "History", "Live history of the detector and output. The legend chips name every line - click one to hide its line. The strip along the bottom: green = escaping, gold = tail ringing.");
+    setHint (*this, "History", "Live history of the detector and output. The legend chips (top left) name the traces - click one to hide it. The GATE/COMP switch (top right) picks which stage's dashed lines show, and follows whichever threshold or range knob you touch. The strip along the bottom: green = escaping, gold = tail ringing.");
 
     addAndMakeVisible (speedSlider);
     setHint (speedSlider, "History speed", "How fast the detector history scrolls. Double-click resets.");
@@ -319,25 +319,70 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     traceToggle (trigTg, showTrig, "histTrig", true, "Trigger",
                  "The fast opening detector (bright) - the sidechain level that actually fires the gate.");
     traceToggle (smoothTg, showSmooth, "histAvg", false, "Average",
-                 "The smoothed detector (blue) - Smoothing's averaged sidechain level; it closes the gate and is compared to the gate Threshold.");
+                 "The smoothed detector (purple) - Smoothing's averaged sidechain level; it closes the gate and is compared to the gate Threshold.");
     traceToggle (offTg, showOff, "histDry", false, "Dry",
                  "The un-processed input level (orange) - what you would hear with the plugin bypassed.");
-    traceToggle (gateLnTg, showGateLn, "histGateLn", true, "Gate thr",
-                 "The gate Threshold line (red dashes).");
-    traceToggle (compLnTg, showCompLn, "histCompLn", true, "Comp thr",
-                 "The compressor Threshold line (gold dashes).");
-    traceToggle (rangesTg, showRanges, "histRanges", false, "Ranges",
-                 "The two zone edges: the gate's close level (dim red, Threshold minus Hysteresis) and the full-tail level (dim gold, comp Threshold plus Tail range).");
     trigTg.setLedColour (pal->accent.interpolatedWith (pal->txt, 0.65f));
-    gateLnTg.setLedColour (pal->warn);
-    compLnTg.setLedColour (pal->gold);
-    rangesTg.setLedColour (pal->warn.interpolatedWith (pal->gold, 0.5f).withAlpha (0.8f));
+    smoothTg.setLedColour (pal->avg);
+
+    // GATE/COMP line switch: one dashed-line pair at a time — gate
+    // Threshold + close level, or comp Threshold + full-tail level. It
+    // follows whichever of those knobs the user touches.
+    linesComp = (bool) processor.apvts.state.getProperty ("histLinesComp", false);
+    lineSw.setThumbColours (pal->warn, pal->gold);
+    lineSw.setLeftActive (! linesComp, false);
+    setHint (lineSw, "Threshold lines", "Which stage's dashed lines the history shows: GATE = gate Threshold (red) + its close level (Threshold minus Hysteresis). COMP = comp Threshold (gold) + the full-tail level (comp Threshold plus Tail range). Follows whichever of those four knobs you touch.");
+    lineSw.onChange = [this] (bool left) { setLinesComp (! left); };
+    addAndMakeVisible (lineSw);
+
+    lineParams[0] = ap.getParameter (ParamIDs::threshold);
+    lineParams[1] = ap.getParameter (ParamIDs::hysteresis);
+    lineParams[2] = ap.getParameter (ParamIDs::compThreshold);
+    lineParams[3] = ap.getParameter (ParamIDs::tailRange);
+    for (auto* p : lineParams)
+        if (p != nullptr)
+            p->addListener (this);
 
     addAndMakeVisible (histFreeze);
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
 
     hist.reserve (kHist);
     startTimerHz (90);
+}
+
+GateStage::~GateStage()
+{
+    for (auto* p : lineParams)
+        if (p != nullptr)
+            p->removeListener (this);
+}
+
+void GateStage::parameterGestureChanged (int parameterIndex, bool gestureIsStarting)
+{
+    if (! gestureIsStarting)
+        return;
+    for (int i = 0; i < 4; ++i)
+        if (lineParams[i] != nullptr && lineParams[i]->getParameterIndex() == parameterIndex)
+        {
+            const bool comp = i >= 2;
+            juce::Component::SafePointer<GateStage> safe (this);
+            juce::MessageManager::callAsync ([safe, comp]
+            {
+                if (safe != nullptr)
+                    safe->setLinesComp (comp);
+            });
+            return;
+        }
+}
+
+void GateStage::setLinesComp (bool comp)
+{
+    if (linesComp == comp)
+        return;
+    linesComp = comp;
+    lineSw.setLeftActive (! comp, false);
+    processor.apvts.state.setProperty ("histLinesComp", comp, nullptr);
+    repaint();
 }
 
 void GateStage::timerCallback()
@@ -415,45 +460,41 @@ void GateStage::paint (juce::Graphics& g)
             auto* p = processor.apvts.getParameter (id);
             return p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0f;
         };
-        // Threshold lines (gate red / comp gold); "Ranges" adds their zone
-        // edges — the close level (threshold − hysteresis) and the full-tail
-        // level (comp threshold + Tail range).
+        // One dashed-line pair at a time (the GATE/COMP switch): gate
+        // Threshold + close level, or comp Threshold + full-tail level.
         {
             const float dash[2] = { 5.0f, 4.0f };
             const float dash2[2] = { 2.0f, 4.0f };
-            if (showRanges)
+            if (linesComp)
             {
+                const float compThr = realOf (ParamIDs::compThreshold);
                 const float tr = realOf (ParamIDs::tailRange);
                 if (tr > 0.05f)
                 {
-                    const float ry = yFor (realOf (ParamIDs::compThreshold) + tr);
+                    const float ry = yFor (compThr + tr);
                     g.setColour (pal->gold.withAlpha (0.4f));
                     g.drawDashedLine ({ cv.getX(), ry, cv.getRight(), ry }, dash2, 2, 1.0f);
                 }
-                const float cy2 = yFor (realOf (ParamIDs::threshold) - realOf (ParamIDs::hysteresis));
-                g.setColour (pal->warn.withAlpha (0.45f));
-                g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
-            }
-            if (showCompLn)
-            {
-                const float cy = yFor (realOf (ParamIDs::compThreshold));
+                const float cy = yFor (compThr);
                 g.setColour (pal->gold.withAlpha (0.85f));
                 g.drawDashedLine ({ cv.getX(), cy, cv.getRight(), cy }, dash, 2, 1.2f);
             }
-            if (showGateLn)
+            else
             {
-                const float ty = yFor (realOf (ParamIDs::threshold));
+                const float thr = realOf (ParamIDs::threshold);
+                const float cy2 = yFor (thr - realOf (ParamIDs::hysteresis));
+                g.setColour (pal->warn.withAlpha (0.45f));
+                g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);
+                const float ty = yFor (thr);
                 g.setColour (pal->warn);
                 g.drawDashedLine ({ cv.getX(), ty, cv.getRight(), ty }, dash, 2, 1.2f);
             }
         }
-        juce::Path line, fill, fastLine, offLine, outLine;
-        fill.startNewSubPath (cv.getRight() - (float) n * cw, plot.getBottom());
+        juce::Path line, fastLine, offLine, outLine;
         for (int i = 0; i < n; ++i)
         {
             const float x = cv.getRight() - (float) (n - i) * cw, y = yFor (hist[(size_t) i].det);
             i == 0 ? line.startNewSubPath (x, y) : line.lineTo (x, y);
-            fill.lineTo (x, y);
             const float fy = yFor (hist[(size_t) i].fast);
             i == 0 ? fastLine.startNewSubPath (x, fy) : fastLine.lineTo (x, fy);
             const float oy = yFor (hist[(size_t) i].off);
@@ -461,14 +502,10 @@ void GateStage::paint (juce::Graphics& g)
             const float uy = yFor (hist[(size_t) i].out);
             i == 0 ? outLine.startNewSubPath (x, uy) : outLine.lineTo (x, uy);
         }
-        fill.lineTo (cv.getRight(), plot.getBottom());
-        fill.closeSubPath();
         if (showSmooth)
         {
-            g.setColour (pal->accent.withAlpha (0.22f));
-            g.fillPath (fill);
-            g.setColour (pal->accent);
-            g.strokePath (line, juce::PathStrokeType (1.4f));
+            g.setColour (pal->avg);
+            g.strokePath (line, juce::PathStrokeType (1.2f));
         }
         // raw mic level (Dry) — also the Selectivity reference
         // (tune by eye: your drum lifts the bright trace above it)
@@ -512,17 +549,6 @@ void GateStage::resized()
     lookahead.setBounds (krow2.removeFromLeft (sc (70)));
 
     r.removeFromLeft (sc (13));
-
-    // Dashed-line chips stack to the left of the canvas.
-    auto lineCol = r.removeFromLeft (sc (76));
-    lineCol.removeFromTop (sc (2));
-    gateLnTg.setBounds (lineCol.removeFromTop (sc (18)));
-    lineCol.removeFromTop (sc (4));
-    compLnTg.setBounds (lineCol.removeFromTop (sc (18)));
-    lineCol.removeFromTop (sc (4));
-    rangesTg.setBounds (lineCol.removeFromTop (sc (18)));
-    r.removeFromLeft (sc (6));
-
     auto scol = r.removeFromRight (sc (16));
     speedLabelArea = r.removeFromRight (sc (12));
     r.removeFromRight (sc (2));
@@ -530,16 +556,17 @@ void GateStage::resized()
     speedSlider.setBounds (scol.reduced (0, sc (2)));
     histFreeze.setBounds (canvasArea.getRight() - sc (24), canvasArea.getY() + sc (5), sc (19), sc (19));
 
-    // Audio-trace chips overlaid along the canvas top, ending at the freeze
-    // button.
+    // Trace chips overlay the canvas top-left; the GATE/COMP line switch
+    // sits top-right, beside the freeze button.
     ui::LightToggle* chips[4] = { &outTg, &trigTg, &smoothTg, &offTg };
     const int chipW[4] = { 62, 60, 68, 48 };
-    int x = histFreeze.getX() - sc (4);
-    for (int i = 3; i >= 0; --i)
+    int x = canvasArea.getX() + sc (6);
+    for (int i = 0; i < 4; ++i)
     {
-        x -= sc (chipW[i]);
         chips[i]->setBounds (x, canvasArea.getY() + sc (4), sc (chipW[i]), sc (18));
+        x += sc (chipW[i]);
     }
+    lineSw.setBounds (histFreeze.getX() - sc (4) - sc (92), canvasArea.getY() + sc (4), sc (92), sc (20));
 }
 
 //==============================================================================
@@ -925,6 +952,17 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
       outMeter ("OUT", [&proc] { return proc.getOutputPeakDb(); }),
       grMeter ([&proc] { return proc.getGainReductionDb(); })
 {
+    setHint (bypassBtn, "Bypass", "Bypass the whole plugin, click-free and latency-preserving: the engine keeps running but nothing is subtracted (exactly like Amount at 0), so A/B comparisons stay time-aligned.");
+    bypassBtn.onClick = [this]
+    {
+        auto* p = processor.apvts.getParameter (ParamIDs::globalBypass);
+        bypassAtt->setValueAsCompleteGesture (p->getValue() > 0.5f ? 0.0f : 1.0f);
+    };
+    bypassAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::globalBypass),
+        [this] (float v) { styleSeg (bypassBtn, v > 0.5f); bypassBtn.repaint(); });
+    bypassAtt->sendInitialUpdate();
+    addAndMakeVisible (bypassBtn);
+
     setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed. 100% = digital silence between hits. 0% = the plugin does nothing. This is the classic gate 'Range' control.");
     addAndMakeVisible (fader);
 
@@ -1004,6 +1042,8 @@ void RightRail::resized()
 {
     auto r = getLocalBounds().reduced (sc (9));
     r.removeFromTop (sc (4));
+    bypassBtn.setBounds (r.removeFromTop (sc (24)));
+    r.removeFromTop (sc (7));
 
     auto listen = r.removeFromBottom (sc (110));
     listenY = listen.getY();

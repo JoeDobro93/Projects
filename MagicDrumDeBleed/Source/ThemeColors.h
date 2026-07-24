@@ -9,7 +9,7 @@ struct Palette
 {
     juce::Colour bg, panel, panel2, line;
     juce::Colour txt, dim, faint;
-    juce::Colour accent, open, tail, warn, gold;
+    juce::Colour accent, open, tail, warn, gold, avg;
     juce::Colour knob, knobEdge, btn, btnHover, btnOn, btnOnText;
     juce::Colour band[7];
 };
@@ -30,6 +30,7 @@ inline const Palette& dark()
         d.tail    = juce::Colour (0xffe0a84a);
         d.warn    = juce::Colour (0xffe0614a);
         d.gold    = juce::Colour (0xfff5c66b);
+        d.avg     = juce::Colour (0xff9b7de8);    // Average history trace (violet)
         d.knob    = juce::Colour (0xff222a34);
         d.knobEdge= juce::Colour (0xff333d4a);
         d.btn     = juce::Colour (0xff222a34);
