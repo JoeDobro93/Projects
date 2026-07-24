@@ -331,7 +331,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     linesComp = (bool) processor.apvts.state.getProperty ("histLinesComp", false);
     lineSw.setThumbColours (pal->warn, pal->gold);
     lineSw.setLeftActive (! linesComp, false);
-    setHint (lineSw, "Threshold lines", "Which stage's dashed lines the history shows: GATE = gate Threshold (red) + its close level (Threshold minus Hysteresis). COMP = comp Threshold (gold) + the full-tail level (comp Threshold plus Tail range). Follows whichever of those four knobs you touch.");
+    setHint (lineSw, "Threshold lines", "Which stage's dashed lines the history shows: GATE = gate Threshold (red) + its close level (Threshold minus Hysteresis). COMP = comp Threshold (gold) + the full-tail level (comp Threshold plus Tail range). The other stage's threshold stays as a faint ghost. Follows whichever of those four knobs you touch.");
     lineSw.onChange = [this] (bool left) { setLinesComp (! left); };
     addAndMakeVisible (lineSw);
 
@@ -462,12 +462,19 @@ void GateStage::paint (juce::Graphics& g)
         };
         // One dashed-line pair at a time (the GATE/COMP switch): gate
         // Threshold + close level, or comp Threshold + full-tail level.
+        // The INACTIVE stage's main threshold stays as a faint ghost so the
+        // two thresholds can be related at a glance; its zone edge is
+        // omitted — that detail belongs to the stage being worked on.
         {
             const float dash[2] = { 5.0f, 4.0f };
             const float dash2[2] = { 2.0f, 4.0f };
+            const float thr = realOf (ParamIDs::threshold);
+            const float compThr = realOf (ParamIDs::compThreshold);
             if (linesComp)
             {
-                const float compThr = realOf (ParamIDs::compThreshold);
+                const float gy = yFor (thr);
+                g.setColour (pal->warn.withAlpha (0.25f));
+                g.drawDashedLine ({ cv.getX(), gy, cv.getRight(), gy }, dash, 2, 1.0f);
                 const float tr = realOf (ParamIDs::tailRange);
                 if (tr > 0.05f)
                 {
@@ -481,7 +488,9 @@ void GateStage::paint (juce::Graphics& g)
             }
             else
             {
-                const float thr = realOf (ParamIDs::threshold);
+                const float gy = yFor (compThr);
+                g.setColour (pal->gold.withAlpha (0.25f));
+                g.drawDashedLine ({ cv.getX(), gy, cv.getRight(), gy }, dash, 2, 1.0f);
                 const float cy2 = yFor (thr - realOf (ParamIDs::hysteresis));
                 g.setColour (pal->warn.withAlpha (0.45f));
                 g.drawDashedLine ({ cv.getX(), cy2, cv.getRight(), cy2 }, dash2, 2, 1.0f);

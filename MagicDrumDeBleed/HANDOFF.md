@@ -1,5 +1,16 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.5.1 — GHOST THRESHOLD (2026-07):** the INACTIVE stage of the
+> GATE/COMP line switch keeps its MAIN threshold visible as a faint ghost
+> (same {5,4} dash, alpha 0.25, 1.0 px, drawn FIRST so active lines paint
+> over it) so the two thresholds can be related at a glance; the inactive
+> stage's zone edge (close level / full-tail) is deliberately NOT ghosted
+> — that detail belongs to the stage being worked on. Verified with a live
+> render probe (scratchpad ghostprobe.cpp: feeds a beat through
+> processBlock with Thread::sleep + Timer::callPendingTimersSynchronously
+> so the history timer actually fills, and rebuilds the editor to flip the
+> persisted histLinesComp prop — callAsync doesn't run headless).
+
 > **v1.5.0 — GLOBAL BYPASS + GATE/COMP LINE SWITCH (2026-07):** new
 > `globalBypass` bool param ("Bypass"): whole-plugin bypass that keeps the
 > engine AND latency running — implemented as Amount forced to 0 through
