@@ -161,7 +161,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
     addAndMakeVisible (trigMeter);
     setHint (grMeter, "GR", "How hard the hit is escaping the null (compression on the cancelling copy). Empty = bleed fully cancelled.");
     addAndMakeVisible (grMeter);
-    setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed.");
+    setHint (fader, "AMOUNT", "How much bleed is removed between hits.");
     addAndMakeVisible (fader);
     amountVal.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (amountVal);
@@ -204,7 +204,7 @@ SimpleView::SimpleView (MagicDrumDeBleedAudioProcessor& proc, std::function<void
         presetBtns[i] = std::make_unique<DrumButton> ((DrumButton::Kind) i, presetNames[i]);
         presetBtns[i]->setButtonText (presetNames[i]);
         setHint (*presetBtns[i], presetNames[i],
-                 "Load the " + juce::String (presetNames[i]) + " starting point. Both Thresholds, Ratio, Selectivity, Hysteresis and MIDI are kept.");
+                 "Load the " + juce::String (presetNames[i]) + " starting point. Both Thresholds, Ratio, Selectivity, Hysteresis, MIDI and Ext SC are kept.");
         presetBtns[i]->onClick = [this, i]
         {
             for (auto& fp : presets::kFactoryPresets)

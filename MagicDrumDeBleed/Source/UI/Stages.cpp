@@ -53,13 +53,15 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     bypassAtt = std::make_unique<juce::ParameterAttachment> (*ap.getParameter (ParamIDs::compBypass),
         [this] (float v)
         {
-            styleSeg (bypassBtn, v > 0.5f); bypassBtn.repaint();
-            const float a = v > 0.5f ? 0.45f : 1.0f;
+            gateByp = v > 0.5f;
+            styleSeg (bypassBtn, gateByp); bypassBtn.repaint();
+            const float a = gateByp ? 0.45f : 1.0f;
             threshold.setAlpha (a);
             smoothing.setAlpha (a);
             hystK.setAlpha (a);
             holdK.setAlpha (a);
             midiBtn.setAlpha (a);
+            updateSelectivityDim();     // the veto only gates OPENING — inert while bypassed
         });
     bypassAtt->sendInitialUpdate();
 
@@ -133,7 +135,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
     typeAtt->sendInitialUpdate();
 
     addAndMakeVisible (enableBtn);
-    setHint (enableBtn, "Enabled", "Turn the trigger filter on or off. It narrows what the detector hears so other drums don't open the gate. Never affects the sound itself.");
+    setHint (enableBtn, "Enabled", "Turn the trigger filter on or off. It narrows what the detector hears so other drums don't open the gate. Never affects the sound itself. Selectivity needs it: with the filter off the veto (and its 10 ms margin) is dropped.");
     enableBtn.onClick = [this]
     {
         auto* p = processor.apvts.getParameter (ParamIDs::scEnable);
@@ -170,7 +172,7 @@ TriggerStage::TriggerStage (MagicDrumDeBleedAudioProcessor& proc)
 
 void TriggerStage::updateSelectivityDim()
 {
-    contrastK.setAlpha (filterOn ? 1.0f : 0.45f);
+    contrastK.setAlpha (filterOn && ! gateByp ? 1.0f : 0.45f);
 }
 
 void TriggerStage::updateWidthKnob()
@@ -1007,7 +1009,7 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
     bypassAtt->sendInitialUpdate();
     addAndMakeVisible (bypassBtn);
 
-    setHint (fader, "AMOUNT", "How much bleed is removed when the gate is closed. 100% = digital silence between hits. 0% = the plugin does nothing. This is the classic gate 'Range' control.");
+    setHint (fader, "AMOUNT", "How much bleed is removed between hits. 100% = digital silence when nothing qualifies. 0% = the plugin does nothing. This is the classic gate 'Range' control.");
     addAndMakeVisible (fader);
 
     amountVal.setJustificationType (juce::Justification::centred);
@@ -1051,17 +1053,19 @@ RightRail::RightRail (MagicDrumDeBleedAudioProcessor& proc)
     monAtt->sendInitialUpdate();
 
     // Latency readout: base window, + the flam-recovery margin only while
-    // Selectivity is engaged. Uses the attachment's value, not the raw
-    // atomic: listeners run newest-first, so on a change this callback
-    // fires BEFORE the APVTS raw-value updater and would read stale state.
+    // Selectivity is engaged AND the trigger filter is on (no filter, no
+    // veto, no margin). Each attachment caches its own callback value.
     contrastAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::contrast),
-        [this] (float v) { updateLatencyText (v); });
-    updateLatencyText (proc.apvts.getRawParameterValue (ParamIDs::contrast)->load());
+        [this] (float v) { latContrast = v; updateLatencyText(); });
+    scEnAtt = std::make_unique<juce::ParameterAttachment> (*proc.apvts.getParameter (ParamIDs::scEnable),
+        [this] (float v) { latScOn = v > 0.5f; updateLatencyText(); });
+    contrastAtt->sendInitialUpdate();
+    scEnAtt->sendInitialUpdate();
 }
 
-void RightRail::updateLatencyText (float contrastDb)
+void RightRail::updateLatencyText()
 {
-    const bool sel = contrastDb < 23.75f;
+    const bool sel = latScOn && latContrast < 23.75f;
     latencyText = juce::String (MagicDrumDeBleedAudioProcessor::kMaxLookaheadMs
                                 + (sel ? MagicDrumDeBleedAudioProcessor::kEnvMarginMs : 0)) + " ms latency";
     repaint();

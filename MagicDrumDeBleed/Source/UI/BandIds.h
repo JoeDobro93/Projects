@@ -306,19 +306,26 @@ private:
     bool flashing = false;
 };
 
-/*  Apply a factory preset: reset everything except the per-mic calibration
-    (both Thresholds, Ratio, Selectivity, Hysteresis, MIDI trigger — those
-    depend on the track, not the drum), then set the preset's values.
-    Shared by the PresetBrowser and the Simple view. */
-inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
+/*  Per-track calibration parameters that NO preset — factory or user —
+    ever touches: they depend on the mic and the session, not the drum.
+    User presets are saved without them and loaded around them. */
+inline const juce::StringArray& preservedParamIds()
 {
     static const juce::StringArray preserved { ParamIDs::threshold, ParamIDs::compThreshold,
                                                ParamIDs::contrast, ParamIDs::hysteresis,
                                                ParamIDs::midiTrigger, ParamIDs::compRatio,
                                                ParamIDs::scExternal };
+    return preserved;
+}
+
+/*  Apply a factory preset: reset everything except the preserved per-mic
+    calibration set, then set the preset's values. Shared by the
+    PresetBrowser and the Simple view. */
+inline void applyFactoryPreset (MagicDrumDeBleedAudioProcessor& proc, const presets::FactoryPreset& pr)
+{
     for (auto* p : proc.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
-            if (! preserved.contains (ranged->paramID))
+            if (! preservedParamIds().contains (ranged->paramID))
                 ranged->setValueNotifyingHost (ranged->getDefaultValue());
 
     setRealValue (proc, ParamIDs::scFreq,        pr.scFreqHz);

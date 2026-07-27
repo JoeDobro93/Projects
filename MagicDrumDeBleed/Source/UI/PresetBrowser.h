@@ -6,9 +6,11 @@
     Factory presets come from PresetDefaults.h. User presets are XML files in
     the user's application-data folder (see presetDirectory()).
 
-    THRESHOLD IS NEVER TOUCHED BY PRESETS: factory presets apply around it,
-    user presets are saved without it and loaded around it. DAW session
-    state (getStateInformation/setStateInformation) still includes it.
+    THE PER-TRACK CALIBRATION SET (eqids::preservedParamIds — thresholds,
+    Selectivity, Hysteresis, Ratio, MIDI, Ext SC) IS NEVER TOUCHED BY
+    PRESETS: factory presets apply around it, user presets are saved without
+    it and loaded around it. DAW session state
+    (getStateInformation/setStateInformation) still includes everything.
 */
 
 #include <JuceHeader.h>
@@ -30,7 +32,7 @@ private:
     void refreshPresetList();
     void presetSelected();
     void applyFactoryPreset (const presets::FactoryPreset& preset);
-    void resetAllParametersExceptThreshold();
+    void resetAllParametersExceptPreserved();
     void setParameterValue (const juce::String& paramID, float realValue);
     void promptForSaveName();
     void saveUserPreset (const juce::String& name);

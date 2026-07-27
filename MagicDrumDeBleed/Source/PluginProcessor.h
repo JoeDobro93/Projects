@@ -19,8 +19,10 @@
     survive in the output.
 
     All internal processing is double precision; float hosts are converted
-    at the block boundary. Latency (= lookahead) is reported through
-    setLatencySamples().
+    at the block boundary. Latency is the CONSTANT base window (max
+    Lookahead), plus the flam-recovery margin only while Selectivity is
+    engaged with the trigger filter on — never the Lookahead knob itself —
+    reported through setLatencySamples().
 */
 
 #include <JuceHeader.h>

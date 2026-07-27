@@ -9,7 +9,7 @@ AdvancedView::AdvancedView (MagicDrumDeBleedAudioProcessor& proc,
       trigger (proc), gate (proc), tail (proc), rail (proc)
 {
     setHint (presetBrowser, "Presets",
-             juce::String::fromUTF8 ("Factory starting points per drum. Both Thresholds, Ratio, Selectivity, Hysteresis and the MIDI toggle are deliberately never touched by presets \xe2\x80\x94 they depend on your track, not the drum."));
+             juce::String::fromUTF8 ("Factory and saved starting points per drum. Both Thresholds, Ratio, Selectivity, Hysteresis, MIDI and Ext SC are deliberately never touched by any preset \xe2\x80\x94 they depend on your track, not the drum."));
     addAndMakeVisible (presetBrowser);
 
     themeBtn.setButtonText (processor.isDarkTheme() ? "Light" : "Dark");

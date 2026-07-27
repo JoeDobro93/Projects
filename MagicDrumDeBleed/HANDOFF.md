@@ -1,5 +1,34 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.6.3 — FULL-PROGRAM AUDIT (2026-07):** systematic sweep for the
+> v1.6.1 bug classes. FIXED: (1) Selectivity's +10 ms margin was charged
+> even with the trigger filter OFF, where the veto is provably inert
+> (filtered == broad ⇒ excess ≈ −30 dB, never trips) —
+> `selectivityOn = scEnable && contrast < 23.75` in
+> updateParametersForBlock; RightRail latency text now caches BOTH values
+> from their own attachment callbacks (latContrast/latScOn — the
+> stale-raw-read pattern again); Enabled hint documents the margin drop;
+> new latency test row (filter off ⇒ 480). (2) Selectivity knob now also
+> dims under Gate Bypass (the veto only gates OPENING — inert while the
+> feed is forced live). (3) USER presets ignored the preserved-calibration
+> design: load reset/overwrote everything except `threshold`, save
+> stripped only `threshold` and embedded stale UI attrs (uiWidth/uiHeight
+> never existed; real props leaked into files). Now
+> `eqids::preservedParamIds()` is the single shared list (factory apply,
+> user reset-except, user load-skip, user save-strip) and saves
+> removeAllAttributes() (loader only reads PARAM children). (4) Stale
+> docs/hints: PluginProcessor.h "Latency (= lookahead)", PresetBrowser.h
+> threshold-only claim, AMOUNT "when the gate is closed", preset hints
+> now list Ext SC. VERIFIED CLEAN: every widget repaints on its own
+> interaction state (Knob was the only offender); no other attachment
+> callback re-reads raw state; all params reachable from UI except
+> `learnCeiling` (host-automation only, functional, default 1 kHz) and
+> the `Delta` monitor choice (mathematically identical to Removed bleed =
+> iv·parallel — button intentionally absent); meter/canvas timers are
+> constant-rate; DSP filters guard recompute with exactlyEqual and reset
+> on topology change; band-solo audition intentionally overrides the
+> global bypass. Tests: 66.
+
 > **v1.6.2 — SMOOTH FAST HISTORY (2026-07):** at fast scroll speeds the
 > history stair-stepped: v1.6.1's 60 Hz collection duplicated one meter
 > poll across all owed columns (6 identical columns per tick at 360 Hz).

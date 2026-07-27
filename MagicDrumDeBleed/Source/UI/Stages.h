@@ -49,7 +49,7 @@ private:
                                                extScAtt;
     void updateSelectivityDim();
     int sensLabelX = 0, filtLabelX = 0, dividerX = 0;
-    bool filterOn = true;
+    bool filterOn = true, gateByp = false;
 };
 
 //==============================================================================
@@ -167,8 +167,13 @@ private:
     ui::LevelMeter outMeter;
     ui::GrMeter grMeter;                                // duck depth = escape
     juce::TextButton monBtns[3];                        // Output / Removed bleed / Trigger signal
-    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, contrastAtt, bypassAtt;
-    void updateLatencyText (float contrastDb);
+    std::unique_ptr<juce::ParameterAttachment> monAtt, amtAtt, contrastAtt, scEnAtt, bypassAtt;
+    // Cached from the attachments' own callback values — re-reading raw
+    // state inside a callback sees the PRE-change value (listeners run
+    // newest-first, before the APVTS raw updater).
+    float latContrast = 24.0f;
+    bool latScOn = true;
+    void updateLatencyText();
     juce::String latencyText;
     int latencyY = 0;
     int listenY = 0, amountX = 0, amountY = 0;

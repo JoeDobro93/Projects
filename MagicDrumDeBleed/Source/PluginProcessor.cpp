@@ -395,8 +395,11 @@ void MagicDrumDeBleedAudioProcessor::updateParametersForBlock()
 {
     // ---- Lookahead / total delay. The knob never changes latency (the
     // ring absorbs total − lookahead); the ONLY thing that does is engaging
-    // Selectivity, which adds the flam-recovery margin. ----
-    const bool selectivityOn = pContrast->load() < 23.75f;
+    // Selectivity, which adds the flam-recovery margin. Selectivity needs
+    // the trigger filter (it compares the filtered band against the raw
+    // sidechain — identical signals with the filter off, so the veto is
+    // inert): no filter, no margin, no extra latency. ----
+    const bool selectivityOn = pScEnable->load() > 0.5f && pContrast->load() < 23.75f;
     const int lookaheadMs = (int) pLookahead->load();
     const int lookahead = juce::jlimit (0, maxLookaheadSamples,
                                         (int) std::lround (lookaheadMs * 0.001 * sampleRateCached));

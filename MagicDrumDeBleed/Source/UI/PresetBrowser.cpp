@@ -142,11 +142,11 @@ void PresetBrowser::presetSelected()
         {
             if (auto xml = juce::parseXML (userPresetFiles[index]))
             {
-                resetAllParametersExceptThreshold();
+                resetAllParametersExceptPreserved();
                 for (auto* param : xml->getChildWithTagNameIterator ("PARAM"))
                 {
                     const auto paramID = param->getStringAttribute ("id");
-                    if (paramID != ParamIDs::threshold)
+                    if (! eqids::preservedParamIds().contains (paramID))
                         setParameterValue (paramID, (float) param->getDoubleAttribute ("value"));
                 }
             }
@@ -160,11 +160,11 @@ void PresetBrowser::setParameterValue (const juce::String& paramID, float realVa
         param->setValueNotifyingHost (param->convertTo0to1 (realValue));
 }
 
-void PresetBrowser::resetAllParametersExceptThreshold()
+void PresetBrowser::resetAllParametersExceptPreserved()
 {
     for (auto* p : processor.getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
-            if (ranged->paramID != ParamIDs::threshold)
+            if (! eqids::preservedParamIds().contains (ranged->paramID))
                 ranged->setValueNotifyingHost (ranged->getDefaultValue());
 }
 
@@ -193,16 +193,17 @@ void PresetBrowser::saveUserPreset (const juce::String& name)
     if (xml == nullptr)
         return;
 
-    // Presets never carry the threshold, nor editor/theme state.
+    // Presets never carry the per-track calibration set, nor any editor/
+    // display state (theme, view sizes, history prefs — all stored as root
+    // attributes; the loader only reads PARAM children anyway).
     for (int i = xml->getNumChildElements(); --i >= 0;)
     {
         auto* child = xml->getChildElement (i);
-        if (child->hasTagName ("PARAM") && child->getStringAttribute ("id") == ParamIDs::threshold)
+        if (child->hasTagName ("PARAM")
+            && eqids::preservedParamIds().contains (child->getStringAttribute ("id")))
             xml->removeChildElement (child, true);
     }
-    xml->removeAttribute ("themeDark");
-    xml->removeAttribute ("uiWidth");
-    xml->removeAttribute ("uiHeight");
+    xml->removeAllAttributes();
 
     const auto file = presetDirectory().getChildFile (juce::File::createLegalFileName (name) + ".xml");
     xml->writeTo (file);
