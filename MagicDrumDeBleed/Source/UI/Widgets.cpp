@@ -109,7 +109,14 @@ bool findHint (juce::Component* c, juce::String& title, juce::String& text)
 }
 
 //==============================================================================
-Knob::Knob (juce::String n, ColourId col) : name (std::move (n)), clr (col) {}
+Knob::Knob (juce::String n, ColourId col) : name (std::move (n)), clr (col)
+{
+    // paint() highlights the name while hovered/dragged — without this the
+    // highlight only updates when something ELSE repaints the knob (the
+    // compressor stage's 90 Hz history timer masked the omission there;
+    // everywhere else the last mid-drag paint stayed stuck highlighted).
+    setRepaintsOnMouseActivity (true);
+}
 
 /*  While the value editor is open, any click landing outside it commits and
     closes it — needed because most controls never take keyboard focus, so

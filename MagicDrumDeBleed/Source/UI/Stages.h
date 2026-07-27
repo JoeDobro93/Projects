@@ -90,6 +90,10 @@ private:
     struct Sample { float det, fast, off, out, o01, t01; };
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
+    // Wall-clock-locked scroll: samples owed = elapsed time × rate, so the
+    // speed never follows timer jitter (the timer itself is capped at 60 Hz
+    // for painting; higher rates just push several samples per frame).
+    double histRateHz = 90.0, histAccum = 0.0, histLastMs = 0.0;
     juce::Rectangle<int> canvasArea, speedLabelArea;
 };
 

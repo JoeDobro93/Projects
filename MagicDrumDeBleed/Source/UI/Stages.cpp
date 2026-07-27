@@ -294,7 +294,8 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     {
         const float hz = v < 0.5f ? 30.0f * std::pow (9.0f, v)
                                   : 90.0f * std::pow (4.0f, 2.0f * v - 1.0f);
-        startTimerHz (juce::roundToInt (hz));
+        histRateHz = hz;
+        startTimerHz (juce::roundToInt (juce::jmin (hz, 60.0f)));
     };
 
     // Legend chip states persist in the plugin state (like tailScale), so
@@ -347,7 +348,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
 
     hist.reserve (kHist);
-    startTimerHz (90);
+    startTimerHz (60);
 }
 
 GateStage::~GateStage()
@@ -387,17 +388,33 @@ void GateStage::setLinesComp (bool comp)
 
 void GateStage::timerCallback()
 {
-    // Lane feeds are the compressor's own envelopes: green = the duck depth
-    // (how hard events are escaping the null), gold = the tail envelope.
-    const float open01 = juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f);
-    const float tail01 = juce::jlimit (0.0f, 1.0f,
-                                       std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f));
+    // Wall-clock-locked scroll: push however many samples the elapsed time
+    // owes at the chosen rate. The old one-sample-per-tick scheme made the
+    // scroll speed equal the timer's ACTUAL firing rate — heavy painting
+    // (which varies with signal activity) coalesced ticks, so the history
+    // visibly sped up and slowed down with the peaks under load.
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (histLastMs <= 0.0)
+        histLastMs = now;
+    histAccum += (now - histLastMs) * 0.001 * histRateHz;
+    histLastMs = now;
+    int owed = (int) histAccum;
+    histAccum -= owed;
+    owed = juce::jmin (owed, kHist);
+    if (histFreeze.getToggleState())
+        owed = 0;                           // time is consumed: no burst on unfreeze
 
-    if (! histFreeze.getToggleState())
+    if (owed > 0)
     {
-        hist.push_back ({ processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
-                          processor.getDryDb(), processor.getOutputPeakDb(),
-                          open01, tail01 });
+        // Lane feeds are the compressor's own envelopes: green = the duck
+        // depth (how hard events escape the null), gold = the tail.
+        const Sample s { processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
+                         processor.getDryDb(), processor.getOutputPeakDb(),
+                         juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f),
+                         juce::jlimit (0.0f, 1.0f,
+                                       std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f)) };
+        for (int k = 0; k < owed; ++k)
+            hist.push_back (s);
         if ((int) hist.size() > kHist)
             hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
     }

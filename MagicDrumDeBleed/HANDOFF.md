@@ -1,5 +1,24 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.6.1 — TWO UI BUG FIXES (2026-07):** (1) Knob hover-highlight stuck
+> ON after a drag everywhere except the COMPRESSOR stage: Knob::paint
+> colours the name by isMouseOverOrDragging() but the ctor never called
+> `setRepaintsOnMouseActivity(true)` — hover changes never repainted, so
+> the last mid-drag paint froze highlighted; the comp stage's 90 Hz
+> history repaint masked it. Fixed in the Knob ctor (LightToggle/
+> TextSwitch already had it; no other widget paints by hover). (2) History
+> scroll speed fluctuated with signal peaks under load: the scroll
+> advanced ONE sample per juce::Timer tick, so speed = the timer's ACTUAL
+> firing rate — heavy painting coalesces ticks, and the activity lane's
+> paint cost varies with duck/tail activity (per-column alpha fills,
+> silent columns skipped), so at high speed settings the miss rate tracked
+> the peaks. Fix: **wall-clock-locked collection** — timerCallback pushes
+> `elapsed × histRateHz` samples (accumulator, catch-up clamped to kHist;
+> freeze consumes time so unfreezing can't burst) and the timer itself is
+> capped at 60 Hz for painting (rates above 60 push several samples per
+> frame — a monitor can't show more anyway). Scroll speed is now correct
+> by construction under any load. Tests: 65 (unchanged).
+
 > **v1.6.0 — ANTI-POP PRE-RAMP + COMP-FIRST DEFAULTS (2026-07):** kick
 > attacks and false triggers used to CLICK: the duck's 0.1 ms attack is a
 > step, and lookahead only relocates it — slow low-frequency onsets are
