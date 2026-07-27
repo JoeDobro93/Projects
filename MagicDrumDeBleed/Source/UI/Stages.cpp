@@ -295,7 +295,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
         const float hz = v < 0.5f ? 30.0f * std::pow (9.0f, v)
                                   : 90.0f * std::pow (4.0f, 2.0f * v - 1.0f);
         histRateHz = hz;
-        startTimerHz (juce::roundToInt (juce::jmin (hz, 60.0f)));
+        startTimerHz (juce::roundToInt (juce::jlimit (30.0f, 120.0f, hz)));
     };
 
     // Legend chip states persist in the plugin state (like tailScale), so
@@ -348,7 +348,7 @@ GateStage::GateStage (MagicDrumDeBleedAudioProcessor& proc) : processor (proc)
     setHint (histFreeze, "Freeze", "Freeze the history so you can inspect it.");
 
     hist.reserve (kHist);
-    startTimerHz (60);
+    startTimerHz (90);
 }
 
 GateStage::~GateStage()
@@ -407,19 +407,37 @@ void GateStage::timerCallback()
     if (owed > 0)
     {
         // Lane feeds are the compressor's own envelopes: green = the duck
-        // depth (how hard events escape the null), gold = the tail.
-        const Sample s { processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
-                         processor.getDryDb(), processor.getOutputPeakDb(),
-                         juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f),
-                         juce::jlimit (0.0f, 1.0f,
-                                       std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f)) };
-        for (int k = 0; k < owed; ++k)
-            hist.push_back (s);
+        // depth (how hard events escape the null), gold = the tail. The
+        // columns between this poll and the previous one are interpolated,
+        // not duplicated — fast speeds draw slopes instead of stairs.
+        const Sample target { processor.getDetectorRmsDb(), processor.getFastDetectorDb(),
+                              processor.getDryDb(), processor.getOutputPeakDb(),
+                              juce::jlimit (0.0f, 1.0f, processor.getGainReductionDb() / -96.0f),
+                              juce::jlimit (0.0f, 1.0f,
+                                            std::pow (10.0f, processor.getEqGateReductionDb() / 20.0f)) };
+        if (! haveLast)
+        {
+            lastSample = target;
+            haveLast = true;
+        }
+        for (int k = 1; k <= owed; ++k)
+        {
+            const float t = (float) k / (float) owed;
+            auto mix = [t] (float a, float b) { return a + t * (b - a); };
+            hist.push_back ({ mix (lastSample.det, target.det), mix (lastSample.fast, target.fast),
+                              mix (lastSample.off, target.off), mix (lastSample.out, target.out),
+                              mix (lastSample.o01, target.o01), mix (lastSample.t01, target.t01) });
+        }
+        lastSample = target;
         if ((int) hist.size() > kHist)
             hist.erase (hist.begin(), hist.begin() + ((int) hist.size() - kHist));
     }
 
-    repaint();
+    if (now - repaintMs >= 15.0)            // paint at ~60 fps regardless of poll rate
+    {
+        repaintMs = now;
+        repaint();
+    }
 }
 
 void GateStage::paint (juce::Graphics& g)

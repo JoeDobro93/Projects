@@ -1,5 +1,16 @@
 # Magic Drum Gate — Engineering Handoff
 
+> **v1.6.2 — SMOOTH FAST HISTORY (2026-07):** at fast scroll speeds the
+> history stair-stepped: v1.6.1's 60 Hz collection duplicated one meter
+> poll across all owed columns (6 identical columns per tick at 360 Hz).
+> Now the timer runs at min(rate, 120) Hz (repaints separately gated to
+> ~60 fps via `repaintMs`, so the paint-load fix stands) and the owed
+> columns are **linearly interpolated** from the previous poll
+> (`lastSample`/`haveLast`) instead of duplicated — fast speeds draw
+> slopes, bounded only by the meters' per-audio-block granularity
+> (~94 values/s at 512/48k; sub-block detail doesn't exist to show).
+> Attack edges stay sharp (interpolation spans ≤ one poll interval).
+
 > **v1.6.1 — TWO UI BUG FIXES (2026-07):** (1) Knob hover-highlight stuck
 > ON after a drag everywhere except the COMPRESSOR stage: Knob::paint
 > colours the name by isMouseOverOrDragging() but the ctor never called

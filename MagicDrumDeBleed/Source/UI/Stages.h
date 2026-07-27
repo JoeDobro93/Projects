@@ -91,9 +91,14 @@ private:
     static constexpr int kHist = 460;
     std::vector<Sample> hist;
     // Wall-clock-locked scroll: samples owed = elapsed time × rate, so the
-    // speed never follows timer jitter (the timer itself is capped at 60 Hz
-    // for painting; higher rates just push several samples per frame).
-    double histRateHz = 90.0, histAccum = 0.0, histLastMs = 0.0;
+    // speed never follows timer jitter. Collection runs up to 120 Hz;
+    // repaints are gated to ~60 fps separately. Columns between polls are
+    // INTERPOLATED from the previous poll (not duplicated), so fast speeds
+    // draw slopes instead of stairs — resolution is then bounded only by
+    // the meters' per-audio-block granularity.
+    double histRateHz = 90.0, histAccum = 0.0, histLastMs = 0.0, repaintMs = 0.0;
+    Sample lastSample {};
+    bool haveLast = false;
     juce::Rectangle<int> canvasArea, speedLabelArea;
 };
 
